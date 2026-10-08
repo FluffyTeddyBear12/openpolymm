@@ -1,0 +1,36 @@
+# Environment & Secrets
+.env
+*.env*
+!.env.example
+.streamlit/secrets.toml
+
+# Runtime & Process State
+*.pid
+*.log
+*.txt
+!requirements.txt
+*.bak
+dashboard_state.json*
+capital_update.json*
+inspected_market.txt
+
+# Installer & Temporary Binary Artifacts
+AWSCLIV2.msi
+install.log
+
+# Python & Environment Caches
+scratch/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+desktop.ini

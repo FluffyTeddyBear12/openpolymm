@@ -1,0 +1,3 @@
+@echo off
+echo Starting Polymarket Paper Trader Dashboard...
+.\venv\Scripts\streamlit.exe run dashboard.py

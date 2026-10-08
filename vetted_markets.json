@@ -1,0 +1,704 @@
+{
+  "last_updated": 1791345855.6100438,
+  "total_vetted": 87,
+  "vetted_market_ids": [
+    "0x9ed0ecc8b8589e67967d44c4420944a41b6a6806419019a1581d514174eee9b1",
+    "0xe016472b442b43d88ae4d406a53ff61b1e370b55bfbfb694b0f38a1e0d336d43",
+    "0xd6f75e5779e98d1fb5f738f4fa0351ed8b01591c8ab9ab502d3b3bdbe4946fb5",
+    "0xfd431e070263b5f24e43a8fc44532bf41aa008d99cab2330d979913b1c580bd2",
+    "0xd961e85c58d27699749eaa069e629519e2f4af701a7c2a02a486dca77e101fdc",
+    "0xc90894254e1f804e3087e89288d192b529287b7de6e3f5230c06868f7777661d",
+    "0x788db4cd3553694026cb5cc7d8e13f4aa4bec1431b7fee2eb07f6950dd40e79d",
+    "0xdf9bf27ee5757c55b44b8b9826ddc9ec3a8809aa3278634c45edbb7fc8f1a3e3",
+    "0x07d9a47d5a2e701de5a0181a764b455267b78a64df4a9348b5ae0c53c7245ebd",
+    "0xaa1df7d50d4cf7cfed01d8717530fe624a2d251b6cbf104c41a4adcd76a1e032",
+    "0x117f9132e15eeff2621be398fa57092cf446a2f02cbd7ee8e3714226705c4d3b",
+    "0x2ebafd3610e3f41c4e8f7a82a9450afb4324978dff5ccbf5ad1102abde6f6d05",
+    "0xaa81a80c0812f3594d6a02bfe9b217bf1d555c3fd45713cb328d0f6bce593f45",
+    "0x99d7df87fd3704af2b805b0caea4fe0e87d4dbc3dbe5ce9d0dcb260d2647f0c4",
+    "0x9b5ff439175bd0bd854e0f7ea3a9c370ca9316d46c016d879b2d702300a84764",
+    "0x00ad3bb5284b0b2314b1a2d42812fe292f606619c6278bd95c9d905816c240f6",
+    "0x24766201e5d9eb8121b5ed7747354bf3045022ed6c84c555b41ca38aa33c389d",
+    "0x6bd56627aa21311850825edb27e53434a0e17a4f782be0086bc07f71eee00d0d",
+    "0x9cf563d7b55aa9aa876d5d7e55126347eee473f0ae56d799e325fdef2bf25297",
+    "0x5c79dfde05559b79a9cb9f7c4187e4d49632dd042572ae676952f812732591cc",
+    "0xba4c6030ac1d9e1c791cd735eda69ff77d47f5d9e584f4b145bca578d2eb6991",
+    "0xf273da5c76e0116c0ec63787453b54d74f0c182256dff4ed2f27f08b14048f7c",
+    "0x26f410f7518fa199678ef57f02637fc88be9b3b593346b00946d7ea451f4521b",
+    "0x926310f67d5279a6a85550d60d3945805dd6680f14a25b8359e7a55766bfe7af",
+    "0x1e6860f2f1a5a653cc3aa2a98aa7312012d1e9d77737f4ef2c39f2859a8abd2c",
+    "0xd833db09f12b224bfefa54693dbf08bb4c9617f8a2161aa51351bafbdaec33a7",
+    "0x7034c00a24f9edbf325fd5a0b9a63412e469fc8cd2aa9b060fb5ba8e10d7ebef",
+    "0x2231dd1fdef0b7b5fc1f99e9dcc27230b2c4c98f0c5541a3b023fa795b46751a",
+    "0x16c63b7cc37f012b9f59ee164ec03877914c701d06d48291ae8d6fc08a088b0d",
+    "0xdf8e2dc5860027decbe6164555c3c1c9645c3bd33e16b9dc57ca87125047d4a8",
+    "0x4e4f77e7dbf4cab666e9a1943674d7ae66348e862df03ea6f44b11eb95731928",
+    "0xc5eae79d1ffe716572353962eb926b1e3964c500a4880a7a94f58408218ee76b",
+    "0xaba4bb720c6c1b2e48087f5af4a57fd1e9f05814a936e9f6b1c37f10436a34fc",
+    "0x998bc71817b2d76921d1999ce0f3431cfd5945583667a371280ca2b430b0c06e",
+    "0xa34edb6c898232378a9cc08744842df2cd89d278ba45b012bed3ac10c7241c4d",
+    "0x3d5321854a1571f6f9f27fd6a87fbefdde464260a19b03404d2eb9d97f3d2b06",
+    "0x9363a660e5b0203ae13801ec52059abe0318e9192541419ae2159208e48d0bbf",
+    "0x9c112394cb10a937fac9708860e53ce8b57742cf90c0b5ecb73f049edc5c31a4",
+    "0x75831212595bd5692d113ec955d4d73266c78c24154ebf354a99da87b83b6247",
+    "0x694595d0a008f10e4701285d071e4b08407495f6f8a6bd8cbdd7de522fa9b463",
+    "0x00a806ea376492839079ded2431efdb78b48fc3081e917581769eb31c84a52ac",
+    "0xce610556ec78cfd7894f4169d91fe70e31c2fb49f927fffd7fe7d06530f88d56",
+    "0x7af06a6b565678dd02509cb9209e8b8cfc791c4025e1a352b7aba321f6b31279",
+    "0x6c8bc8cd9b2d64358ad995ccee8e998cf0f81a89c4be0b8e51eadf09c6be60ba",
+    "0x30f729ef18553d8956bfd7ae7a1e96dbad07e2476160239b23ec10e6cdc5f01b",
+    "0x13b2a077129b9dc55bd81d1d20e51830673c1aaee5cb06d805a08c26b68f4d32",
+    "0xff6a852f912fc6548ec130b05de014f21b1a26342adedef20e4103bb97b4e81d",
+    "0x94521176f57d2ce81dde01e0b7699ca4279423042d37ed53908f0c8bfefe7e14",
+    "0xd5d9fc47718bd553592d126b1fa5e87183d27f3936975b0c04cc0f2dec1f1bb4",
+    "0x3738ad9665480991affe3ba286cd035516e17d1f8b7703e05088ec19c70c21a4",
+    "0xa653be0f150dbe055a532ea02977338bb31f49d1f723b2a48c1f67847a73cb7d",
+    "0x5b8b105a4b1372bd09a5d3c6fe3881b5b8feb96b6d29ac63cf0fb38871c2de86",
+    "0xd93366079fab7bcb8a03705969822056b76226a48fd5bb7b1475a5b186cf6f07",
+    "0x5cc00a812eeac8e64a688b2229732eca99f974f1a0843a199d05c11c506be18e",
+    "0x45a79193a66e5078a29c625e78e0d4b9a059edef8e206097c48bbfe7eaf9590e",
+    "0xb4c14fc723be298cb33ac6910407a1575dfc5cf058d2e7e40742284fb260af2d",
+    "0x7c3ff25ec12c13a5c5d4225774793e8708c977ce80ba36e479ccd4ee6a868396",
+    "0x586dec06d8308b7c9812c44a18c92d83c871926899e4cee279a03e145bad0b23",
+    "0x87091dc5932f015d80c40e71e47cb043c3f8b6098484eb5bc3943cf35ee9afc1",
+    "0xc574bd2c370e346f31f9138a6466ea9ca9398dfc7c14f9ff14e4bae1b5ad36b0",
+    "0xccb5b9ffc72ef6411d01d29f027945d980327daff39764e6c49e2153b851a9a7",
+    "0x7987a821b8032824f1805ee39eb5dfb8f64603e4e9e673259eb76f82b439fd3d",
+    "0x20fd4cf096367edbd429168764db975b582249a7a3818684d051f445a3efaed1",
+    "0x3f6c2e27ec0208fb4d4a12435ec0a0a7afb0cda120fef96dc5d9c13d78efe3db",
+    "0x0808de4f0cfd47947f2d1be51f9a9c52ea0fec76f73a75cfbe79ddec98d8a908",
+    "0xb8b5349814450b8bba2ecdda2eeb9f48bd3c795bfb858bedf7a383712b877743",
+    "0x405b56fc75f56d7635a94df9836d6cb6f9b9571d1fd33eb165c1e59d1d11801f",
+    "0xcee04ba47d02f6c64642369b34193c355f64de1b9ae425c71ea4efef1989d271",
+    "0xa222013f2baf3e9eb0613b7dc45d2fd8a3e63177c21bd282d9bb5133d6a44986",
+    "0x1a01bf78f56a507fcb666d564d8c8b91b0750679163ed6e96746102c9b7d285d",
+    "0x34918035a590555ba1fb1d6a019d766ab6e557d63e7f3140b63b4550eee7f417",
+    "0xefa17dee3af09f69f9ddf245b969aa4efbe7c71cdf06ee49d694408bc33e2ed2",
+    "0x35b291fc4017d15fefb3b95baae85ec0f1bc66cb8e8c023b85cd4df0a8069a64",
+    "0x2954d35a7d09c05c6c97d835bdfa8c81343a02b9145f39943205c486e878888f",
+    "0x7586a96520578acaaaa4ea84a2582f197f84255da1f3392a7aa300386c187b37",
+    "0x12dc2b61723b2a54fc1947a307389b5f32038e7a29a0e936ad1fe410b969d06a",
+    "0x6d9a3d8e57756462daa84d85c25be6bf7136ce1769edae4b3add3acaab8b6608",
+    "0xc0affa468d3a9f9edee1b8de49bdbf051378a141239e6c2e932a4864867d2400",
+    "0x0fcfd063f06450c331206c5ac89cd34cfa80537ea42f7cfb79da46d735d4890e",
+    "0x1674c7a654ad25b68e9df7ac71e3711ecc5c86bde2063ceb8be586ea9c44f028",
+    "0xe8b24aac1400d5d57d3657de489f705b0737c108aea5fe9b5a6e102c1c2fe5d8",
+    "0xa23467e95abf6544819a9dcb90b7719846aacf300b991ea07204e1f1649097cb",
+    "0x4b3a3eb755775e20c995c9a442354a036dfc06f3526cf0f5ff70ff2b3adef648",
+    "0x46e98430142d1aabb6806a196aac8e412f7225acf68aafed7f3d742662b9800c",
+    "0xa69ef420d8b4075ad8ba8611d02c63cb2ece46f5c8c643af223c272689b0c96f",
+    "0xc15a55dde7131ceed5bc73b35e354b5b6ae68299919e73ab4118504206c0c458",
+    "0x2e8ae9c3a33921f298619d230d37b274cf44ede49d81e4d87bde65281881d4bc"
+  ],
+  "metadata": {
+    "0x7af06a6b565678dd02509cb9209e8b8cfc791c4025e1a352b7aba321f6b31279": {
+      "question": "Milwaukee Brewers vs. San Diego Padres",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with contingencies for postponement, cancellation, and tie games.",
+      "audited_at": 1791345582.5583045
+    },
+    "0x07d9a47d5a2e701de5a0181a764b455267b78a64df4a9348b5ae0c53c7245ebd": {
+      "question": "LoL: GAM Esports vs Shopify Rebellion (BO3) - Demacia Cup Global Invitational Group Stage",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The contract is clear and covers most scenarios, including cancellation, postponement, and match completion. It specifies a resolution source and allows for credible reporting if the primary source is unavailable.",
+      "audited_at": 1791345585.6050332
+    },
+    "0x1674c7a654ad25b68e9df7ac71e3711ecc5c86bde2063ceb8be586ea9c44f028": {
+      "question": "US announces end of Iranian blockade by October 15, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific about what constitutes a qualifying announcement, reducing ambiguity and dispute risk.",
+      "audited_at": 1791345588.473308
+    },
+    "0x9c112394cb10a937fac9708860e53ce8b57742cf90c0b5ecb73f049edc5c31a4": {
+      "question": "Bitcoin Up or Down on October 5?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules based on specific Binance data.",
+      "audited_at": 1791345591.145772
+    },
+    "0xefa17dee3af09f69f9ddf245b969aa4efbe7c71cdf06ee49d694408bc33e2ed2": {
+      "question": "Will Shakhtar Donetsk win the 2026-27 UEFA Champions League Championship?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with no ambiguity or subjective interpretation needed.",
+      "audited_at": 1791345593.8425412
+    },
+    "0xd5d9fc47718bd553592d126b1fa5e87183d27f3936975b0c04cc0f2dec1f1bb4": {
+      "question": "Will the Democratic Party control the House after the 2026 Midterm elections?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including runoffs and independent members' caucus decisions.",
+      "audited_at": 1791345596.6365957
+    },
+    "0x1a01bf78f56a507fcb666d564d8c8b91b0750679163ed6e96746102c9b7d285d": {
+      "question": "Will Fl\u00e1vio Bolsonaro win the 2026 Brazilian presidential election?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules based on official election results and credible reporting.",
+      "audited_at": 1791345599.3069391
+    },
+    "0xaba4bb720c6c1b2e48087f5af4a57fd1e9f05814a936e9f6b1c37f10436a34fc": {
+      "question": "Will Fran\u00e7ois Asselineau win the 2027 French presidential election?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules based on official government results with a fallback to credible reporting.",
+      "audited_at": 1791345602.0024183
+    },
+    "0x9363a660e5b0203ae13801ec52059abe0318e9192541419ae2159208e48d0bbf": {
+      "question": "Samsun: Cagla Buyukakcay vs Linda Klimovicova",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with minimal ambiguity and low dispute risk.",
+      "audited_at": 1791345604.668908
+    },
+    "0xdf8e2dc5860027decbe6164555c3c1c9645c3bd33e16b9dc57ca87125047d4a8": {
+      "question": "Will Luiz In\u00e1cio Lula da Silva win the 2026 Brazilian presidential election?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, referencing official election results and credible reporting sources.",
+      "audited_at": 1791345607.3891275
+    },
+    "0xc5eae79d1ffe716572353962eb926b1e3964c500a4880a7a94f58408218ee76b": {
+      "question": "2026 Balance of Power: R Senate, R House",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and follow standard procedures for determining control of the U.S. Senate and House of Representatives.",
+      "audited_at": 1791345610.3126516
+    },
+    "0x6d9a3d8e57756462daa84d85c25be6bf7136ce1769edae4b3add3acaab8b6608": {
+      "question": "Southern Miss vs. Troy: O/U 51.5",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with no ambiguity, dispute risk, subjective wording, or early cancellation traps.",
+      "audited_at": 1791345615.8689115
+    },
+    "0x4e4f77e7dbf4cab666e9a1943674d7ae66348e862df03ea6f44b11eb95731928": {
+      "question": "Will the Republican Party control the House after the 2026 Midterm elections?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including runoffs and independent members' caucus decisions.",
+      "audited_at": 1791345618.6581016
+    },
+    "0xb4c14fc723be298cb33ac6910407a1575dfc5cf058d2e7e40742284fb260af2d": {
+      "question": "Milwaukee Brewers vs. San Diego Padres: O/U 7.5",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with contingencies for postponement and cancellation.",
+      "audited_at": 1791345621.3198435
+    },
+    "0x926310f67d5279a6a85550d60d3945805dd6680f14a25b8359e7a55766bfe7af": {
+      "question": "Will United States win on 2026-10-06?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including postponement, cancellation, and data sources for resolution.",
+      "audited_at": 1791345624.1080606
+    },
+    "0xc0affa468d3a9f9edee1b8de49bdbf051378a141239e6c2e932a4864867d2400": {
+      "question": "LoL: Estral Esports vs KaBuM! Ilha das Lendas (BO5) - CBLOL Promotion Playoffs",
+      "confidence": 0.95,
+      "risk_category": "DISPUTE_RISK",
+      "reason": "Potential for dispute if the match is postponed and rescheduled beyond the specified deadline.",
+      "audited_at": 1791345626.9700477
+    },
+    "0xe8b24aac1400d5d57d3657de489f705b0737c108aea5fe9b5a6e102c1c2fe5d8": {
+      "question": "Will Brighton & Hove Albion FC win on 2026-10-10?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including postponement, cancellation, and data sources for resolution.",
+      "audited_at": 1791345629.7713516
+    },
+    "0x1e6860f2f1a5a653cc3aa2a98aa7312012d1e9d77737f4ef2c39f2859a8abd2c": {
+      "question": "Villena: Francesco Maestrelli vs Oliver Tarvet",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including cancellation, tie, and incomplete matches.",
+      "audited_at": 1791345632.5132904
+    },
+    "0x2e8ae9c3a33921f298619d230d37b274cf44ede49d81e4d87bde65281881d4bc": {
+      "question": "Lakers vs. Warriors",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with no ambiguity or subjective interpretation.",
+      "audited_at": 1791345635.1470015
+    },
+    "0x586dec06d8308b7c9812c44a18c92d83c871926899e4cee279a03e145bad0b23": {
+      "question": "Shanghai Rolex Masters: Hubert Hurkacz vs James Duckworth",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including cancellation, tie, and incomplete matches.",
+      "audited_at": 1791345637.9045627
+    },
+    "0xd961e85c58d27699749eaa069e629519e2f4af701a7c2a02a486dca77e101fdc": {
+      "question": "Will Manchester City win the 2026-27 UEFA Champions League Championship?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with no significant ambiguity or subjective interpretation.",
+      "audited_at": 1791345640.5441136
+    },
+    "0xd833db09f12b224bfefa54693dbf08bb4c9617f8a2161aa51351bafbdaec33a7": {
+      "question": "Panthers vs. Kings",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with no ambiguity or subjective interpretation.",
+      "audited_at": 1791345643.1650796
+    },
+    "0x9cf563d7b55aa9aa876d5d7e55126347eee473f0ae56d799e325fdef2bf25297": {
+      "question": "Will the Fed decrease interest rates by 25 bps after the October 2026 meeting?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, referencing official FOMC statements and Federal Reserve data for resolution. There is minimal risk of dispute or ambiguity.",
+      "audited_at": 1791345646.0837052
+    },
+    "0xce610556ec78cfd7894f4169d91fe70e31c2fb49f927fffd7fe7d06530f88d56": {
+      "question": "Will David Lisnard win the 2027 French presidential election?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, referencing official government sources for resolution, with a fallback to 'Other' in case of unresolved ambiguity.",
+      "audited_at": 1791345651.7469938
+    },
+    "0xfd431e070263b5f24e43a8fc44532bf41aa008d99cab2330d979913b1c580bd2": {
+      "question": "Will Ya\u00ebl Braun-Pivet win the 2027 French presidential election?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and align with the standard electoral process, with a fallback to official government results in case of ambiguity.",
+      "audited_at": 1791345654.5763488
+    },
+    "0x2954d35a7d09c05c6c97d835bdfa8c81343a02b9145f39943205c486e878888f": {
+      "question": "Valorant: NRG vs T1 (BO3) - VCT Champions Playoffs",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The contract is clear and covers most scenarios, including cancellation, postponement, and match completion. It specifies a resolution source and allows for minor discrepancies in team names.",
+      "audited_at": 1791345660.4473798
+    },
+    "0x7034c00a24f9edbf325fd5a0b9a63412e469fc8cd2aa9b060fb5ba8e10d7ebef": {
+      "question": "Will Lionel Messi win the 2026 Ballon d'Or?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a fallback option if no winner is declared.",
+      "audited_at": 1791345663.1478498
+    },
+    "0xdf9bf27ee5757c55b44b8b9826ddc9ec3a8809aa3278634c45edbb7fc8f1a3e3": {
+      "question": "Will there be no change in Fed interest rates after the October 2026 meeting?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and objective, referencing specific sources for resolution.",
+      "audited_at": 1791345668.615224
+    },
+    "0x7586a96520578acaaaa4ea84a2582f197f84255da1f3392a7aa300386c187b37": {
+      "question": "Will Benjamin Netanyahu be the next Prime Minister of Israel?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with a defined resolution source and a fallback mechanism if no Prime Minister is sworn in by the deadline.",
+      "audited_at": 1791345671.4567332
+    },
+    "0x75831212595bd5692d113ec955d4d73266c78c24154ebf354a99da87b83b6247": {
+      "question": "Suzhou: Rebecca Sramkova vs Claire Liu",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including cancellation, tie, and incomplete matches.",
+      "audited_at": 1791345674.2135293
+    },
+    "0x46e98430142d1aabb6806a196aac8e412f7225acf68aafed7f3d742662b9800c": {
+      "question": "LoL: FlyQuest vs Shopify Rebellion (BO3) - Demacia Cup Global Invitational Group Stage",
+      "confidence": 0.95,
+      "risk_category": "DISPUTE_RISK",
+      "reason": "Potential for dispute if the match is postponed and rescheduled beyond the specified deadline.",
+      "audited_at": 1791345677.0561812
+    },
+    "0x20fd4cf096367edbd429168764db975b582249a7a3818684d051f445a3efaed1": {
+      "question": "Will Dominique de Villepin win the 2027 French presidential election?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules based on official government results with a fallback to credible reporting.",
+      "audited_at": 1791345691.0738754
+    },
+    "0x405b56fc75f56d7635a94df9836d6cb6f9b9571d1fd33eb165c1e59d1d11801f": {
+      "question": "Strait of Hormuz traffic returns to normal by October 31?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with specific data source and criteria.",
+      "audited_at": 1791345693.773171
+    },
+    "0xcee04ba47d02f6c64642369b34193c355f64de1b9ae425c71ea4efef1989d271": {
+      "question": "US announces end of Iranian blockade by October 31, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific about what constitutes a qualifying announcement, reducing ambiguity and dispute risk.",
+      "audited_at": 1791345696.6454668
+    },
+    "0x34918035a590555ba1fb1d6a019d766ab6e557d63e7f3140b63b4550eee7f417": {
+      "question": "Will the Democrats win the Texas Senate race in 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with multiple reliable sources for verification.",
+      "audited_at": 1791345699.2932951
+    },
+    "0xa653be0f150dbe055a532ea02977338bb31f49d1f723b2a48c1f67847a73cb7d": {
+      "question": "Will Yossi Cohen be the next Prime Minister of Israel?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with a defined resolution source and a fallback mechanism if no Prime Minister is sworn in by the deadline.",
+      "audited_at": 1791345702.1482966
+    },
+    "0xd93366079fab7bcb8a03705969822056b76226a48fd5bb7b1475a5b186cf6f07": {
+      "question": "Will the 2026 Midterm Elections happen as scheduled?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with a primary resolution source and a backup method.",
+      "audited_at": 1791345704.8504286
+    },
+    "0x5cc00a812eeac8e64a688b2229732eca99f974f1a0843a199d05c11c506be18e": {
+      "question": "Will Elon Musk post 100-119 tweets from October 2 to October 9, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear rules with a reliable resolution source.",
+      "audited_at": 1791345707.4762347
+    },
+    "0x35b291fc4017d15fefb3b95baae85ec0f1bc66cb8e8c023b85cd4df0a8069a64": {
+      "question": "Villena: Philip Henning vs Maks Kasnikowski",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including cancellation, tie, and incomplete matches.",
+      "audited_at": 1791345710.2242205
+    },
+    "0xa69ef420d8b4075ad8ba8611d02c63cb2ece46f5c8c643af223c272689b0c96f": {
+      "question": "Will the Fed decrease interest rates by 50+ bps after the October 2026 meeting?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules based on official FOMC statements and federal funds rate changes.",
+      "audited_at": 1791345712.9619126
+    },
+    "0x0808de4f0cfd47947f2d1be51f9a9c52ea0fec76f73a75cfbe79ddec98d8a908": {
+      "question": "2026 Balance of Power: D Senate, R House",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and detailed, covering most scenarios including runoffs and independent caucusing. The resolution sources are objective and credible.",
+      "audited_at": 1791345715.948107
+    },
+    "0x694595d0a008f10e4701285d071e4b08407495f6f8a6bd8cbdd7de522fa9b463": {
+      "question": "Will Nithya Raman win the 2026 Los Angeles mayoral election?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with a fallback to official information in case of ambiguity.",
+      "audited_at": 1791345718.676377
+    },
+    "0x4b3a3eb755775e20c995c9a442354a036dfc06f3526cf0f5ff70ff2b3adef648": {
+      "question": "LoL: GAM Esports vs FlyQuest (BO3) - Demacia Cup Global Invitational Group Stage",
+      "confidence": 0.95,
+      "risk_category": "DISPUTE_RISK",
+      "reason": "Potential for dispute if the match is postponed and rescheduled beyond the specified deadline.",
+      "audited_at": 1791345721.5108805
+    },
+    "0x16c63b7cc37f012b9f59ee164ec03877914c701d06d48291ae8d6fc08a088b0d": {
+      "question": "2026 Balance of Power: D Senate, D House",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and detailed, covering most scenarios including runoffs and independent caucusing. The resolution sources are objective and credible.",
+      "audited_at": 1791345724.5025053
+    },
+    "0x5b8b105a4b1372bd09a5d3c6fe3881b5b8feb96b6d29ac63cf0fb38871c2de86": {
+      "question": "Will the price of Bitcoin be above $82,000 on October 7?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a specific source and time frame.",
+      "audited_at": 1791345729.9715102
+    },
+    "0xc90894254e1f804e3087e89288d192b529287b7de6e3f5230c06868f7777661d": {
+      "question": "Israel accuses Iran/proxies of plane stabbing incident by Oct 31?",
+      "confidence": 0.95,
+      "risk_category": "DISPUTE_RISK",
+      "reason": "The contract relies heavily on the interpretation of what constitutes a 'public announcement' and whether the statement explicitly claims deliberate causation by Iran or its affiliates.",
+      "audited_at": 1791345732.9729013
+    },
+    "0x24766201e5d9eb8121b5ed7747354bf3045022ed6c84c555b41ca38aa33c389d": {
+      "question": "Will Manchester United FC win on 2026-10-10?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with fallback data sources.",
+      "audited_at": 1791345738.4193642
+    },
+    "0x9b5ff439175bd0bd854e0f7ea3a9c370ca9316d46c016d879b2d702300a84764": {
+      "question": "Plague pandemic in 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific regarding the WHO's role in declaring a plague pandemic.",
+      "audited_at": 1791345741.1255524
+    },
+    "0x6bd56627aa21311850825edb27e53434a0e17a4f782be0086bc07f71eee00d0d": {
+      "question": "Putin out as President of Russia by December 31, 2026?",
+      "confidence": 0.95,
+      "risk_category": "DISPUTE_RISK",
+      "reason": "Potential for dispute over what constitutes 'credible reporting' and interpretation of 'permanently prevented'.",
+      "audited_at": 1791345743.9389212
+    },
+    "0x788db4cd3553694026cb5cc7d8e13f4aa4bec1431b7fee2eb07f6950dd40e79d": {
+      "question": "Will the price of Bitcoin be above $88,000 on October 7?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a specific source and time frame.",
+      "audited_at": 1791345746.5803244
+    },
+    "0x0fcfd063f06450c331206c5ac89cd34cfa80537ea42f7cfb79da46d735d4890e": {
+      "question": "Will Elon Musk post <40 tweets from October 5 to October 7, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear rules with specific timeframe and resolution source.",
+      "audited_at": 1791345749.200861
+    },
+    "0x9ed0ecc8b8589e67967d44c4420944a41b6a6806419019a1581d514174eee9b1": {
+      "question": "Will Naftali Bennett be the next Prime Minister of Israel?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with a defined resolution source and a fallback mechanism if no Prime Minister is sworn in by the deadline.",
+      "audited_at": 1791345752.0428317
+    },
+    "0x7987a821b8032824f1805ee39eb5dfb8f64603e4e9e673259eb76f82b439fd3d": {
+      "question": "2026 Balance of Power: Other",
+      "confidence": 0.95,
+      "risk_category": "AMBIGUOUS_RULES",
+      "reason": "Rules for determining control in case of a tie are complex and may lead to interpretation issues.",
+      "audited_at": 1791345754.9771254
+    },
+    "0x2231dd1fdef0b7b5fc1f99e9dcc27230b2c4c98f0c5541a3b023fa795b46751a": {
+      "question": "Will Mexico win on 2026-10-05?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including postponement, cancellation, and data sources for resolution.",
+      "audited_at": 1791345757.7833157
+    },
+    "0x3d5321854a1571f6f9f27fd6a87fbefdde464260a19b03404d2eb9d97f3d2b06": {
+      "question": "Will Michael Olise win the 2026 Ballon d'Or?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a fallback option if no winner is declared.",
+      "audited_at": 1791345760.4331157
+    },
+    "0xd6f75e5779e98d1fb5f738f4fa0351ed8b01591c8ab9ab502d3b3bdbe4946fb5": {
+      "question": "Saudi Arabia military action against Yemen on October 1?",
+      "confidence": 0.95,
+      "risk_category": "DISPUTE_RISK",
+      "reason": "Potential conflicting reports from resolution sources could delay resolution.",
+      "audited_at": 1791345763.2029343
+    },
+    "0xc15a55dde7131ceed5bc73b35e354b5b6ae68299919e73ab4118504206c0c458": {
+      "question": "Will the price of Bitcoin be above $90,000 on October 7?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a specific source and time frame.",
+      "audited_at": 1791345765.8918035
+    },
+    "0x5c79dfde05559b79a9cb9f7c4187e4d49632dd042572ae676952f812732591cc": {
+      "question": "Strait of Hormuz traffic returns to normal by December 31?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with specific data source and criteria.",
+      "audited_at": 1791345768.5765557
+    },
+    "0x00a806ea376492839079ded2431efdb78b48fc3081e917581769eb31c84a52ac": {
+      "question": "Shanghai Rolex Masters: Adrian Mannarino vs Nikoloz Basilashvili",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and cover most scenarios, including cancellation, tie, and incomplete matches.",
+      "audited_at": 1791345771.3381076
+    },
+    "0x3738ad9665480991affe3ba286cd035516e17d1f8b7703e05088ec19c70c21a4": {
+      "question": "US x Iran ceasefire continues through October 31?",
+      "confidence": 0.95,
+      "risk_category": "DISPUTE_RISK",
+      "reason": "Potential conflicting reports from resolution sources could delay resolution.",
+      "audited_at": 1791345776.8967283
+    },
+    "0xaa81a80c0812f3594d6a02bfe9b217bf1d555c3fd45713cb328d0f6bce593f45": {
+      "question": "Shanghai Rolex Masters: Yibing Wu vs Michael Zheng",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with defined outcomes for various scenarios.",
+      "audited_at": 1791345779.5705502
+    },
+    "0x117f9132e15eeff2621be398fa57092cf446a2f02cbd7ee8e3714226705c4d3b": {
+      "question": "Will OpenAI announce another Millennium Prize solution by December 31, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear rules with specific qualifying conditions and resolution sources.",
+      "audited_at": 1791345782.2360253
+    },
+    "0x99d7df87fd3704af2b805b0caea4fe0e87d4dbc3dbe5ce9d0dcb260d2647f0c4": {
+      "question": "Antofagasta: Joaquin Aguilar vs Nicolas Villalon",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with defined outcomes for various scenarios.",
+      "audited_at": 1791345784.8941276
+    },
+    "0x00ad3bb5284b0b2314b1a2d42812fe292f606619c6278bd95c9d905816c240f6": {
+      "question": "Will Sarah Huckabee Sanders win the 2028 Republican presidential nomination?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific regarding the resolution criteria and source.",
+      "audited_at": 1791345787.5668213
+    },
+    "0x87091dc5932f015d80c40e71e47cb043c3f8b6098484eb5bc3943cf35ee9afc1": {
+      "question": "Will Kylian Mbapp\u00e9 win the 2026 Ballon d'Or?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a fallback option if no winner is declared.",
+      "audited_at": 1791345790.2091808
+    },
+    "0xb8b5349814450b8bba2ecdda2eeb9f48bd3c795bfb858bedf7a383712b877743": {
+      "question": "Will the Republicans win the Kansas Senate race in 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with multiple reliable sources for verification.",
+      "audited_at": 1791345792.8561037
+    },
+    "0x13b2a077129b9dc55bd81d1d20e51830673c1aaee5cb06d805a08c26b68f4d32": {
+      "question": "Will Elon Musk post 120-139 tweets from October 2 to October 9, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear rules with a reliable resolution source.",
+      "audited_at": 1791345795.496512
+    },
+    "0xccb5b9ffc72ef6411d01d29f027945d980327daff39764e6c49e2153b851a9a7": {
+      "question": "Will the price of Bitcoin be above $92,000 on October 7?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a specific source and time frame.",
+      "audited_at": 1791345800.9294589
+    },
+    "0x30f729ef18553d8956bfd7ae7a1e96dbad07e2476160239b23ec10e6cdc5f01b": {
+      "question": "Will Rodri win the 2026 Ballon d'Or?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a fallback option if no winner is declared.",
+      "audited_at": 1791345803.5850558
+    },
+    "0x998bc71817b2d76921d1999ce0f3431cfd5945583667a371280ca2b430b0c06e": {
+      "question": "2026 Balance of Power: R Senate, D House",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and detailed, covering most scenarios including runoffs and independent caucusing decisions. The resolution sources are also clearly defined.",
+      "audited_at": 1791345806.5733035
+    },
+    "0x12dc2b61723b2a54fc1947a307389b5f32038e7a29a0e936ad1fe410b969d06a": {
+      "question": "Will Harry Kane win the 2026 Ballon d'Or?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a fallback option if no winner is declared.",
+      "audited_at": 1791345809.2504015
+    },
+    "0xe016472b442b43d88ae4d406a53ff61b1e370b55bfbfb694b0f38a1e0d336d43": {
+      "question": "Will Elon Musk post 65-89 tweets from October 5 to October 7, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear rules with specific timeframe and resolution source.",
+      "audited_at": 1791345811.8930047
+    },
+    "0x26f410f7518fa199678ef57f02637fc88be9b3b593346b00946d7ea451f4521b": {
+      "question": "Will Ousmane Demb\u00e9l\u00e9 win the 2026 Ballon d'Or?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a fallback option if no winner is declared.",
+      "audited_at": 1791345814.5426981
+    },
+    "0xff6a852f912fc6548ec130b05de014f21b1a26342adedef20e4103bb97b4e81d": {
+      "question": "Will Bitcoin dip to $62,500 in October?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules based on specific exchange data.",
+      "audited_at": 1791345817.1738052
+    },
+    "0xba4c6030ac1d9e1c791cd735eda69ff77d47f5d9e584f4b145bca578d2eb6991": {
+      "question": "Wuning 3: Omar Jasika vs Marat Sharipov",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with minimal ambiguity and low dispute risk.",
+      "audited_at": 1791345819.8322816
+    },
+    "0x7c3ff25ec12c13a5c5d4225774793e8708c977ce80ba36e479ccd4ee6a868396": {
+      "question": "Game Handicap: FLY (-1.5) vs GAM Esports (+1.5)",
+      "confidence": 0.95,
+      "risk_category": "AMBIGUOUS_RULES",
+      "reason": "The rule regarding a match beginning but not completing due to forfeiture, disqualification, or walkover leading to a 50-50 resolution is ambiguous and could lead to disputes.",
+      "audited_at": 1791345822.89685
+    },
+    "0xa222013f2baf3e9eb0613b7dc45d2fd8a3e63177c21bd282d9bb5133d6a44986": {
+      "question": "Will Samuel Alito announce his retirement by December 31, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with no ambiguity, dispute risk, subjective wording, or early cancellation traps.",
+      "audited_at": 1791345825.6589549
+    },
+    "0xa23467e95abf6544819a9dcb90b7719846aacf300b991ea07204e1f1649097cb": {
+      "question": "Will Barcelona win the 2026-27 UEFA Champions League Championship?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with no ambiguity or subjective interpretation needed.",
+      "audited_at": 1791345831.259616
+    },
+    "0x45a79193a66e5078a29c625e78e0d4b9a059edef8e206097c48bbfe7eaf9590e": {
+      "question": "Will Yair Lapid be the next Prime Minister of Israel?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with a defined resolution date and criteria for determining the outcome.",
+      "audited_at": 1791345834.005269
+    },
+    "0x94521176f57d2ce81dde01e0b7699ca4279423042d37ed53908f0c8bfefe7e14": {
+      "question": "Will the Republicans win the Texas Senate race in 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with multiple reliable sources for verification.",
+      "audited_at": 1791345836.6595435
+    },
+    "0xc574bd2c370e346f31f9138a6466ea9ca9398dfc7c14f9ff14e4bae1b5ad36b0": {
+      "question": "Will Carlos Cuerpo be the next Prime Minister of Spain?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "The rules are clear and specific, with a defined resolution date and criteria for determining the outcome.",
+      "audited_at": 1791345839.4145508
+    },
+    "0xf273da5c76e0116c0ec63787453b54d74f0c182256dff4ed2f27f08b14048f7c": {
+      "question": "Will Christine Lagarde win the 2027 French presidential election?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules based on official government results with a fallback to credible reporting.",
+      "audited_at": 1791345842.120889
+    },
+    "0x2ebafd3610e3f41c4e8f7a82a9450afb4324978dff5ccbf5ad1102abde6f6d05": {
+      "question": "Spread: San Diego Padres (-1.5)",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with no ambiguity, dispute risk, subjective wording, or early cancellation traps.",
+      "audited_at": 1791345844.8616576
+    },
+    "0xaa1df7d50d4cf7cfed01d8717530fe624a2d251b6cbf104c41a4adcd76a1e032": {
+      "question": "US x Iran ceasefire continues through October 7?",
+      "confidence": 0.95,
+      "risk_category": "DISPUTE_RISK",
+      "reason": "Potential for conflicting reports from resolution sources.",
+      "audited_at": 1791345847.5992908
+    },
+    "0x6c8bc8cd9b2d64358ad995ccee8e998cf0f81a89c4be0b8e51eadf09c6be60ba": {
+      "question": "Will Bitcoin dip to $60,000 by December 31, 2026?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules based on specific exchange and time frame.",
+      "audited_at": 1791345850.2843904
+    },
+    "0xa34edb6c898232378a9cc08744842df2cd89d278ba45b012bed3ac10c7241c4d": {
+      "question": "Will Lamine Yamal win the 2026 Ballon d'Or?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a fallback option if no winner is declared.",
+      "audited_at": 1791345852.9501078
+    },
+    "0x3f6c2e27ec0208fb4d4a12435ec0a0a7afb0cda120fef96dc5d9c13d78efe3db": {
+      "question": "Will the price of Bitcoin be above $80,000 on October 7?",
+      "confidence": 0.95,
+      "risk_category": "NONE",
+      "reason": "Clear resolution rules with a specific source and time frame.",
+      "audited_at": 1791345855.609951
+    }
+  }
+}

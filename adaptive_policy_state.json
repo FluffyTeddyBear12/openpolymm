@@ -1,0 +1,14 @@
+{
+  "min_edge_pct": 0.0031,
+  "max_positions_per_market": 2,
+  "hold_period_seconds": 1.0,
+  "reserve_cash_pct": 0.0,
+  "max_exposure_pct": 0.5,
+  "sizing_multiplier": 1.0,
+  "total_adaptations": 31,
+  "recovered_pnl": 96.2761,
+  "primary_bottleneck": "SUB_THRESHOLD_EDGE",
+  "model_version": "Model v2.0",
+  "status": "ONLINE ACTIVE LEARNING: ACTIVE (Model v2.0)",
+  "updated_at": 1791502025.289336
+}
