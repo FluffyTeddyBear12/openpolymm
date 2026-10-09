@@ -399,6 +399,7 @@ class MakerTakerExecutor:
                         initial_taker_depth=init_taker_depth,
                         initial_taker_price=taker_price,
                         fee_rate=taker_fee_rate,
+                        required_size=size,
                     )
                     if evade:
                         warn_msg = f"🚨 [TOXICITY EVASION] Aborting Leg 1: {reason} | metrics={metrics}"

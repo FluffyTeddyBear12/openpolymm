@@ -222,6 +222,13 @@ class MissedReason(str, Enum):
     CLOB_ORDER_KILLED = "CLOB_ORDER_KILLED"
     CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
     EXPOSURE_LIMIT_EXCEEDED = "EXPOSURE_LIMIT_EXCEEDED"
+    MAKER_TIMEOUT = "MAKER_TIMEOUT"
+    TOXICITY_EVASION = "TOXICITY_EVASION"
+    LEG2_INSUFFICIENT_DEPTH = "LEG2_INSUFFICIENT_DEPTH"
+    PARITY_EDGE_EVAPORATED = "PARITY_EDGE_EVAPORATED"
+    TAKER_MICRO_PRICE_SPIKE = "TAKER_MICRO_PRICE_SPIKE"
+    TOXIC_DOBI_SKEW = "TOXIC_DOBI_SKEW"
+    VOLUME_BURST_SURGE = "VOLUME_BURST_SURGE"
 
 
 class ShadowParityTracker:
@@ -248,9 +255,25 @@ class ShadowParityTracker:
             MissedReason.ZERO_LIQUIDITY.value,
             MissedReason.ASYMMETRIC_DEPTH.value,
             MissedReason.WIDE_SPREAD.value,
+            MissedReason.MAKER_TIMEOUT.value,
+            MissedReason.TOXICITY_EVASION.value,
+            MissedReason.LEG2_INSUFFICIENT_DEPTH.value,
+            MissedReason.PARITY_EDGE_EVAPORATED.value,
+            MissedReason.TAKER_MICRO_PRICE_SPIKE.value,
+            MissedReason.TOXIC_DOBI_SKEW.value,
+            MissedReason.VOLUME_BURST_SURGE.value,
             "ZERO_LIQUIDITY",
             "ASYMMETRIC_DEPTH",
-            "WIDE_SPREAD"
+            "WIDE_SPREAD",
+            "MAKER_TIMEOUT",
+            "TOXICITY_EVASION",
+            "LEG2_INSUFFICIENT_DEPTH",
+            "PARITY_EDGE_EVAPORATED",
+            "TAKER_MICRO_PRICE_SPIKE",
+            "TOXIC_DOBI_SKEW",
+            "VOLUME_BURST_SURGE",
+            "PARITY_COST_EXCEEDS_BREAKEVEN",
+            "LEG2_DEPTH_COLLAPSE",
         ):
             pnl = 0.0
         elif exp_prof is not None:
@@ -491,7 +514,19 @@ class ActivePolicyRewriter:
         val = ""
 
         with self.lock:
-            if reason in (MissedReason.MARKET_ALREADY_ACTIVE.value, MissedReason.CONCURRENCY_EXHAUSTED.value, "MARKET_ALREADY_ACTIVE", "CONCURRENCY_EXHAUSTED"):
+            if reason in (MissedReason.CONCURRENCY_EXHAUSTED.value, "CONCURRENCY_EXHAUSTED"):
+                cur_conc = self.params.get("max_concurrent_positions", 5)
+                new_conc = min(10, cur_conc + 1)
+                cur_hold = self.params.get("hold_period_seconds", 1.0)
+                new_hold = max(0.5, round(cur_hold * 0.9, 2))
+                if new_conc != cur_conc or new_hold != cur_hold:
+                    self.params["max_concurrent_positions"] = new_conc
+                    self.params["hold_period_seconds"] = new_hold
+                    param_name = f"max_concurrent={new_conc}, hold_sec={new_hold}s"
+                    val = f"{new_conc}"
+                    adapted = True
+
+            elif reason in (MissedReason.MARKET_ALREADY_ACTIVE.value, "MARKET_ALREADY_ACTIVE"):
                 cur_pos = self.params["max_positions_per_market"]
                 new_pos = min(5, cur_pos + 1)
                 cur_hold = self.params["hold_period_seconds"]
@@ -501,6 +536,15 @@ class ActivePolicyRewriter:
                     self.params["hold_period_seconds"] = new_hold
                     param_name = f"max_positions={new_pos}, hold_sec={new_hold}s"
                     val = f"{new_pos}"
+                    adapted = True
+
+            elif reason in (getattr(MissedReason, "MAKER_TIMEOUT", "MAKER_TIMEOUT").value if hasattr(getattr(MissedReason, "MAKER_TIMEOUT", None), "value") else "MAKER_TIMEOUT", "MAKER_TIMEOUT"):
+                cur_timeout = self.params.get("maker_timeout_seconds", 1.0)
+                new_timeout = min(2.5, max(0.5, round(cur_timeout + 0.25, 2)))
+                if new_timeout != cur_timeout:
+                    self.params["maker_timeout_seconds"] = new_timeout
+                    param_name = "maker_timeout_seconds"
+                    val = f"{new_timeout}s"
                     adapted = True
 
             elif reason in (MissedReason.SUB_THRESHOLD_EDGE.value, "SUB_THRESHOLD_EDGE") and edge > 0:
@@ -1626,7 +1670,8 @@ class RiskSizingEngine:
         Check active positions and recycle collateral for any position whose hold period expired.
         Principal and profit are returned to available_cash, releasing locked_collateral.
         """
-        if getattr(self, 'is_live', False):
+        exec_mode = getattr(self.dash_state, "state", {}).get("execution_mode", "Paper Trading") if self.dash_state else "Paper Trading"
+        if exec_mode == "Live Trading" and getattr(self, "is_live", False):
             return []
 
         if now is None:
@@ -1661,6 +1706,33 @@ class RiskSizingEngine:
                     )
             self._sync_to_dash_state()
 
+        return released
+
+    def close_position(self, market_id: str, realized_profit: float = 0.0) -> bool:
+        """
+        Evicts any position matching market_id or market_id_* from open_positions
+        and releases locked collateral back to available cash.
+        """
+        released = False
+        with self.lock:
+            to_remove = [
+                k for k, p in list(self.open_positions.items())
+                if k == market_id or k.startswith(f"{market_id}_") or (isinstance(p, dict) and p.get("market_id") == market_id)
+            ]
+            for k in to_remove:
+                pos = self.open_positions.pop(k, None)
+                if isinstance(pos, dict):
+                    size = float(pos.get("size", 0.0) or 0.0)
+                    profit = realized_profit if realized_profit != 0.0 else float(pos.get("expected_profit", 0.0) or 0.0)
+                    self.locked_collateral = max(0.0, round(self.locked_collateral - size, 4))
+                    self.available_cash = max(0.0, round(self.available_cash + (size + profit), 4))
+                    if profit < 0:
+                        self.daily_loss += abs(profit)
+                        if self.daily_loss >= self.daily_loss_limit:
+                            self.circuit_breaker_active = True
+                    released = True
+        if released:
+            self._sync_to_dash_state()
         return released
 
     def check_trade_gating_reason(self, risk_amount: float, market_id: Optional[str] = None) -> Optional[str]:
@@ -4788,6 +4860,29 @@ class LiveExecutor(PaperSimulator):
                     self.dash_state.state["projected_profit"] = projected_profit
                     self.dash_state.state["mark_to_market_equity"] = mark_to_market_equity
                     self.dash_state.dirty = True
+
+            # Reconcile risk open_positions with live held positions
+            if self.risk and hasattr(self.risk, "open_positions"):
+                live_market_ids = set()
+                for p in active_positions:
+                    cid = str(p.get("conditionId") or "")
+                    m = str(p.get("market") or "")
+                    asset = str(p.get("asset") or "")
+                    if cid: live_market_ids.add(cid)
+                    if m: live_market_ids.add(m)
+                    if asset: live_market_ids.add(asset)
+
+                with self.risk.lock:
+                    open_keys = list(self.risk.open_positions.keys())
+                    stale_markets = set()
+                    for k in open_keys:
+                        pos = self.risk.open_positions.get(k, {})
+                        m_id = pos.get("market_id", k.split("_")[0] if "_" in k else k)
+                        if m_id and m_id not in live_market_ids:
+                            stale_markets.add(m_id)
+
+                for m_id in stale_markets:
+                    self.risk.close_position(m_id)
                     
             return {
                 "active_count": len(active_positions),
@@ -5149,7 +5244,13 @@ class LiveExecutor(PaperSimulator):
                     opp_copy = dict(opp)
                     opp_copy["trade_size"] = trade_size
                     opp_copy["expected_profit"] = expected_profit
-                    miss_r = MissedReason.CONCURRENCY_EXHAUSTED if action in ("MAKER_TIMEOUT_ZERO_LOSS", "TOXICITY_EVASION_CANCEL") else MissedReason.CLOB_ORDER_KILLED
+                    if action == "TOXICITY_EVASION_CANCEL":
+                        sub_r = details.get("reason", "TOXICITY_EVASION") if isinstance(details, dict) else "TOXICITY_EVASION"
+                        miss_r = getattr(MissedReason, sub_r, MissedReason.TOXICITY_EVASION)
+                    elif action == "MAKER_TIMEOUT_ZERO_LOSS":
+                        miss_r = MissedReason.MAKER_TIMEOUT
+                    else:
+                        miss_r = MissedReason.CLOB_ORDER_KILLED
                     self.shadow_tracker.record_missed(opp_copy, miss_r)
                 return False
 
@@ -5461,7 +5562,11 @@ class LiveExecutor(PaperSimulator):
                                 if market_id in self.risk.open_positions:
                                     del self.risk.open_positions[market_id]
                             cooldown_duration = 5.0
-                            miss_r = MissedReason.CONCURRENCY_EXHAUSTED
+                            if action == "TOXICITY_EVASION_CANCEL":
+                                sub_r = details.get("reason", "TOXICITY_EVASION") if isinstance(details, dict) else "TOXICITY_EVASION"
+                                miss_r = getattr(MissedReason, sub_r, MissedReason.TOXICITY_EVASION)
+                            else:
+                                miss_r = MissedReason.MAKER_TIMEOUT
                         else:
                             realized_loss = float(details.get("realized_loss", 0.0) or 0.0) if isinstance(details, dict) else 0.0
                             if realized_loss > 0:

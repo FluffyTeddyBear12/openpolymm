@@ -233,15 +233,18 @@ class MicrostructureGuard:
         initial_taker_depth: float,
         initial_taker_price: float,
         fee_rate: float = 0.0,
+        required_size: float = 10.0,
+        min_edge_buffer: float = 0.0010,
+        evasion_buffer: float = 0.0020,
     ) -> Tuple[bool, str, dict]:
         """
-        Pre-fill Toxicity Evasion Engine.
+        Pre-fill Toxicity Evasion Engine with Dynamic Calibration.
         Evaluates 5 adverse selection triggers during Leg 1 resting phase:
-          Trigger 1: Leg 2 Depth Collapse (live_taker_depth / depth_500ms_ago <= 0.50).
-          Trigger 2: Parity Edge Evaporation (maker_price + live_taker_ask * (1 + fee) >= 0.9950).
-          Trigger 3: Micro-Price Spike on Taker Leg (drift >= 0.0030 / 3 ticks).
-          Trigger 4: Toxic DOBI Skew against maker position (dobi <= -0.65).
-          Trigger 5: Volume Burst Surge (trade surge ratio >= 4.5).
+          Trigger 1: Leg 2 Depth Collapse / Insufficient Depth
+          Trigger 2: Dynamic Parity Edge Evaporation
+          Trigger 3: Micro-Price Spike on Taker Leg
+          Trigger 4: Toxic DOBI Skew against maker position
+          Trigger 5: Volume Burst Surge
 
         Returns:
           (True, trigger_name, metrics) if toxicity is detected -> CANCEL Leg 1 immediately!
@@ -267,7 +270,14 @@ class MicrostructureGuard:
             depth_500ms_ago = initial_taker_depth if initial_taker_depth > 0 else 1.0
 
         depth_ratio = live_taker_depth / depth_500ms_ago if depth_500ms_ago > 0 else 1.0
+
+        # Dynamic Parity Edge Evaporation Metrics
+        initial_cost = maker_price + (initial_taker_price * (1.0 + fee_rate))
+        initial_edge = 1.0000 - initial_cost
         parity_cost = maker_price + (live_taker_ask * (1.0 + fee_rate))
+        live_edge = 1.0000 - parity_cost
+        edge_drift = parity_cost - initial_cost
+
         micro_drift = self.compute_micro_drift(token_taker, window_ms=500.0)
         dobi = self.compute_dual_obi(token_maker, token_taker)
         trade_surge = self.compute_trade_velocity_surge(token_taker, short_ms=500.0)
@@ -277,31 +287,46 @@ class MicrostructureGuard:
             "depth_500ms_ago": round(depth_500ms_ago, 2),
             "depth_ratio": round(depth_ratio, 4),
             "live_taker_ask": round(live_taker_ask, 4),
+            "initial_taker_price": round(initial_taker_price, 4),
+            "initial_cost": round(initial_cost, 4),
+            "initial_edge": round(initial_edge, 6),
             "parity_cost": round(parity_cost, 4),
+            "live_edge": round(live_edge, 6),
+            "edge_drift": round(edge_drift, 6),
             "micro_drift": round(micro_drift, 5),
             "dobi": round(dobi, 4),
             "trade_surge": round(trade_surge, 2),
             "maker_price": round(maker_price, 4),
+            "required_size": round(required_size, 2),
         }
 
-        # Trigger 1: Leg 2 Depth Collapse (liquidity evaporating on taker leg)
+        # Trigger 1: Leg 2 Insufficient Depth / Depth Collapse
+        if live_taker_depth < required_size:
+            return True, "LEG2_INSUFFICIENT_DEPTH", metrics
         if depth_ratio <= 0.50 or (initial_taker_depth > 0 and live_taker_depth <= 0.50 * initial_taker_depth):
             return True, "LEG2_DEPTH_COLLAPSE", metrics
 
-        # Trigger 2: Parity Edge Evaporation (taker ask pushed total cost >= 0.9950)
-        if parity_cost >= 0.9950:
+        # Trigger 2: Dynamic Parity Edge Evaporation
+        if parity_cost >= (1.0000 - min_edge_buffer):
+            return True, "PARITY_COST_EXCEEDS_BREAKEVEN", metrics
+        if initial_edge > 0.0010 and live_edge <= (initial_edge * 0.50) and edge_drift >= evasion_buffer:
             return True, "PARITY_EDGE_EVAPORATED", metrics
 
-        # Trigger 3: Micro-Price Spike on Taker Leg (taker fair value jumped >= 3 ticks)
-        if micro_drift >= 0.0030:
+        # Trigger 3: Micro-Price Spike on Taker Leg
+        if micro_drift >= 0.0040 and live_taker_ask > initial_taker_price:
             return True, "TAKER_MICRO_PRICE_SPIKE", metrics
 
         # Trigger 4: Toxic DOBI Skew against maker position
-        if dobi <= -0.65:
+        q_maker = self.get_latest_quote(token_maker)
+        sum_l1 = live_taker_depth + (q_maker.bid_size if q_maker else 0.0)
+        if sum_l1 >= required_size * 5.0 and dobi <= -0.80:
             return True, "TOXIC_DOBI_SKEW", metrics
 
-        # Trigger 5: Volume Burst Surge (trade surge ratio >= 4.5)
-        if trade_surge >= 4.5:
+        # Trigger 5: Volume Burst Surge
+        t_queue = self.trades.get(token_taker)
+        now_ts = time.time()
+        short_vol = sum(t.size for t in t_queue if t.timestamp >= (now_ts - 0.5)) if t_queue else 0.0
+        if trade_surge >= 6.0 and short_vol >= max(50.0, required_size * 2.0):
             return True, "VOLUME_BURST_SURGE", metrics
 
         return False, "SAFE", metrics
