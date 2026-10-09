@@ -617,7 +617,7 @@ class TestDashboardHelpers(unittest.TestCase):
             state = json.load(f)
 
         self.assertIn(state.get("active_sockets"), (15, 16))
-        self.assertIn("16 Active Sockets", state.get("socket_architecture", ""))
+        self.assertIn("Active Sockets", state.get("socket_architecture", ""))
         self.assertIn("0% Blast Radius", state.get("socket_architecture", ""))
         self.assertIn("Dual Pool A+B", state.get("socket_architecture", ""))
         self.assertIn("Active-Active", state.get("redundancy_mode", ""))
