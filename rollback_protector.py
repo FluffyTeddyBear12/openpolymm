@@ -29,29 +29,33 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 logger = logging.getLogger("RollbackProtector")
 
 try:
-    from py_clob_client_v2.clob_types import (
-        OrderArgsV2,
-        PostOrdersV2Args,
+    from py_clob_client.clob_types import (
+        OrderArgs as OrderArgsV2,
         OrderType,
         PartialCreateOrderOptions,
     )
 except ImportError:
-    try:
-        from py_clob_client.clob_types import (
-            OrderArgs as OrderArgsV2,
-            OrderType,
-            PartialCreateOrderOptions,
-        )
-        PostOrdersV2Args = None
-    except ImportError:
-        class OrderType:
-            GTC = "GTC"
-            FOK = "FOK"
-            GTD = "GTD"
-            FAK = "FAK"
-        OrderArgsV2 = None
-        PostOrdersV2Args = None
-        PartialCreateOrderOptions = None
+    OrderArgsV2 = None
+    OrderType = None
+    PartialCreateOrderOptions = None
+
+try:
+    from py_clob_client_v2.clob_types import PostOrdersV2Args
+except ImportError:
+    PostOrdersV2Args = None
+
+if PostOrdersV2Args is None:
+    class PostOrdersV2Args:
+        def __init__(self, order: Any, orderType: Any):
+            self.order = order
+            self.orderType = orderType
+
+if OrderType is None:
+    class OrderType:
+        GTC = "GTC"
+        FOK = "FOK"
+        GTD = "GTD"
+        FAK = "FAK"
 
 if PartialCreateOrderOptions is None:
     class PartialCreateOrderOptions:
@@ -64,6 +68,7 @@ if PartialCreateOrderOptions is None:
             self.tick_size = tick_size
             self.neg_risk = neg_risk
             self.version = version
+
 
 
 def _round_to_tick_size(price: float, tick_size: float = 0.001) -> float:
@@ -419,6 +424,16 @@ class RollbackProtector:
                         "side": "SELL",
                         "token_id": token_id,
                     }
+
+                if not isinstance(args_obj, dict):
+                    if not hasattr(args_obj, "fee_rate_bps"):
+                        setattr(args_obj, "fee_rate_bps", 0)
+                    if not hasattr(args_obj, "nonce"):
+                        setattr(args_obj, "nonce", 0)
+                    if not hasattr(args_obj, "expiration"):
+                        setattr(args_obj, "expiration", 0)
+                    if not hasattr(args_obj, "taker"):
+                        setattr(args_obj, "taker", "0x0000000000000000000000000000000000000000")
 
                 if order_opts is not None:
                     try:
