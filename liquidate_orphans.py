@@ -30,11 +30,11 @@ def get_client() -> ClobClient:
     key = os.getenv("POLYMARKET_PRIVATE_KEY") or os.getenv("POLYGON_PRIVATE_KEY")
     proxy = os.getenv("POLYMARKET_ADDRESS") or os.getenv("POLYMARKET_PROXY_ADDRESS") or "0xe7d565d58c61e2b96adb0e4518e7c33978402e7f"
     try:
-        sig_type = int(os.getenv("POLYMARKET_SIGNATURE_TYPE", 2))
+        sig_type = int(os.getenv("POLYMARKET_SIGNATURE_TYPE", 3))
     except (ValueError, TypeError):
-        sig_type = 2
-    if sig_type not in (0, 1, 2):
-        sig_type = 2
+        sig_type = 3
+    if sig_type not in (0, 1, 2, 3):
+        sig_type = 3
     host = os.getenv("POLYMARKET_HOST", "https://clob.polymarket.com")
 
     client = ClobClient(

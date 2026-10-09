@@ -3828,13 +3828,13 @@ class LiveExecutor(PaperSimulator):
         key = os.environ.get('POLYMARKET_PRIVATE_KEY', '')
         self.address = os.environ.get('POLYMARKET_ADDRESS', '')
         
-        sig_type_str = os.environ.get('POLYMARKET_SIGNATURE_TYPE', '2')
+        sig_type_str = os.environ.get('POLYMARKET_SIGNATURE_TYPE', '3')
         try:
             self.signature_type = int(sig_type_str)
         except (ValueError, TypeError):
-            self.signature_type = 2
-        if self.signature_type not in (0, 1, 2):
-            self.signature_type = 2
+            self.signature_type = 3
+        if self.signature_type not in (0, 1, 2, 3):
+            self.signature_type = 3
         
         self.last_balance_sync_time = 0.0
         self.last_unwind_time = 0.0
