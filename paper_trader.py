@@ -3833,6 +3833,8 @@ class LiveExecutor(PaperSimulator):
             self.signature_type = int(sig_type_str)
         except (ValueError, TypeError):
             self.signature_type = 2
+        if self.signature_type not in (0, 1, 2):
+            self.signature_type = 2
         
         self.last_balance_sync_time = 0.0
         self.last_unwind_time = 0.0
