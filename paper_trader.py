@@ -45,6 +45,7 @@ from liquidity_filter import (
 from rollback_protector import RollbackProtector, safe_unwind_or_limit_exit
 from maker_taker_engine import MakerTakerExecutor
 from order_reaper import OrderReaper
+from concurrent_leg_executor import ConcurrentLegExecutor
 from ha_notifier import send_trade_notification
 try:
     from negrisk_scanner import NegRiskBasketScanner, NegRiskAdapter
@@ -2392,7 +2393,7 @@ class PaperSimulator:
                 return None
 
             expected_profit = trade_size * edge
-            return {
+            opp_dict = {
                 "market_id": market_id,
                 "ask_yes": ask_yes,
                 "ask_no": ask_no,
@@ -2409,8 +2410,15 @@ class PaperSimulator:
                 "short_id": short_id,
                 "question": q_name or short_id,
                 "market_meta": m_info.get('market_meta', m_info) if m_info else None,
-                "tick_size": float(m_info.get('tick_size', 0.001)) if m_info else 0.001
+                "tick_size": float(m_info.get('tick_size', 0.001)) if m_info else 0.001,
+                "neg_risk": bool(m_info.get('neg_risk', False)) if m_info else False,
             }
+            cost_pair = ask_yes + ask_no
+            shares_avail = int(trade_size / cost_pair) if cost_pair > 0 else 0
+            if edge >= self.min_edge and shares_avail >= 5:
+                opp_dict["execution_type"] = "simultaneous_dual_taker"
+                opp_dict["shares"] = float(shares_avail)
+            return opp_dict
 
 
         return None
@@ -4138,6 +4146,14 @@ class LiveExecutor(PaperSimulator):
             order_reaper=self.order_reaper,
         )
 
+        self.concurrent_leg_executor = ConcurrentLegExecutor(
+            self.client,
+            dash_state=self.dash_state,
+            rollback_protector=RollbackProtector,
+            order_reaper=self.order_reaper,
+            fee_rate=self.fee_rate,
+        )
+
         # 1.0s Periodic Background Balance & Position Sync Thread
         self._sync_stop_event = threading.Event()
         self._sync_thread = threading.Thread(
@@ -4992,6 +5008,53 @@ class LiveExecutor(PaperSimulator):
             return super().execute_arbitrage(opp)
 
         target_state = self.dash_state
+
+        # Simultaneous Dual-Leg Batch Execution Core
+        if opp.get("execution_type") == "simultaneous_dual_taker" and self.client and getattr(self, "concurrent_leg_executor", None):
+            market_id = opp["market_id"]
+            short_id = opp.get("short_id", f"Market {market_id[-6:]}")
+            logger.info(f"⚡ [SIMULTANEOUS DISPATCH] Executing dual-leg batch FOK for market {market_id} ({short_id})...")
+            if target_state and hasattr(target_state, "add_activity_log"):
+                target_state.add_activity_log(f"⚡ [SIMULTANEOUS DISPATCH] Dual-leg batch FOK dispatched for {short_id} ({float(opp.get('shares', 5.0)):.1f} shares)")
+
+            avail_cash = getattr(self.risk, "available_cash", None) if self.risk else None
+            ok, action, details = self.concurrent_leg_executor.execute_simultaneous_batch(
+                token_yes=opp["token_yes"],
+                ask_yes=float(opp["ask_yes"]),
+                token_no=opp["token_no"],
+                ask_no=float(opp["ask_no"]),
+                shares=float(opp.get("shares", 5.0)),
+                tick_size=float(opp.get("tick_size", 0.001)),
+                neg_risk=bool(opp.get("neg_risk", False)),
+                min_edge=float(opp.get("edge", self.min_edge)),
+                available_cash=avail_cash,
+            )
+            if ok:
+                total_cost = float(details.get("total_cost", 0.0))
+                profit = float(details.get("profit", 0.0))
+                if self.risk:
+                    self.risk.open_position(market_id, total_cost, profit)
+                time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                if target_state and hasattr(target_state, "add_trade"):
+                    target_state.add_trade(market_id, round(total_cost, 2), round(profit, 4), time_str)
+                self.on_trade_executed(market_id, total_cost, profit)
+                if hasattr(self, "sync_live_balance"):
+                    self.sync_live_balance()
+                return True
+            else:
+                if action == "DUAL_KILLED_ZERO_LOSS":
+                    logger.info(f"Dual FOK batch cleanly killed with zero loss for market {market_id}.")
+                    if not hasattr(self, "market_cooldowns"):
+                        self.market_cooldowns = {}
+                    self.market_cooldowns[market_id] = time.time() + 5.0
+                elif action == "ROLLBACK_UNWOUND":
+                    logger.warning(f"Asymmetric leg-out unwound for market {market_id}: {details}")
+                    if not hasattr(self, "market_cooldowns"):
+                        self.market_cooldowns = {}
+                    self.market_cooldowns[market_id] = time.time() + 30.0
+                if hasattr(self, "sync_live_balance"):
+                    self.sync_live_balance()
+                return False
 
         # Direct routing for Maker-Taker Parity Execution Core
         if opp.get("execution_type") == "maker_taker":

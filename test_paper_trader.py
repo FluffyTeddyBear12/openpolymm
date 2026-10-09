@@ -4072,6 +4072,54 @@ class TestMakerTakerParityScanner(unittest.TestCase):
         risk.record_pnl.assert_not_called()
         self.assertNotIn("0xMKT_TIMEOUT", risk.open_positions)
 
+    def test_live_executor_simultaneous_dual_taker_batch_dispatch(self):
+        risk = MagicMock(spec=RiskSizingEngine)
+        risk.available_cash = 100.0
+        risk.capital = 100.0
+        risk.open_positions = {}
+        dash = MagicMock(spec=DashboardState)
+        dash.state = {"execution_mode": "Live Trading", "execution_style": "simultaneous_batch"}
+
+        executor = LiveExecutor(risk_engine=risk, dash_state=dash)
+        mock_client = MagicMock()
+        executor.client = mock_client
+        mock_concurrent_exec = MagicMock()
+        mock_concurrent_exec.execute_simultaneous_batch.return_value = (
+            True,
+            "DUAL_MATCH_SECURED",
+            {"shares": 10.0, "total_cost": 9.70, "profit": 0.30},
+        )
+        executor.concurrent_leg_executor = mock_concurrent_exec
+
+        opp = {
+            "execution_type": "simultaneous_dual_taker",
+            "market_id": "0xMKT_BATCH_001",
+            "token_yes": "tok_y",
+            "token_no": "tok_n",
+            "ask_yes": 0.48,
+            "ask_no": 0.49,
+            "shares": 10.0,
+            "edge": 0.03,
+            "tick_size": 0.001,
+            "neg_risk": False,
+        }
+
+        result = executor.execute_arbitrage(opp)
+        self.assertTrue(result)
+        mock_concurrent_exec.execute_simultaneous_batch.assert_called_once_with(
+            token_yes="tok_y",
+            ask_yes=0.48,
+            token_no="tok_n",
+            ask_no=0.49,
+            shares=10.0,
+            tick_size=0.001,
+            neg_risk=False,
+            min_edge=0.03,
+            available_cash=100.0,
+        )
+        risk.open_position.assert_called_once_with("0xMKT_BATCH_001", 9.70, 0.30)
+
+
 
 
 
