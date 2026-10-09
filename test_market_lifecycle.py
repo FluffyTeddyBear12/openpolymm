@@ -256,6 +256,62 @@ class TestMarketLifecycle(unittest.TestCase):
         sig = inspect.signature(start_market_universe_refresher)
         self.assertEqual(sig.parameters["interval"].default, 60.0)
 
+    def test_stagnant_cooldown_prevents_immediate_resubscription(self):
+        cid_stagnant = "0xDEAD_STAGNANT"
+        now = time.time()
+        sim = PaperSimulator(self.risk_engine, market_token_map={
+            cid_stagnant: {"token_yes": "t1", "token_no": "t2", "question": "Stagnant"}
+        }, dash_state=self.dash_state)
+        sim.last_market_tick[cid_stagnant] = now - 200.0  # > 180s timeout
+        worker = SocketWorkerState(0, initial_markets=[{"condition_id": cid_stagnant, "token_ids": ["t1", "t2"]}])
+
+        mock_candidate = {
+            "condition_id": cid_stagnant,
+            "question": "Stagnant Market Re-offered by API",
+            "token_ids": ["t1", "t2"],
+            "volume24hr": 20000.0,
+            "liquidity": 40000.0,
+        }
+
+        with patch("paper_trader.fetch_top_markets", return_value=[mock_candidate]):
+            added, removed = refresh_market_universe(sim, [worker], market_limit=10)
+
+        # Evicted and quarantined
+        self.assertIn(cid_stagnant, sim.stagnant_cooldown)
+        self.assertGreater(sim.stagnant_cooldown[cid_stagnant], now)
+        self.assertEqual(removed, 1)
+        self.assertEqual(added, 0)
+        self.assertNotIn(cid_stagnant, sim.market_token_map)
+
+    def test_evicted_markets_purged_from_dash_state(self):
+        cid_evict = "0xTO_BE_EVICTED"
+        self.dash_state.state["markets"] = {cid_evict: {"question": "Old Market"}}
+        self.dash_state.state["price_history"] = {cid_evict: [{"cost": 0.98}]}
+        self.dash_state.state["ohlc"] = {cid_evict: {"candles": []}}
+
+        now = time.time()
+        sim = PaperSimulator(self.risk_engine, market_token_map={
+            cid_evict: {"token_yes": "t1", "token_no": "t2", "question": "Old Market"}
+        }, dash_state=self.dash_state)
+        sim.last_market_tick[cid_evict] = now - 200.0
+        worker = SocketWorkerState(0, initial_markets=[{"condition_id": cid_evict, "token_ids": ["t1", "t2"]}])
+
+        mock_other = {
+            "condition_id": "0xOTHER",
+            "question": "Other Market",
+            "token_ids": ["tA", "tB"],
+            "volume24hr": 10000.0,
+            "liquidity": 10000.0,
+        }
+        with patch("paper_trader.fetch_top_markets", return_value=[mock_other]):
+            refresh_market_universe(sim, [worker], market_limit=10)
+
+        # Verify purged from dash_state
+        self.assertNotIn(cid_evict, self.dash_state.state["markets"])
+        self.assertNotIn(cid_evict, self.dash_state.state["price_history"])
+        self.assertNotIn(cid_evict, self.dash_state.state["ohlc"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

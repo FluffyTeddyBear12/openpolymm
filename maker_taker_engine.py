@@ -23,8 +23,26 @@ def _round_to_tick_size(price: float, tick_size: float = 0.001) -> float:
     steps = round(price / tick_size)
     return round(steps * tick_size, 4)
 
+def _ceil_to_tick_size(price: float, tick_size: float = 0.001) -> float:
+    if tick_size <= 0:
+        return round(price, 4)
+    steps = math.ceil(round(price / tick_size, 6))
+    return round(steps * tick_size, 4)
+
+def _floor_to_tick_size(price: float, tick_size: float = 0.001) -> float:
+    if tick_size <= 0:
+        return round(price, 4)
+    steps = math.floor(round(price / tick_size, 6))
+    return round(steps * tick_size, 4)
+
+
 try:
-    from py_clob_client_v2.clob_types import OrderArgsV2, OrderType, PostOrdersV2Args
+    from py_clob_client_v2.clob_types import (
+        OrderArgsV2,
+        OrderType,
+        PostOrdersV2Args,
+        PartialCreateOrderOptions,
+    )
 except ImportError:
     class OrderType:
         GTC = "GTC"
@@ -42,6 +60,17 @@ except ImportError:
         def __init__(self, order: Any, orderType: Any):
             self.order = order
             self.orderType = orderType
+
+    class PartialCreateOrderOptions:
+        def __init__(
+            self,
+            tick_size: Optional[str] = None,
+            neg_risk: Optional[bool] = None,
+            version: Optional[int] = None,
+        ):
+            self.tick_size = tick_size
+            self.neg_risk = neg_risk
+            self.version = version
 
 
 class MakerTakerExecutor:
@@ -135,8 +164,9 @@ class MakerTakerExecutor:
         timeout_seconds: float = 5.0,
         rollback_mode: str = "LIMIT_SELL",
         dash_state: Optional[Any] = None,
-        min_edge: float = 0.0080,
+        min_edge: float = 0.0150,
         tick_size: float = 0.001,
+        market_books: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bool, str, dict]:
         if dash_state is not None:
             self.dash_state = dash_state
@@ -155,14 +185,26 @@ class MakerTakerExecutor:
             f"🎯 [MAKER LEG] Posting passive limit order: {size} shares @ ${maker_price:.4f} (GTC) on token {token_maker[-6:]}..."
         )
         try:
-            order_maker = self.client.create_order(
-                OrderArgsV2(
-                    price=maker_price,
-                    size=size,
-                    side="BUY",
-                    token_id=token_maker,
+            order_opts = PartialCreateOrderOptions(tick_size=str(tick_size), neg_risk=False)
+            try:
+                order_maker = self.client.create_order(
+                    OrderArgsV2(
+                        price=maker_price,
+                        size=size,
+                        side="BUY",
+                        token_id=token_maker,
+                    ),
+                    options=order_opts,
                 )
-            )
+            except TypeError:
+                order_maker = self.client.create_order(
+                    OrderArgsV2(
+                        price=maker_price,
+                        size=size,
+                        side="BUY",
+                        token_id=token_maker,
+                    )
+                )
             resp_maker = self.client.post_orders(
                 [PostOrdersV2Args(order=order_maker, orderType=OrderType.GTC)]
             )
@@ -183,7 +225,7 @@ class MakerTakerExecutor:
         # STEP 2: Wait for Fill or Timeout
         # -------------------------------------------------------------
         start_time = time.time()
-        poll_interval = 0.5
+        poll_interval = 0.05
         leg_1_filled = False
         matched_size = 0.0
 
@@ -239,40 +281,60 @@ class MakerTakerExecutor:
         # Factor in taker fees and minimum required margin buffer
         max_viable_taker_price = round(1.0 - maker_price - min_edge, 4)
         fresh_taker_price = taker_price
-        try:
-            import urllib.request, json
-            book_url = f"https://clob.polymarket.com/book?token_id={token_taker}"
-            req = urllib.request.Request(
-                book_url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PolymarketBot/2.0"}
-            )
-            with urllib.request.urlopen(req, timeout=3) as resp_b:
-                b_data = json.loads(resp_b.read().decode('utf-8'))
-            asks_t = b_data.get("asks", [])
-            if asks_t:
-                live_ask = float(asks_t[0].get("price") if isinstance(asks_t[0], dict) else asks_t[0][0])
-                if live_ask <= max_viable_taker_price:
-                    fresh_taker_price = live_ask
-                    logger.info(f"Updated taker leg to live best ask: ${fresh_taker_price:.4f} (max viable: ${max_viable_taker_price:.4f})")
-        except Exception as e:
-            logger.debug(f"Could not refresh taker book: {e}")
+
+        books_source = market_books
+        if books_source is None and self.dash_state:
+            books_source = getattr(self.dash_state, "market_books", None)
+            if books_source is None and hasattr(self.dash_state, "simulator"):
+                books_source = getattr(self.dash_state.simulator, "market_books", None)
+
+        if books_source and isinstance(books_source, dict):
+            mkt_book = books_source.get(token_taker)
+            if not mkt_book:
+                for mb in books_source.values():
+                    if isinstance(mb, dict) and token_taker in mb:
+                        mkt_book = mb[token_taker]
+                        break
+            if isinstance(mkt_book, dict):
+                asks_t = mkt_book.get("asks", [])
+                if asks_t:
+                    live_ask = float(asks_t[0].get("price") if isinstance(asks_t[0], dict) else asks_t[0][0])
+                    if live_ask <= max_viable_taker_price:
+                        fresh_taker_price = live_ask
+                        logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (max viable: ${max_viable_taker_price:.4f})")
+            elif isinstance(mkt_book, (int, float)) and mkt_book > 0:
+                if mkt_book <= max_viable_taker_price:
+                    fresh_taker_price = float(mkt_book)
+                    logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (max viable: ${max_viable_taker_price:.4f})")
 
         # Ensure taker price does not exceed max viable price
         target_taker_price = min(fresh_taker_price, max_viable_taker_price)
-        target_taker_price = _round_to_tick_size(target_taker_price, tick_size)
+        target_taker_price = _floor_to_tick_size(target_taker_price, tick_size)
 
         self._log_activity(
             f"⚡ [TAKER LEG] Leg 1 in hand. Firing instant FOK taker order: {matched_size:.2f} shares @ ${target_taker_price:.4f} on token {token_taker[-6:]}..."
         )
         try:
-            order_taker = self.client.create_order(
-                OrderArgsV2(
-                    price=target_taker_price,
-                    size=matched_size,
-                    side="BUY",
-                    token_id=token_taker,
+            order_opts = PartialCreateOrderOptions(tick_size=str(tick_size), neg_risk=False)
+            try:
+                order_taker = self.client.create_order(
+                    OrderArgsV2(
+                        price=target_taker_price,
+                        size=matched_size,
+                        side="BUY",
+                        token_id=token_taker,
+                    ),
+                    options=order_opts,
                 )
-            )
+            except TypeError:
+                order_taker = self.client.create_order(
+                    OrderArgsV2(
+                        price=target_taker_price,
+                        size=matched_size,
+                        side="BUY",
+                        token_id=token_taker,
+                    )
+                )
             resp_taker = self.client.post_orders(
                 [PostOrdersV2Args(order=order_taker, orderType=OrderType.FOK)]
             )
@@ -335,14 +397,26 @@ class MakerTakerExecutor:
                 f"🛡️ [SAFE ROLLBACK] Leg 2 missed. Deploying break-even limit sell for {matched_size:.2f} shares at ${maker_price:.4f}."
             )
             try:
-                order_rollback = self.client.create_order(
-                    OrderArgsV2(
-                        price=maker_price,
-                        size=matched_size,
-                        side="SELL",
-                        token_id=token_maker,
+                order_opts = PartialCreateOrderOptions(tick_size=str(tick_size), neg_risk=False)
+                try:
+                    order_rollback = self.client.create_order(
+                        OrderArgsV2(
+                            price=maker_price,
+                            size=matched_size,
+                            side="SELL",
+                            token_id=token_maker,
+                        ),
+                        options=order_opts,
                     )
-                )
+                except TypeError:
+                    order_rollback = self.client.create_order(
+                        OrderArgsV2(
+                            price=maker_price,
+                            size=matched_size,
+                            side="SELL",
+                            token_id=token_maker,
+                        )
+                    )
                 resp_rollback = self.client.post_orders(
                     [PostOrdersV2Args(order=order_rollback, orderType=OrderType.GTC)]
                 )
@@ -357,7 +431,7 @@ class MakerTakerExecutor:
             from rollback_protector import RollbackProtector
             self._log_activity(
                 f"🚨 [UNWIND TRIGGERED] Leg 2 missed ({taker_err or 'unmatched'}). "
-                f"Invoking RollbackProtector for immediate market liquidation of {matched_size:.2f} Leg 1 shares..."
+                f"Invoking RollbackProtector for price-protected rollback of {matched_size:.2f} Leg 1 shares..."
             )
             unwind_ok, unwind_action, unwind_details = RollbackProtector.safe_unwind_or_limit_exit(
                 client=self.client,
@@ -366,7 +440,7 @@ class MakerTakerExecutor:
                 buy_price=maker_price,
                 label="LEG1_MAKER",
                 target_state=self.dash_state,
-                force_market_exit=True
+                force_market_exit=True if rollback_mode == "IMMEDIATE_EXIT" else False
             )
             realized_loss = unwind_details.get("realized_loss", 0.0) if isinstance(unwind_details, dict) else 0.0
             rollback_meta.update({
@@ -388,7 +462,7 @@ def check_maker_taker_parity(
     bid_no: Optional[float] = None,
     ask_no: Optional[float] = None,
     tick_size: float = 0.001,
-    min_edge: float = 0.0020,
+    min_edge: float = 0.0150,
     taker_fee_bps: int = 35,
     market_id: str = "test_market"
 ) -> Optional[dict]:
@@ -435,6 +509,7 @@ def check_maker_taker_parity(
     taker_fee_2 = a_yes * taker_fee_rate
     cost_dir2 = round(maker_price_no + a_yes + taker_fee_2, 4)
     edge_dir2 = round(1.00 - cost_dir2, 6)
+
 
     best_edge = max(edge_dir1, edge_dir2)
     if best_edge < min_edge:

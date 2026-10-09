@@ -317,18 +317,27 @@ class ShadowParityTracker:
 
 def _map_liquidity_gate_reason(gate_reason: str, opp: Optional[dict] = None) -> MissedReason:
     r_lower = (gate_reason or "").lower()
+    if any(w in r_lower for w in ("eligibility", "pattern", "prop", "rejected", "resolution", "expiry", "horizon", "sport", "cricket")):
+        return MissedReason.CIRCUIT_BREAKER
     if "spread" in r_lower:
         return MissedReason.WIDE_SPREAD
     if "depth" in r_lower:
         if opp:
+            avail = float(opp.get("available_depth_usd", opp.get("executable_liquidity_usd", 0.0)) or 0.0)
             d_yes = float(opp.get("depth_yes", 0.0) or 0.0)
             d_no = float(opp.get("depth_no", 0.0) or 0.0)
             if (d_yes > 0 and d_no <= 0) or (d_no > 0 and d_yes <= 0) or abs(d_yes - d_no) > 50.0:
                 return MissedReason.ASYMMETRIC_DEPTH
+            if avail > 0 and avail < 10.0:
+                return MissedReason.ZERO_LIQUIDITY
+            if avail >= 10.0:
+                return MissedReason.ASYMMETRIC_DEPTH
+
         if "asymmetric" in r_lower or "one-sided" in r_lower:
             return MissedReason.ASYMMETRIC_DEPTH
         return MissedReason.ZERO_LIQUIDITY
     return MissedReason.ZERO_LIQUIDITY
+
 
 
 POLICY_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "adaptive_policy_state.json")
@@ -351,7 +360,7 @@ class ActivePolicyRewriter:
 
         # Continuous parameter vector with calibrated defaults
         self.params = {
-            "min_edge_pct": 0.0080,
+            "min_edge_pct": 0.0150,
             "max_positions_per_market": 2,
             "hold_period_seconds": 1.0,
             "reserve_cash_pct": 0.10,
@@ -488,7 +497,7 @@ class ActivePolicyRewriter:
 
             elif reason in (MissedReason.SUB_THRESHOLD_EDGE.value, "SUB_THRESHOLD_EDGE") and edge > 0:
                 cur_edge = self.params["min_edge_pct"]
-                new_edge = max(0.0010, round(cur_edge - 0.0002, 4))
+                new_edge = max(0.0150, round(cur_edge - 0.0002, 4))
                 if new_edge != cur_edge:
                     self.params["min_edge_pct"] = new_edge
                     param_name = "min_edge_pct"
@@ -496,13 +505,19 @@ class ActivePolicyRewriter:
                     adapted = True
 
             elif reason in (MissedReason.INSUFFICIENT_CASH.value, "INSUFFICIENT_CASH") and edge >= 0.0060:
-                cur_res = self.params["reserve_cash_pct"]
-                new_res = min(0.30, round(cur_res + 0.05, 2))
-                if new_res != cur_res:
+                sim = self.simulator or getattr(dash_state, "simulator", None)
+                cap = getattr(getattr(sim, "risk", None), "capital", 1000.0) if sim else 1000.0
+                if cap < 100.0:
+                    new_res = 0.0
+                else:
+                    cur_res = self.params.get("reserve_cash_pct", 0.0)
+                    new_res = min(0.30, round(cur_res + 0.05, 2))
+                if new_res != self.params.get("reserve_cash_pct"):
                     self.params["reserve_cash_pct"] = new_res
                     param_name = "reserve_cash_pct"
                     val = f"{new_res:.2f}"
                     adapted = True
+
 
             if adapted:
                 self.last_triggered_time = now
@@ -554,7 +569,7 @@ class ActivePolicyRewriter:
                 primary_bottleneck = reason
         self.primary_bottleneck = primary_bottleneck
 
-        current_edge = float(self.params["min_edge_pct"])
+        current_edge = float(getattr(simulator, "min_edge", self.params["min_edge_pct"]))
         sub_thresh_stats = by_reason.get(MissedReason.SUB_THRESHOLD_EDGE.value, {})
         sub_thresh_pnl = float(sub_thresh_stats.get("pnl", 0.0))
         sub_thresh_cnt = int(sub_thresh_stats.get("count", 0))
@@ -1139,7 +1154,7 @@ class DashboardState:
             self.state["adaptive_policy"] = dict(policy_data)
             self.dirty = True
 
-    def update_market(self, market_id, yes_ask, no_ask, effective_cost, edge, question=None):
+    def update_market(self, market_id, yes_ask, no_ask, effective_cost, edge, question=None, bid_yes=None, bid_no=None, depth_yes=None, depth_no=None):
         with self.lock:
             now = time.time()
             self.state["last_heartbeat"] = now
@@ -1157,6 +1172,14 @@ class DashboardState:
                 "edge": edge,
                 "updated_at": now
             })
+            if bid_yes is not None:
+                m_dict["bid_yes"] = bid_yes
+            if bid_no is not None:
+                m_dict["bid_no"] = bid_no
+            if depth_yes is not None:
+                m_dict["depth_yes"] = depth_yes
+            if depth_no is not None:
+                m_dict["depth_no"] = depth_no
             if question:
                 m_dict["question"] = question
                 if "market_names" not in self.state:
@@ -1321,6 +1344,18 @@ class DashboardState:
                         "edge": round(float(m_info.get("edge") or 0.0), 4),
                         "updated_at": int(float(m_info.get("updated_at") or 0.0))
                     }
+                    if "bid_yes" in m_info and m_info["bid_yes"] is not None:
+                        entry["bid_yes"] = round(float(m_info["bid_yes"]), 4)
+                    if "bid_no" in m_info and m_info["bid_no"] is not None:
+                        entry["bid_no"] = round(float(m_info["bid_no"]), 4)
+                    if "depth_yes" in m_info and m_info["depth_yes"] is not None:
+                        d_y = float(m_info["depth_yes"])
+                        if not math.isinf(d_y):
+                            entry["depth_yes"] = round(d_y, 2)
+                    if "depth_no" in m_info and m_info["depth_no"] is not None:
+                        d_n = float(m_info["depth_no"])
+                        if not math.isinf(d_n):
+                            entry["depth_no"] = round(d_n, 2)
                     r_val = float(m_info.get("rewards_daily_rate") or 0.0)
                     if r_val > 0:
                         entry["rewards_daily_rate"] = round(r_val, 2)
@@ -1490,8 +1525,12 @@ class RiskSizingEngine:
             with target_state.lock:
                 pct = target_state.state.get("max_exposure_pct")
                 mcp = target_state.state.get("max_concurrent_positions")
+                mm_pct = target_state.state.get("max_market_exposure_pct")
+                res_pct = target_state.state.get("reserve_cash_pct")
             val_pct = None
             val_mcp = None
+            val_mm = None
+            val_res = None
             if pct is not None:
                 try:
                     val_pct = float(pct)
@@ -1502,11 +1541,26 @@ class RiskSizingEngine:
                     val_mcp = max(1, min(10, int(mcp)))
                 except (ValueError, TypeError):
                     pass
+            if mm_pct is not None:
+                try:
+                    val_mm = float(mm_pct)
+                except (ValueError, TypeError):
+                    pass
+            if res_pct is not None:
+                try:
+                    val_res = float(res_pct)
+                except (ValueError, TypeError):
+                    pass
             with self.lock:
                 if val_pct is not None:
                     self.max_exposure_pct = val_pct
                 if val_mcp is not None:
                     self.max_concurrent_positions = val_mcp
+                if val_mm is not None and val_mm > 0:
+                    self.max_market_exposure_pct = val_mm
+                if val_res is not None and val_res >= 0:
+                    self.reserve_cash_pct = val_res
+
 
     def _sync_to_dash_state(self):
         target_state = self.dash_state
@@ -1632,12 +1686,17 @@ class RiskSizingEngine:
                     if (isinstance(p, dict) and p.get('market_id') == market_id) or k == market_id or k.startswith(f"{market_id}_")
                 ]
                 current_m_exp = sum(float(p.get('size', 0.0) or 0.0) for p in market_positions)
-                max_m_allowed = total_cap * self.max_market_exposure_pct
+                if total_cap < 50.0:
+                    min_market_floor = max(5.50, 5.50 * min(self.max_positions_per_market, 2))
+                    max_m_allowed = max(min_market_floor, total_cap * self.max_market_exposure_pct)
+                else:
+                    max_m_allowed = total_cap * self.max_market_exposure_pct
                 if len(market_positions) >= self.max_positions_per_market:
                     if current_m_exp >= max_m_allowed * 0.25:
                         return MissedReason.MARKET_ALREADY_ACTIVE.value
-                if current_m_exp + 1.0 > max_m_allowed + 1e-5 or current_m_exp + risk_amount > max_m_allowed + 1e-5:
+                if current_m_exp + risk_amount > max_m_allowed + 1e-5:
                     return MissedReason.EXPOSURE_LIMIT_EXCEEDED.value
+
 
             max_allowed_risk = max(5.50, (total_cap * self.max_exposure_pct) + 1e-5)
             if risk_amount > max_allowed_risk:
@@ -1683,16 +1742,16 @@ def fetch_top_markets(
     """
     Multi-Stream 1,000-Market Dynamic Ingestion Engine.
     Dynamically discover active binary markets across Polymarket Gamma API:
-      - Stream 1: Direct markets endpoint (ordered by volume24hr, liquidityNum, volumeNum)
-      - Stream 2: Parent events endpoint (each event bundles child markets)
+      - Stream 1: Direct markets endpoint (ordered by volume24hr with liquidity_num_min filter)
+      - Stream 2: Parent events endpoint (each event bundles top 3 child markets)
       - Fallback: Local markets.json ONLY if explicitly requested via use_fallback=True
     Filters:
-      - active is True, closed is False, archived is False
+      - active is True, closed is False, archived is False, acceptingOrders is not False
       - exactly 2 tokens [YES / NO]
-      - volume24hr >= min_volume_24h (default 0.0 for full-universe coverage)
-      - liquidity >= min_liquidity (default 0.0)
-      - non-identical tokens, expiry horizon >= 4.0h, non-turbo/non-short duration
-    All candidates ranked by: 24h volume + USDC liquidity mining rewards * 500 + liquidity * 0.05.
+      - volume24hr >= min_volume_24h
+      - liquidity >= min_liquidity (default 500.0)
+      - non-identical tokens, expiry horizon >= 4.0h, non-turbo/non-short duration, spread <= 3.5 cents
+    All candidates ranked by balanced formula: (vol * 0.30 + liq * 0.70 + rewards * 500) / (1 + spread * 50).
     """
     markets = []
     existing_cids = set()
@@ -1702,6 +1761,17 @@ def fetch_top_markets(
             return None
         if not item.get("active") or item.get("closed") or item.get("archived"):
             return None
+        if item.get("acceptingOrders") is False:
+            return None
+        if item.get("enableOrderBook") is False:
+            return None
+        spread_val = item.get("spread")
+        if spread_val is not None:
+            try:
+                if float(spread_val) > 0.035:
+                    return None
+            except (ValueError, TypeError):
+                pass
 
         q = item.get("question")
         cid = item.get("conditionId") or item.get("condition_id")
@@ -1757,7 +1827,7 @@ def fetch_top_markets(
         liq = float(item.get("liquidityNum") or item.get("liquidity") or 0.0)
 
         # Strict activity and liquidity gate
-        if vol < min_volume_24h or liq < min_liquidity:
+        if vol < min_volume_24h or (min_liquidity > 0.0 and liq < min_liquidity):
             return None
 
         outcomes = item.get("outcomes", ["Yes", "No"])
@@ -1806,6 +1876,8 @@ def fetch_top_markets(
             "volume24hr": vol,
             "liquidity": liq,
             "liquidityNum": liq,
+            "liquidityClob": float(item.get("liquidityClob") or 0.0),
+            "spread": float(spread_val) if spread_val is not None else None,
             "rewards_daily_rate": rewards_daily,
             "is_live_game": is_live_game,
             "end_date": end_date_str,
@@ -1821,30 +1893,31 @@ def fetch_top_markets(
     PAGE_SIZE = 100
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PolymarketBot/2.0"}
 
-    # Stream 1: Direct markets endpoint
-    for order_field in ["volume24hr", "liquidityNum"]:
-        for offset in range(0, 500, 100):
-            url = f"https://gamma-api.polymarket.com/markets?limit={PAGE_SIZE}&offset={offset}&active=true&closed=false&order={order_field}&ascending=false"
-            req = urllib.request.Request(url, headers=headers)
-            try:
-                with urllib.request.urlopen(req, timeout=6) as resp:
-                    raw_resp = resp.read().decode("utf-8")
-                    data = json.loads(raw_resp) if raw_resp.strip() else []
-            except Exception:
-                break
-            if not isinstance(data, list) or len(data) == 0:
-                break
-            for item in data:
-                m_obj = _parse_market_obj(item, is_live=False)
-                if m_obj and m_obj["condition_id"] not in existing_cids:
-                    existing_cids.add(m_obj["condition_id"])
-                    markets.append(m_obj)
-            if len(markets) >= target_buffer or len(data) < PAGE_SIZE:
-                break
-        if len(markets) >= target_buffer:
+    # Stream 1: Direct markets endpoint (ordered by 24h volume with liquidity filter)
+    for offset in range(0, 1500, 100):
+        url = (
+            f"https://gamma-api.polymarket.com/markets?limit={PAGE_SIZE}&offset={offset}"
+            f"&active=true&closed=false&order=volume24hr&ascending=false"
+            f"&liquidity_num_min={min_liquidity}&volume_num_min={min_volume_24h}"
+        )
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                raw_resp = resp.read().decode("utf-8")
+                data = json.loads(raw_resp) if raw_resp.strip() else []
+        except Exception:
+            break
+        if not isinstance(data, list) or len(data) == 0:
+            break
+        for item in data:
+            m_obj = _parse_market_obj(item, is_live=False)
+            if m_obj and m_obj["condition_id"] not in existing_cids:
+                existing_cids.add(m_obj["condition_id"])
+                markets.append(m_obj)
+        if len(markets) >= target_buffer or len(data) < PAGE_SIZE:
             break
 
-    # Stream 2: Parent events endpoint (each event bundles child markets)
+    # Stream 2: Parent events endpoint (each event bundles top 3 child markets)
     if len(markets) < target_buffer:
         for order_field in ["volume24hr", "liquidity"]:
             for offset in range(0, 500, 100):
@@ -1859,7 +1932,17 @@ def fetch_top_markets(
                 if not isinstance(events, list) or len(events) == 0:
                     break
                 for ev in events:
-                    for item in ev.get("markets", []):
+                    raw_children = ev.get("markets", [])
+                    if isinstance(raw_children, list):
+                        sorted_children = sorted(
+                            raw_children,
+                            key=lambda m: float(m.get("volume24hr") or 0.0) if isinstance(m, dict) else 0.0,
+                            reverse=True
+                        )
+                        top_children = sorted_children[:3]
+                    else:
+                        top_children = []
+                    for item in top_children:
                         m_obj = _parse_market_obj(item, is_live=False)
                         if m_obj and m_obj["condition_id"] not in existing_cids:
                             existing_cids.add(m_obj["condition_id"])
@@ -1898,7 +1981,6 @@ def fetch_top_markets(
             except Exception as e:
                 logger.error(f"Error loading fallback file {fallback_file}: {e}")
 
-    # Sort strictly by 24h volume + USDC liquidity mining rewards + liquidity weight
     markets.sort(
         key=lambda x: (
             float(x.get("volume24hr", 0.0) or 0.0) +
@@ -1939,7 +2021,7 @@ class PaperSimulator:
         elif dash_state and hasattr(dash_state, "state") and "min_edge_pct" in dash_state.state:
             self.min_edge = float(dash_state.state["min_edge_pct"])
         else:
-            self.min_edge = 0.0080
+            self.min_edge = 0.0150
         
         # Track latest asks for YES and NO across all monitored markets
         self.market_books: Dict[str, Dict[str, Optional[float]]] = {}
@@ -2029,15 +2111,8 @@ class PaperSimulator:
         best_bid: Optional[float] = None,
         bid_size: Optional[float] = None
     ) -> bool:
-        if best_ask is None or best_ask <= 0.0:
-            return False
-
         with self.lock:
             self.last_market_tick[market_id] = time.time()
-            if market_id not in self.market_books:
-                self.market_books[market_id] = {}
-            if market_id not in self.market_depths:
-                self.market_depths[market_id] = {}
             if not hasattr(self, "market_bids") or self.market_bids is None:
                 self.market_bids = {}
             if market_id not in self.market_bids:
@@ -2045,6 +2120,14 @@ class PaperSimulator:
 
             if best_bid is not None and float(best_bid) > 0.0:
                 self.market_bids[market_id][asset_id] = float(best_bid)
+
+            if best_ask is None or best_ask <= 0.0:
+                return False
+
+            if market_id not in self.market_books:
+                self.market_books[market_id] = {}
+            if market_id not in self.market_depths:
+                self.market_depths[market_id] = {}
 
             current_ask = self.market_books[market_id].get(asset_id)
             prev_depth = self.market_depths[market_id].get(asset_id)
@@ -2088,6 +2171,7 @@ class PaperSimulator:
         with self.lock:
             books = dict(self.market_books.get(market_id, {}))
             depths = dict(self.market_depths.get(market_id, {}))
+            bids = dict(self.market_bids.get(market_id, {})) if hasattr(self, "market_bids") else {}
             m_info = dict(self.market_token_map.get(market_id, {})) if market_id in self.market_token_map else None
 
         if m_info:
@@ -2121,6 +2205,27 @@ class PaperSimulator:
 
         target_state = self.dash_state
 
+        bid_yes = None
+        bid_no = None
+        depth_yes = None
+        depth_no = None
+        if m_info and "token_yes" in m_info and "token_no" in m_info:
+            bid_yes = bids.get(m_info["token_yes"])
+            bid_no = bids.get(m_info["token_no"])
+            depth_yes = depths.get(m_info["token_yes"])
+            depth_no = depths.get(m_info["token_no"])
+        elif "YES" in books and "NO" in books:
+            bid_yes = bids.get("YES")
+            bid_no = bids.get("NO")
+            depth_yes = depths.get("YES")
+            depth_no = depths.get("NO")
+        else:
+            keys = sorted(books.keys())
+            bid_yes = bids.get(keys[0])
+            bid_no = bids.get(keys[1])
+            depth_yes = depths.get(keys[0])
+            depth_no = depths.get(keys[1])
+
         # Parity Check: Ask_YES + Ask_NO < 1.00 - fees
         raw_cost = ask_yes + ask_no
         effective_cost = raw_cost * (1 + self.fee_rate)
@@ -2129,7 +2234,18 @@ class PaperSimulator:
         # Update dashboard market stats every time we have complete book data
         q_name = m_info.get("question") if m_info else None
         if target_state:
-            target_state.update_market(market_id, ask_yes, ask_no, effective_cost, edge, question=q_name)
+            target_state.update_market(
+                market_id,
+                ask_yes,
+                ask_no,
+                effective_cost,
+                edge,
+                question=q_name,
+                bid_yes=bid_yes,
+                bid_no=bid_no,
+                depth_yes=depth_yes,
+                depth_no=depth_no
+            )
 
         short_id = (q_name[:26] + "...") if q_name else f"Market {market_id[-6:]}"
         if target_state and edge > 0:
@@ -2212,6 +2328,10 @@ class PaperSimulator:
                 "market_id": market_id,
                 "ask_yes": ask_yes,
                 "ask_no": ask_no,
+                "token_yes": m_info.get("token_yes") if m_info else None,
+                "token_no": m_info.get("token_no") if m_info else None,
+                "depth_yes": depth_yes,
+                "depth_no": depth_no,
                 "effective_cost": effective_cost,
                 "edge": edge,
                 "executable_liquidity_usd": executable_liquidity_usd,
@@ -2223,6 +2343,7 @@ class PaperSimulator:
                 "market_meta": m_info.get('market_meta', m_info) if m_info else None,
                 "tick_size": float(m_info.get('tick_size', 0.001)) if m_info else 0.001
             }
+
 
         return None
 
@@ -2344,7 +2465,7 @@ class PaperSimulator:
             d_val = depths.get("depth_no", depths.get(token_no, depths.get("NO", float("inf"))))
             depth_no = float(d_val) if d_val is not None else float("inf")
 
-        max_spread = 0.025
+        max_spread = 0.030
         branch_a = None
         branch_b = None
         reward_bonus = (rewards_daily_rate * 0.001) if rewards_daily_rate > 0 else 0.0
@@ -2356,8 +2477,12 @@ class PaperSimulator:
             ask_no is not None and ask_no > 0 and
             ask_yes is not None and ask_yes > bid_yes):
 
-            maker_price_yes = min(bid_yes + tick_size, ask_yes - tick_size)
-            maker_price_yes = _round_to_tick_size(maker_price_yes, tick_size)
+            max_viable_yes = round(1.000 - ask_no * (1 + self.fee_rate) - self.min_edge, 4)
+            maker_price_yes = min(ask_yes - tick_size, max_viable_yes)
+            if bid_yes is not None and bid_yes >= (ask_yes - 3 * tick_size):
+                maker_price_yes = max(bid_yes + tick_size, maker_price_yes)
+            maker_price_yes = min(maker_price_yes, max_viable_yes)
+            maker_price_yes = max(tick_size, _round_to_tick_size(maker_price_yes, tick_size))
             cost_a = maker_price_yes + ask_no * (1 + self.fee_rate)
             edge_a = 1.000 - cost_a
             taker_depth_a = depth_no if (depth_no is not None and not math.isinf(depth_no)) else 50.0
@@ -2366,6 +2491,8 @@ class PaperSimulator:
             if (taker_depth_a >= 5.0 and
                 spread_yes <= max_spread + 1e-7 and
                 edge_a >= self.min_edge):
+
+
 
                 trade_size_a = min(desired_trade_size, taker_depth_a) if taker_depth_a > 0 else desired_trade_size
                 trade_size_a = max(5.0, trade_size_a)
@@ -2404,8 +2531,12 @@ class PaperSimulator:
             ask_yes is not None and ask_yes > 0 and
             ask_no is not None and ask_no > bid_no):
 
-            maker_price_no = min(bid_no + tick_size, ask_no - tick_size)
-            maker_price_no = _round_to_tick_size(maker_price_no, tick_size)
+            max_viable_no = round(1.000 - ask_yes * (1 + self.fee_rate) - self.min_edge, 4)
+            maker_price_no = min(ask_no - tick_size, max_viable_no)
+            if bid_no is not None and bid_no >= (ask_no - 3 * tick_size):
+                maker_price_no = max(bid_no + tick_size, maker_price_no)
+            maker_price_no = min(maker_price_no, max_viable_no)
+            maker_price_no = max(tick_size, _round_to_tick_size(maker_price_no, tick_size))
             cost_b = ask_yes * (1 + self.fee_rate) + maker_price_no
             edge_b = 1.000 - cost_b
             taker_depth_b = depth_yes if (depth_yes is not None and not math.isinf(depth_yes)) else 50.0
@@ -2414,6 +2545,8 @@ class PaperSimulator:
             if (taker_depth_b >= 5.0 and
                 spread_no <= max_spread + 1e-7 and
                 edge_b >= self.min_edge):
+
+
 
                 trade_size_b = min(desired_trade_size, taker_depth_b) if taker_depth_b > 0 else desired_trade_size
                 trade_size_b = max(5.0, trade_size_b)
@@ -2513,8 +2646,11 @@ class PaperSimulator:
             with self.risk.lock:
                 total_cap = _safe_float(getattr(self.risk, "capital", None), 1000.0)
                 available_cash = _safe_float(getattr(self.risk, "available_cash", None), total_cap)
-                reserve_pct = _safe_float(getattr(self.risk, "reserve_cash_pct", None), 0.0)
-                spendable = max(0.0, available_cash - (available_cash * reserve_pct))
+                if total_cap < 100.0:
+                    spendable = available_cash
+                else:
+                    reserve_pct = _safe_float(getattr(self.risk, "reserve_cash_pct", None), 0.0)
+                    spendable = max(0.0, available_cash - (available_cash * reserve_pct))
 
                 open_pos = getattr(self.risk, "open_positions", {})
                 if not isinstance(open_pos, dict):
@@ -2526,11 +2662,16 @@ class PaperSimulator:
                 ]
                 current_m_exp = sum(_safe_float(p.get('size'), 0.0) for p in market_positions)
                 max_market_pct = _safe_float(getattr(self.risk, "max_market_exposure_pct", None), 0.25)
-                max_m_allowed = total_cap * max_market_pct
+                if total_cap < 50.0:
+                    max_m_allowed = max(5.50, total_cap * max_market_pct)
+                else:
+                    max_m_allowed = total_cap * max_market_pct
                 rem_cap = max(0.0, max_m_allowed - current_m_exp)
                 max_exp_pct = _safe_float(getattr(self.risk, "max_exposure_pct", None), 0.10)
                 sizing_mult = _safe_float(getattr(self.risk, "sizing_multiplier", None), 1.0)
                 desired = total_cap * max_exp_pct * sizing_mult
+                if total_cap < 50.0 and desired < 5.0 and spendable >= 5.0:
+                    desired = 5.0
             
             trade_size = min(trade_size, desired, spendable, rem_cap)
             if trade_size < 1.0:
@@ -2539,7 +2680,8 @@ class PaperSimulator:
                 elif rem_cap < 1.0:
                     reason = MissedReason.EXPOSURE_LIMIT_EXCEEDED
                 else:
-                    reason = MissedReason.ZERO_LIQUIDITY
+                    reason = MissedReason.INSUFFICIENT_CASH
+
                 if hasattr(self, "shadow_tracker") and self.shadow_tracker:
                     opp_copy = dict(opp)
                     opp_copy["trade_size"] = opp.get("trade_size", desired)
@@ -2659,7 +2801,8 @@ def on_message(ws, message, simulator):
                 market_id = event.get("market")
                 asset_id = event.get("asset_id")
                 asks = event.get("asks", [])
-                if asks and market_id and asset_id:
+                bids = event.get("bids", [])
+                if (asks or bids) and market_id and asset_id:
                     valid_asks = []
                     for a in asks:
                         try:
@@ -2669,37 +2812,116 @@ def on_message(ws, message, simulator):
                                 valid_asks.append((p, s))
                         except (ValueError, TypeError):
                             pass
+                    best_ask = None
+                    best_size = None
                     if valid_asks:
                         best_ask_tuple = min(valid_asks, key=lambda x: x[0])
                         best_ask = best_ask_tuple[0]
                         best_size = sum(s for p, s in valid_asks if abs(p - best_ask) < 1e-9)
-                        updated = simulator.update_book(market_id, asset_id, best_ask, ask_size=best_size, evaluate=False)
-                        if updated and market_id not in seen:
+
+                    valid_bids = []
+                    for b in bids:
+                        try:
+                            p = float(b.get("price", 0))
+                            s = float(b.get("size", 0))
+                            if p > 0:
+                                valid_bids.append((p, s))
+                        except (ValueError, TypeError):
+                            pass
+                    best_bid = None
+                    best_bid_size = None
+                    if valid_bids:
+                        best_bid_tuple = max(valid_bids, key=lambda x: x[0])
+                        best_bid = best_bid_tuple[0]
+                        best_bid_size = sum(s for p, s in valid_bids if abs(p - best_bid) < 1e-9)
+
+                    if best_ask is not None:
+                        updated = simulator.update_book(
+                            market_id,
+                            asset_id,
+                            best_ask,
+                            ask_size=best_size,
+                            evaluate=False,
+                            best_bid=best_bid,
+                            bid_size=best_bid_size
+                        )
+                        if (updated or best_bid is not None) and market_id not in seen:
                             seen.add(market_id)
                             touched_markets.append(market_id)
+                    elif best_bid is not None:
+                        with simulator.lock:
+                            if not hasattr(simulator, "market_bids") or simulator.market_bids is None:
+                                simulator.market_bids = {}
+                            if market_id not in simulator.market_bids:
+                                simulator.market_bids[market_id] = {}
+                            simulator.market_bids[market_id][asset_id] = float(best_bid)
+                        if market_id not in seen:
+                            seen.add(market_id)
+                            touched_markets.append(market_id)
+
             elif ev_type == "best_bid_ask":
                 market_id = event.get("market")
                 asset_id = event.get("asset_id")
                 best_ask = event.get("best_ask") or event.get("ask")
-                if market_id and asset_id and best_ask is not None:
+                best_bid = event.get("best_bid") or event.get("bid")
+
+                raw_bid_val = None
+                if best_bid is not None:
                     try:
-                        val = float(best_ask)
-                        if val > 0:
-                            size_val = None
-                            raw_size = event.get("best_ask_size") or event.get("ask_size") or event.get("size")
-                            if raw_size is not None:
-                                try:
-                                    s = float(raw_size)
-                                    if s > 0:
-                                        size_val = s
-                                except (ValueError, TypeError):
-                                    pass
-                            updated = simulator.update_book(market_id, asset_id, val, ask_size=size_val, evaluate=False)
-                            if updated and market_id not in seen:
-                                seen.add(market_id)
-                                touched_markets.append(market_id)
+                        f_bid = float(best_bid)
+                        if f_bid > 0:
+                            raw_bid_val = f_bid
                     except (ValueError, TypeError):
                         pass
+
+                raw_bid_size = event.get("best_bid_size") or event.get("bid_size")
+                bid_size_val = None
+                if raw_bid_size is not None:
+                    try:
+                        bs = float(raw_bid_size)
+                        if bs > 0:
+                            bid_size_val = bs
+                    except (ValueError, TypeError):
+                        pass
+
+                if market_id and asset_id:
+                    if best_ask is not None:
+                        try:
+                            val = float(best_ask)
+                            if val > 0:
+                                size_val = None
+                                raw_size = event.get("best_ask_size") or event.get("ask_size") or event.get("size")
+                                if raw_size is not None:
+                                    try:
+                                        s = float(raw_size)
+                                        if s > 0:
+                                            size_val = s
+                                    except (ValueError, TypeError):
+                                        pass
+                                updated = simulator.update_book(
+                                    market_id,
+                                    asset_id,
+                                    val,
+                                    ask_size=size_val,
+                                    evaluate=False,
+                                    best_bid=raw_bid_val,
+                                    bid_size=bid_size_val
+                                )
+                                if (updated or raw_bid_val is not None) and market_id not in seen:
+                                    seen.add(market_id)
+                                    touched_markets.append(market_id)
+                        except (ValueError, TypeError):
+                            pass
+                    elif raw_bid_val is not None:
+                        with simulator.lock:
+                            if not hasattr(simulator, "market_bids") or simulator.market_bids is None:
+                                simulator.market_bids = {}
+                            if market_id not in simulator.market_bids:
+                                simulator.market_bids[market_id] = {}
+                            simulator.market_bids[market_id][asset_id] = raw_bid_val
+                        if market_id not in seen:
+                            seen.add(market_id)
+                            touched_markets.append(market_id)
 
             elif ev_type == "price_change":
                 market_id = event.get("market")
@@ -2708,19 +2930,42 @@ def on_message(ws, message, simulator):
                     if not (market_id and asset_id):
                         continue
                     
-                    best_ask = change.get("best_ask")
                     side = str(change.get("side", "")).upper()
+                    best_ask = change.get("best_ask")
                     if best_ask is None and side == "SELL":
                         best_ask = change.get("price")
-                    
+
+                    best_bid = change.get("best_bid")
+                    if best_bid is None and side == "BUY":
+                        best_bid = change.get("price")
+
+                    raw_bid_val = None
+                    if best_bid is not None:
+                        try:
+                            f_bid = float(best_bid)
+                            if f_bid > 0:
+                                raw_bid_val = f_bid
+                        except (ValueError, TypeError):
+                            pass
+
+                    raw_bid_size = change.get("best_bid_size") or change.get("bid_size")
+                    if raw_bid_size is None and side == "BUY":
+                        raw_bid_size = change.get("size")
+                    bid_size_val = None
+                    if raw_bid_size is not None:
+                        try:
+                            bs = float(raw_bid_size)
+                            if bs > 0:
+                                bid_size_val = bs
+                        except (ValueError, TypeError):
+                            pass
+
                     if best_ask is not None:
                         try:
                             val = float(best_ask)
                             if val > 0:
                                 change_price = float(change.get("price", val))
-                                raw_size = change.get("best_ask_size")
-                                if raw_size is None:
-                                    raw_size = change.get("ask_size")
+                                raw_size = change.get("best_ask_size") or change.get("ask_size")
                                 if raw_size is None and side in ("SELL", ""):
                                     raw_size = change.get("size")
                                 
@@ -2733,12 +2978,30 @@ def on_message(ws, message, simulator):
                                     except (ValueError, TypeError):
                                         pass
                                 
-                                updated = simulator.update_book(market_id, asset_id, val, ask_size=size_val, evaluate=False)
-                                if updated and market_id not in seen:
+                                updated = simulator.update_book(
+                                    market_id,
+                                    asset_id,
+                                    val,
+                                    ask_size=size_val,
+                                    evaluate=False,
+                                    best_bid=raw_bid_val,
+                                    bid_size=bid_size_val
+                                )
+                                if (updated or raw_bid_val is not None) and market_id not in seen:
                                     seen.add(market_id)
                                     touched_markets.append(market_id)
                         except (ValueError, TypeError):
                             pass
+                    elif raw_bid_val is not None:
+                        with simulator.lock:
+                            if not hasattr(simulator, "market_bids") or simulator.market_bids is None:
+                                simulator.market_bids = {}
+                            if market_id not in simulator.market_bids:
+                                simulator.market_bids[market_id] = {}
+                            simulator.market_bids[market_id][asset_id] = raw_bid_val
+                        if market_id not in seen:
+                            seen.add(market_id)
+                            touched_markets.append(market_id)
 
         # Evaluate parity across all touched markets in this frame
         candidates = []
@@ -2914,7 +3177,8 @@ def seed_order_books_via_rest(
                     market_id = book.get("market")
                     asset_id = str(book.get("asset_id", ""))
                     asks = book.get("asks", [])
-                    if market_id and asset_id and asks:
+                    bids = book.get("bids", [])
+                    if market_id and asset_id and (asks or bids):
                         valid_asks = []
                         for a in asks:
                             try:
@@ -2924,11 +3188,39 @@ def seed_order_books_via_rest(
                                     valid_asks.append((p, s))
                             except (ValueError, TypeError):
                                 pass
+                        best_ask = None
+                        best_size = None
                         if valid_asks:
                             best_ask_tuple = min(valid_asks, key=lambda x: x[0])
                             best_ask = best_ask_tuple[0]
                             best_size = sum(s for p, s in valid_asks if abs(p - best_ask) < 1e-9)
-                            simulator.update_book(market_id, asset_id, best_ask, ask_size=best_size, evaluate=False)
+
+                        valid_bids = []
+                        for b in bids:
+                            try:
+                                p = float(b.get("price", 0))
+                                s = float(b.get("size", 0))
+                                if p > 0:
+                                    valid_bids.append((p, s))
+                            except (ValueError, TypeError):
+                                pass
+                        best_bid = None
+                        best_bid_size = None
+                        if valid_bids:
+                            best_bid_tuple = max(valid_bids, key=lambda x: x[0])
+                            best_bid = best_bid_tuple[0]
+                            best_bid_size = sum(s for p, s in valid_bids if abs(p - best_bid) < 1e-9)
+
+                        if best_ask is not None or best_bid is not None:
+                            simulator.update_book(
+                                market_id,
+                                asset_id,
+                                best_ask or 0.0,
+                                ask_size=best_size or 0.0,
+                                best_bid=best_bid,
+                                bid_size=best_bid_size,
+                                evaluate=False
+                            )
                             touched_markets.add(market_id)
             logger.info(f"REST cold-start seeded chunk {i // chunk_size + 1}/{num_chunks}: processed {len(chunk)} tokens ({len(touched_markets)} markets active so far).")
         except Exception as e:
@@ -3056,13 +3348,16 @@ def refresh_market_universe(
     worker_states: List[SocketWorkerState],
     market_limit: int = 1000,
     min_volume_24h: float = 1000.0,
-    min_liquidity: float = 0.0
+    min_liquidity: Optional[float] = None
 ) -> Tuple[int, int]:
     """
     Dynamically rotate out closed/settled and stagnant markets, and subscribe to newly
     active high-volume markets across the worker pool without dropping connections.
     Returns (num_added, num_removed).
     """
+    if min_liquidity is None:
+        min_liquidity = float(os.environ.get("POLYMARKET_BOT_MIN_LIQUIDITY", 500.0))
+
     logger.info("Initiating dynamic market universe auto-refresh scan...")
     try:
         refreshed_markets = fetch_top_markets(
@@ -3097,14 +3392,64 @@ def refresh_market_universe(
     if not isinstance(open_pos, dict):
         open_pos = {}
 
-    # Scan for stagnant markets (> 10 min without a single tick, never evict open positions)
+    # Scan for stagnant markets (configurable timeout, default 180.0s = 3 min, never evict open positions)
+    stagnant_timeout = float(os.environ.get("POLYMARKET_BOT_STAGNANT_TIMEOUT", 180.0))
     stagnant_cids = set()
     for cid in current_cids:
         if cid in open_pos:
             continue
         last_tick = simulator.last_market_tick.get(cid, now)
-        if (now - last_tick) > 600.0:
+        if (now - last_tick) > stagnant_timeout:
             stagnant_cids.add(cid)
+
+    # Dynamic shallow/unquoted market eviction (max 50 per cycle)
+    shallow_cids = []
+    with simulator.lock:
+        for cid in current_cids:
+            if cid in open_pos or cid in stagnant_cids:
+                continue
+            books = simulator.market_books.get(cid, {})
+            depths = simulator.market_depths.get(cid, {})
+            m_info = simulator.market_token_map.get(cid, {})
+
+            if m_info and "token_yes" in m_info and "token_no" in m_info:
+                y_ask = float(books.get(m_info["token_yes"]) or 0.0)
+                n_ask = float(books.get(m_info["token_no"]) or 0.0)
+                d_yes = float(depths.get(m_info["token_yes"]) or 0.0)
+                d_no = float(depths.get(m_info["token_no"]) or 0.0)
+            elif "YES" in books and "NO" in books:
+                y_ask = float(books.get("YES") or 0.0)
+                n_ask = float(books.get("NO") or 0.0)
+                d_yes = float(depths.get("YES") or 0.0)
+                d_no = float(depths.get("NO") or 0.0)
+            elif len(books) >= 2:
+                keys = sorted(books.keys())
+                y_ask = float(books.get(keys[0]) or 0.0)
+                n_ask = float(books.get(keys[1]) or 0.0)
+                d_yes = float(depths.get(keys[0]) or 0.0)
+                d_no = float(depths.get(keys[1]) or 0.0)
+            else:
+                y_ask = float(books.get("YES") or 0.0)
+                n_ask = float(books.get("NO") or 0.0)
+                d_yes = 0.0
+                d_no = 0.0
+
+            is_unquoted = (y_ask == 0.0 and n_ask == 0.0 and cid in simulator.market_books)
+            cross_spread = (y_ask + n_ask) - 1.00
+            is_shallow_wide = (y_ask > 0.0 and n_ask > 0.0 and min(d_yes, d_no) < 5.0 and cross_spread > 0.10)
+
+            if is_unquoted or is_shallow_wide:
+                shallow_cids.append(cid)
+
+    shallow_evictions = set(shallow_cids[:50])
+    stagnant_cids.update(shallow_evictions)
+
+    # Maintain stagnant cooldown quarantine to prevent dead markets from immediately re-subscribing
+    if not hasattr(simulator, "stagnant_cooldown"):
+        simulator.stagnant_cooldown = {}
+    simulator.stagnant_cooldown = {cid: exp for cid, exp in simulator.stagnant_cooldown.items() if exp > now}
+    for cid in stagnant_cids:
+        simulator.stagnant_cooldown[cid] = now + 1800.0  # 30 minute quarantine
 
     if not hasattr(simulator, "stagnant_purged_total"):
         simulator.stagnant_purged_total = 0
@@ -3113,10 +3458,14 @@ def refresh_market_universe(
     # Identify dropped condition IDs (closed, volume dropped, or stagnant; NEVER open positions)
     dropped_cids = {cid for cid in current_cids if (cid not in refreshed_cids or cid in stagnant_cids) and cid not in open_pos}
 
-    # Identify new markets to add (must not be currently monitored or dropped)
+    # Identify new markets to add (must not be currently monitored, dropped, or in stagnant cooldown quarantine)
+    stagnant_cooldown = getattr(simulator, "stagnant_cooldown", {})
     new_markets = [
         m for m in refreshed_markets
-        if m.get("condition_id") and m["condition_id"] not in current_cids and m["condition_id"] not in dropped_cids
+        if m.get("condition_id")
+        and m["condition_id"] not in current_cids
+        and m["condition_id"] not in dropped_cids
+        and m["condition_id"] not in stagnant_cooldown
     ]
 
     # 1. Prune dropped/closed/stagnant markets
@@ -3137,6 +3486,18 @@ def refresh_market_universe(
             stale_q_keys = [k for k in simulator.last_processed_quotes if k[0] in dropped_cids]
             for k in stale_q_keys:
                 del simulator.last_processed_quotes[k]
+
+        target_dash = simulator.dash_state or globals().get("dash_state")
+        if target_dash and hasattr(target_dash, "state"):
+            with target_dash.lock:
+                for cid in dropped_cids:
+                    if "markets" in target_dash.state and cid in target_dash.state["markets"]:
+                        del target_dash.state["markets"][cid]
+                    if "price_history" in target_dash.state and cid in target_dash.state["price_history"]:
+                        del target_dash.state["price_history"][cid]
+                    if "ohlc" in target_dash.state and cid in target_dash.state["ohlc"]:
+                        del target_dash.state["ohlc"][cid]
+                target_dash.dirty = True
 
     # 2. Add newly active markets
     if new_markets:
@@ -3405,7 +3766,7 @@ def run_socket_pool(
         time.sleep(0.12)
 
     # Start dynamic periodic market universe auto-refresh daemon thread
-    refresher_interval = float(os.environ.get("POLYMARKET_BOT_REFRESH_INTERVAL", refresher_interval))
+    refresher_interval = float(os.environ.get("POLYMARKET_BOT_REFRESH_INTERVAL", 30.0))
     refresher_thread = start_market_universe_refresher(
         simulator, worker_states, interval=refresher_interval, stop_event=stop_event, market_limit=len(top_markets)
     )
@@ -3792,6 +4153,10 @@ class LiveExecutor(PaperSimulator):
             if cid:
                 by_market[cid].append(p)
 
+        if not hasattr(self, "_orphan_first_seen"):
+            self._orphan_first_seen = {}
+
+        active_unhedged_tokens = set()
         swept_count = 0
         now = time.time()
         for cid, pos_list in by_market.items():
@@ -3814,6 +4179,19 @@ class LiveExecutor(PaperSimulator):
                 if size < 1.0 or cur_val <= 0.01 or cur_price <= 0.001 or not token_id:
                     continue
 
+                active_unhedged_tokens.add(token_id)
+                first_seen = self._orphan_first_seen.setdefault(token_id, now)
+                if (now - first_seen) < 60.0:
+                    continue
+
+                # Resting unwind orders deduplication & cooldown guard
+                if not hasattr(self, "_active_unwind_orders"):
+                    self._active_unwind_orders = set()
+                if not hasattr(self, "_swept_cooldowns"):
+                    self._swept_cooldowns = {}
+                if token_id in self._active_unwind_orders and now < self._swept_cooldowns.get(token_id, 0.0):
+                    continue
+
                 # Cooldown / debounce: don't hammer the same token repeatedly within 15 seconds
                 if not hasattr(self, "_swept_cooldowns"):
                     self._swept_cooldowns = {}
@@ -3829,7 +4207,14 @@ class LiveExecutor(PaperSimulator):
                         f"🧹 [AUTO-SWEEPER] Liquidating unhedged {size:.1f} {outcome} shares on '{title}'"
                     )
 
-                buy_price = float(p.get("avgPrice", cur_price) or cur_price)
+                init_val = float(p.get("initialValue", 0.0) or 0.0)
+                raw_avg = p.get("avgPrice")
+                if raw_avg is not None and float(raw_avg) > 0.0:
+                    buy_price = float(raw_avg)
+                elif size > 0 and init_val > 0:
+                    buy_price = round(init_val / size, 4)
+                else:
+                    buy_price = max(0.01, cur_price)
                 ok, action, details = RollbackProtector.safe_unwind_or_limit_exit(
                     client=self.client,
                     token_id=token_id,
@@ -3837,13 +4222,17 @@ class LiveExecutor(PaperSimulator):
                     buy_price=buy_price,
                     label=outcome,
                     target_state=self.dash_state,
-                    force_market_exit=True
+                    force_market_exit=False
                 )
 
                 self._swept_cooldowns[token_id] = now + 15.0
 
                 if ok:
+                    if action in ("LIMIT_ORDER_PLACED", "POST_LIMIT_SELL"):
+                        self._active_unwind_orders.add(token_id)
+                        self._swept_cooldowns[token_id] = now + 120.0
                     swept_count += 1
+                    self._orphan_first_seen.pop(token_id, None)
                     logger.info(f"✅ [ORPHAN SWEEPER] Successfully auto-liquidated orphan {outcome} shares on '{title}'.")
                     try:
                         from ha_notifier import send_trade_notification
@@ -3856,6 +4245,13 @@ class LiveExecutor(PaperSimulator):
                         )
                     except Exception as e:
                         logger.debug(f"HA sweep notification error: {e}")
+
+        # Clean up tokens that are no longer unhedged
+        for tid in list(self._orphan_first_seen.keys()):
+            if tid not in active_unhedged_tokens:
+                self._orphan_first_seen.pop(tid, None)
+                if hasattr(self, "_active_unwind_orders"):
+                    self._active_unwind_orders.discard(tid)
 
         return swept_count
 
@@ -3965,19 +4361,21 @@ class LiveExecutor(PaperSimulator):
 
     def _emergency_dump_leg(self, token_id: str, shares: float, label: str = "shares", target_state=None, buy_price: Optional[float] = None) -> bool:
         """
-        Price-Protected Rollback: Delegates to RollbackProtector to guarantee that
-        unhedged shares are NEVER dumped at a catastrophic loss into an illiquid book.
+        Price-Protected Rollback: Guarantees unhedged shares are NEVER dumped at a
+        loss into the market bid. Quantizes price to tick size and delegates through
+        RollbackProtector.safe_unwind_or_limit_exit with force_market_exit=False.
         """
         if shares <= 0:
             return True
-        price_to_protect = buy_price if buy_price is not None else 0.50
+        price_to_protect = buy_price if (buy_price is not None and buy_price > 0) else 0.50
         ok, action, details = RollbackProtector.safe_unwind_or_limit_exit(
             client=self.client,
             token_id=token_id,
             shares=shares,
             buy_price=price_to_protect,
             label=label,
-            target_state=target_state
+            target_state=target_state,
+            force_market_exit=False
         )
         return ok
 
@@ -4188,8 +4586,11 @@ class LiveExecutor(PaperSimulator):
 
             total_cap = _safe_float(getattr(self.risk, "capital", None), 1000.0) if self.risk else 1000.0
             available_cash = _safe_float(getattr(self.risk, "available_cash", None), total_cap) if self.risk else total_cap
-            reserve_pct = _safe_float(getattr(self.risk, "reserve_cash_pct", None), 0.0) if self.risk else 0.0
-            spendable = max(0.0, available_cash - (available_cash * reserve_pct))
+            if total_cap < 100.0:
+                spendable = available_cash
+            else:
+                reserve_pct = _safe_float(getattr(self.risk, "reserve_cash_pct", None), 0.0) if self.risk else 0.0
+                spendable = max(0.0, available_cash - (available_cash * reserve_pct))
 
             cost_per_pair = maker_price + taker_price
             if cost_per_pair <= 0:
@@ -4197,7 +4598,7 @@ class LiveExecutor(PaperSimulator):
 
             raw_trade_size = float(opp.get("trade_size", 0.0))
             if target_state and getattr(target_state, "state", {}).get("execution_mode") == "Live Trading":
-                live_wager_cap = float(target_state.state.get("live_wager_cap", 1.0))
+                live_wager_cap = max(5.50, float(target_state.state.get("live_wager_cap", 10.0) or 10.0))
                 raw_trade_size = min(raw_trade_size, live_wager_cap)
 
             max_shares = int(raw_trade_size / cost_per_pair)
@@ -4238,6 +4639,7 @@ class LiveExecutor(PaperSimulator):
                     if self.risk and hasattr(self.risk, "open_positions"):
                         if market_id in self.risk.open_positions:
                             del self.risk.open_positions[market_id]
+                    cooldown_duration = 5.0
                 else:
                     realized_loss = float(details.get("realized_loss", 0.0) or 0.0) if isinstance(details, dict) else 0.0
                     if realized_loss > 0:
@@ -4246,17 +4648,20 @@ class LiveExecutor(PaperSimulator):
                             self.risk.record_pnl(-realized_loss)
                         if self.dash_state:
                             self.dash_state.add_activity_log(f"⚠️ Unwind loss on {short_id}: -${realized_loss:.4f}")
+                    cooldown_duration = 300.0
 
                 if not hasattr(self, "market_cooldowns"):
                     self.market_cooldowns = {}
-                self.market_cooldowns[market_id] = time.time() + 300.0
+                self.market_cooldowns[market_id] = time.time() + cooldown_duration
 
                 if hasattr(self, "shadow_tracker") and self.shadow_tracker:
                     opp_copy = dict(opp)
                     opp_copy["trade_size"] = trade_size
                     opp_copy["expected_profit"] = expected_profit
-                    self.shadow_tracker.record_missed(opp_copy, MissedReason.CLOB_ORDER_KILLED)
+                    miss_r = MissedReason.CONCURRENCY_EXHAUSTED if action == "MAKER_TIMEOUT_ZERO_LOSS" else MissedReason.CLOB_ORDER_KILLED
+                    self.shadow_tracker.record_missed(opp_copy, miss_r)
                 return False
+
 
             if self.risk:
                 self.risk.open_position(market_id, trade_size, expected_profit)
@@ -4284,7 +4689,7 @@ class LiveExecutor(PaperSimulator):
         max_exp_pct = _safe_float(getattr(self.risk, "max_exposure_pct", None), 0.20) if self.risk else 0.20
         sizing_mult = _safe_float(getattr(self.risk, "sizing_multiplier", None), 1.0) if self.risk else 1.0
         desired = max(5.0, total_cap * max_exp_pct * sizing_mult)
-        bankroll_floor = 6.0 if total_cap < 100.0 else 250.0
+        bankroll_floor = 10.0 if total_cap < 100.0 else 250.0
         dyn_min_depth = compute_dynamic_min_depth(total_cap, desired, floor_override=bankroll_floor)
 
         # Strict Expiration Horizon Gating
@@ -4313,11 +4718,11 @@ class LiveExecutor(PaperSimulator):
             if isinstance(mb.get("book_no"), dict):
                 book_no = mb.get("book_no")
 
-        if "bid_yes" not in opp and book_yes and isinstance(book_yes, dict):
+        if "bid_yes" not in opp and book_yes:
             b_bid, _, _ = _extract_book_metrics(book_yes)
             if b_bid is not None:
                 opp["bid_yes"] = b_bid
-        if "bid_no" not in opp and book_no and isinstance(book_no, dict):
+        if "bid_no" not in opp and book_no:
             b_bid, _, _ = _extract_book_metrics(book_no)
             if b_bid is not None:
                 opp["bid_no"] = b_bid
@@ -4327,7 +4732,13 @@ class LiveExecutor(PaperSimulator):
             if token_yes and "bid_yes" not in opp and hasattr(self.client, "get_order_book"):
                 try:
                     r_by = self.client.get_order_book(token_yes)
-                    if isinstance(r_by, dict):
+                    if hasattr(r_by, "bids") and isinstance(getattr(r_by, "bids", None), (list, tuple)):
+                        bids_y = getattr(r_by, "bids", [])
+                        if bids_y:
+                            first_bid = bids_y[0]
+                            opp["bid_yes"] = float(getattr(first_bid, "price", None) or (first_bid.get("price") if isinstance(first_bid, dict) else first_bid[0]))
+                        book_yes = r_by
+                    elif isinstance(r_by, dict):
                         bids_y = r_by.get("bids", [])
                         if bids_y:
                             opp["bid_yes"] = float(bids_y[0].get("price") if isinstance(bids_y[0], dict) else bids_y[0][0])
@@ -4337,7 +4748,13 @@ class LiveExecutor(PaperSimulator):
             if token_no and "bid_no" not in opp and hasattr(self.client, "get_order_book"):
                 try:
                     r_bn = self.client.get_order_book(token_no)
-                    if isinstance(r_bn, dict):
+                    if hasattr(r_bn, "bids") and isinstance(getattr(r_bn, "bids", None), (list, tuple)):
+                        bids_n = getattr(r_bn, "bids", [])
+                        if bids_n:
+                            first_bid = bids_n[0]
+                            opp["bid_no"] = float(getattr(first_bid, "price", None) or (first_bid.get("price") if isinstance(first_bid, dict) else first_bid[0]))
+                        book_no = r_bn
+                    elif isinstance(r_bn, dict):
                         bids_n = r_bn.get("bids", [])
                         if bids_n:
                             opp["bid_no"] = float(bids_n[0].get("price") if isinstance(bids_n[0], dict) else bids_n[0][0])
@@ -4350,9 +4767,9 @@ class LiveExecutor(PaperSimulator):
             book_yes=book_yes,
             book_no=book_no,
             market_meta=opp.get("market_meta"),
-            max_spread=0.015,
+            max_spread=0.030,
             min_depth_usd=dyn_min_depth,
-            min_volume_24h=500.0,
+            min_volume_24h=100.0,
             min_hours_to_expiry=4.0
         )
         if not is_liquid:
@@ -4373,8 +4790,11 @@ class LiveExecutor(PaperSimulator):
             with self.risk.lock:
                 total_cap = _safe_float(getattr(self.risk, "capital", None), 1000.0)
                 available_cash = _safe_float(getattr(self.risk, "available_cash", None), total_cap)
-                reserve_pct = _safe_float(getattr(self.risk, "reserve_cash_pct", None), 0.0)
-                spendable = max(0.0, available_cash - (available_cash * reserve_pct))
+                if total_cap < 100.0:
+                    spendable = available_cash
+                else:
+                    reserve_pct = _safe_float(getattr(self.risk, "reserve_cash_pct", None), 0.0)
+                    spendable = max(0.0, available_cash - (available_cash * reserve_pct))
 
                 open_pos = getattr(self.risk, "open_positions", {})
                 if not isinstance(open_pos, dict):
@@ -4386,16 +4806,21 @@ class LiveExecutor(PaperSimulator):
                 ]
                 current_m_exp = sum(_safe_float(p.get('size'), 0.0) for p in market_positions)
                 max_market_pct = _safe_float(getattr(self.risk, "max_market_exposure_pct", None), 0.25)
-                max_m_allowed = total_cap * max_market_pct
+                if total_cap < 50.0:
+                    max_m_allowed = max(5.50, total_cap * max_market_pct)
+                else:
+                    max_m_allowed = total_cap * max_market_pct
                 rem_cap = max(0.0, max_m_allowed - current_m_exp)
                 max_exp_pct = _safe_float(getattr(self.risk, "max_exposure_pct", None), 0.10)
                 sizing_mult = _safe_float(getattr(self.risk, "sizing_multiplier", None), 1.0)
                 desired = total_cap * max_exp_pct * sizing_mult
+                if total_cap < 50.0 and desired < 5.0 and spendable >= 5.0:
+                    desired = 5.0
             
             trade_size = min(trade_size, desired, spendable, rem_cap)
             
             if target_state and getattr(target_state, 'state', {}).get('execution_mode') == 'Live Trading':
-                live_wager_cap = float(target_state.state.get('live_wager_cap', 1.0))
+                live_wager_cap = max(5.50, float(target_state.state.get('live_wager_cap', 10.0) or 10.0))
                 trade_size = min(trade_size, live_wager_cap)
             
             if trade_size < 1.0:
@@ -4404,13 +4829,14 @@ class LiveExecutor(PaperSimulator):
                 elif rem_cap < 1.0:
                     reason = MissedReason.EXPOSURE_LIMIT_EXCEEDED
                 else:
-                    reason = MissedReason.ZERO_LIQUIDITY
+                    reason = MissedReason.INSUFFICIENT_CASH
                 if hasattr(self, "shadow_tracker") and self.shadow_tracker:
                     opp_copy = dict(opp)
                     opp_copy["trade_size"] = opp.get("trade_size", desired)
                     opp_copy["expected_profit"] = opp_copy["trade_size"] * edge
                     self.shadow_tracker.record_missed(opp_copy, reason)
                 return False
+
 
             expected_profit = trade_size * edge
 
@@ -4428,8 +4854,8 @@ class LiveExecutor(PaperSimulator):
                 return False
                 
             m_info = self.market_token_map.get(market_id, {})
-            token_yes = m_info.get('token_yes')
-            token_no = m_info.get('token_no')
+            token_yes = opp.get('token_yes') or m_info.get('token_yes')
+            token_no = opp.get('token_no') or m_info.get('token_no')
             if not token_yes or not token_no:
                 if hasattr(self, "shadow_tracker") and self.shadow_tracker:
                     opp_copy = dict(opp)
@@ -4441,7 +4867,12 @@ class LiveExecutor(PaperSimulator):
             logger.info(f"🚨 LIVE ARBITRAGE OPPORTUNITY 🚨 | Market {market_id}")
             
             try:
-                from py_clob_client_v2.clob_types import OrderArgsV2, PostOrdersV2Args, OrderType
+                from py_clob_client_v2.clob_types import (
+                    OrderArgsV2,
+                    PostOrdersV2Args,
+                    OrderType,
+                    PartialCreateOrderOptions,
+                )
                 cost_per_pair = opp['ask_yes'] + opp['ask_no']
                 if cost_per_pair <= 0:
                     return False
@@ -4459,24 +4890,29 @@ class LiveExecutor(PaperSimulator):
 
                 matched_shares = None
                 for s in range(max_shares, 4, -1):
-                    cy = round(s * opp['ask_yes'], 6)
-                    cn = round(s * opp['ask_no'], 6)
-                    if round(cy, 2) == cy and round(cn, 2) == cn and (s * cost_per_pair <= spendable + 1e-5):
+                    if (s * cost_per_pair <= spendable + 1e-5) and self.risk.can_trade(s * cost_per_pair, market_id=market_id):
                         matched_shares = float(s)
                         break
-
-                # If no exact 2-decimal match found, safely use highest integer shares >= 5 within spendable & risk limits
-                if matched_shares is None:
-                    for s in range(max_shares, 4, -1):
-                        if (s * cost_per_pair <= spendable + 1e-5) and self.risk.can_trade(s * cost_per_pair, market_id=market_id):
-                            matched_shares = float(s)
-                            break
 
                 if matched_shares is None or matched_shares < 5:
                     if hasattr(self, "shadow_tracker") and self.shadow_tracker:
                         opp_copy = dict(opp)
-                        self.shadow_tracker.record_missed(opp_copy, MissedReason.ZERO_LIQUIDITY)
+                        five_share_cost = 5.0 * cost_per_pair
+                        if spendable < five_share_cost:
+                            reason_enum = MissedReason.INSUFFICIENT_CASH
+                        else:
+                            gating = self.risk.check_trade_gating_reason(five_share_cost, market_id=market_id)
+                            try:
+                                reason_enum = MissedReason(gating) if gating else MissedReason.EXPOSURE_LIMIT_EXCEEDED
+                            except ValueError:
+                                reason_enum = MissedReason.EXPOSURE_LIMIT_EXCEEDED
+                        self.shadow_tracker.record_missed(opp_copy, reason_enum)
                     return False
+
+                # Clamp matched_shares by available taker depth if taker depth is known
+                depth_taker = float(opp.get('depth_no_shares', opp.get('depth_no', 0.0)) or 0.0)
+                if depth_taker > 0 and matched_shares > depth_taker:
+                    matched_shares = max(5.0, float(int(depth_taker)))
 
                 size_yes = matched_shares
                 size_no = matched_shares
@@ -4486,45 +4922,67 @@ class LiveExecutor(PaperSimulator):
                 # Optional Maker-Taker Asymmetric Execution Engine (Zero Slippage & Zero Taker Fees on Leg 1)
                 if target_state and getattr(target_state, "state", {}).get("execution_style") == "maker_taker":
                     tick_size = float(opp.get('tick_size', 0.001))
-                    bid_yes = opp.get('bid_yes')
-                    ask_yes = opp['ask_yes']
-                    if bid_yes is not None and bid_yes > 0:
-                        maker_price = min(bid_yes + tick_size, ask_yes - tick_size)
-                    else:
-                        maker_price = round(ask_yes - tick_size, 4)
-                    maker_price = max(tick_size, _round_to_tick_size(maker_price, tick_size))
+                    min_edge_val = float(getattr(target_state, 'state', {}).get('min_edge_pct', 0.0080) or 0.0080)
 
+                    if opp.get("execution_type") == "maker_taker":
+                        token_maker = opp.get("maker_token") or token_yes
+                        maker_price = opp.get("maker_price")
+                        token_taker = opp.get("taker_token") or token_no
+                        taker_price = opp.get("taker_price") or opp['ask_no']
+                    else:
+                        bid_yes = opp.get('bid_yes')
+                        ask_yes = opp['ask_yes']
+                        ask_no = opp['ask_no']
+                        max_viable = round(1.00 - ask_no - min_edge_val, 4)
+                        maker_price = min(ask_yes - tick_size, max_viable)
+                        if bid_yes is not None and bid_yes >= (ask_yes - 3 * tick_size):
+                            maker_price = max(bid_yes + tick_size, maker_price)
+                        maker_price = min(maker_price, max_viable)
+                        maker_price = max(tick_size, _round_to_tick_size(maker_price, tick_size))
+                        if maker_price > max_viable or (1.00 - maker_price - ask_no) < min_edge_val:
+                            logger.info(f"🚫 Maker price {maker_price} exceeds max viable {max_viable} on {short_id}. Aborting.")
+                            return False
+                        token_maker = token_yes
+                        token_taker = token_no
+                        taker_price = ask_no
+
+                    timeout_sec = float(getattr(target_state, "state", {}).get("maker_timeout_seconds", 5.0) or 5.0)
                     ok, action, details = self.maker_taker_executor.execute_maker_taker_arbitrage(
-                        token_maker=token_yes,
+                        token_maker=token_maker,
                         maker_price=maker_price,
-                        token_taker=token_no,
-                        taker_price=opp['ask_no'],
+                        token_taker=token_taker,
+                        taker_price=taker_price,
                         size=matched_shares,
-                        timeout_seconds=float(getattr(target_state, "state", {}).get("maker_timeout_seconds", 5.0) or 5.0),
+                        timeout_seconds=timeout_sec,
                         dash_state=self.dash_state,
-                        min_edge=float(getattr(target_state, 'state', {}).get('min_edge_pct', 0.0080) or 0.0080),
+                        min_edge=min_edge_val,
                         tick_size=tick_size
                     )
                     if not ok:
-                        realized_loss = float(details.get("realized_loss", 0.0) or 0.0) if isinstance(details, dict) else 0.0
-                        if realized_loss > 0:
-                            logger.warning(f"Maker-taker arbitrage unwound on {short_id} with realized loss: ${realized_loss:.4f}")
-                            self.risk.record_pnl(-realized_loss)
-                            if self.dash_state:
-                                self.dash_state.add_activity_log(f"⚠️ Unwind loss on {short_id}: -${realized_loss:.4f}")
+                        if action == "MAKER_TIMEOUT_ZERO_LOSS":
+                            cooldown_duration = 5.0
+                            miss_r = MissedReason.CONCURRENCY_EXHAUSTED
+                        else:
+                            realized_loss = float(details.get("realized_loss", 0.0) or 0.0) if isinstance(details, dict) else 0.0
+                            if realized_loss > 0:
+                                logger.warning(f"Maker-taker arbitrage unwound on {short_id} with realized loss: ${realized_loss:.4f}")
+                                self.risk.record_pnl(-realized_loss)
+                                if self.dash_state:
+                                    self.dash_state.add_activity_log(f"⚠️ Unwind loss on {short_id}: -${realized_loss:.4f}")
+                            cooldown_duration = 15.0
+                            miss_r = MissedReason.CLOB_ORDER_KILLED
 
-                        # Set 5-minute cooldown on market to prevent rapid re-entry
                         if not hasattr(self, "market_cooldowns"):
                             self.market_cooldowns = {}
-                        self.market_cooldowns[market_id] = time.time() + 300.0
+                        self.market_cooldowns[market_id] = time.time() + cooldown_duration
 
                         if hasattr(self, "shadow_tracker") and self.shadow_tracker:
                             opp_copy = dict(opp)
                             opp_copy["trade_size"] = trade_size
                             opp_copy["expected_profit"] = expected_profit
-                            self.shadow_tracker.record_missed(opp_copy, MissedReason.CLOB_ORDER_KILLED)
+                            self.shadow_tracker.record_missed(opp_copy, miss_r)
                         return False
-                    
+
                     # Both legs secured! Record position & sync collateral
                     opened = self.risk.open_position(market_id, trade_size, expected_profit)
                     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -4539,8 +4997,8 @@ class LiveExecutor(PaperSimulator):
                 price_no = _ceil_to_tick_size(opp['ask_no'], tick_size)
 
                 # Clamp matched shares so FOK order does NOT exceed available depth on either leg:
-                depth_yes_shares = float(opp.get('depth_yes', 0.0) or 0.0) / max(0.01, opp['ask_yes'])
-                depth_no_shares = float(opp.get('depth_no', 0.0) or 0.0) / max(0.01, opp['ask_no'])
+                depth_yes_shares = float(opp.get('depth_yes_shares', opp.get('depth_yes', 0.0)) or 0.0)
+                depth_no_shares = float(opp.get('depth_no_shares', opp.get('depth_no', 0.0)) or 0.0)
                 avail_shares = min(depth_yes_shares, depth_no_shares)
                 if avail_shares > 0 and matched_shares > avail_shares:
                     matched_shares = math.floor(avail_shares * 10.0) / 10.0
@@ -4553,22 +5011,57 @@ class LiveExecutor(PaperSimulator):
                 # Verify edge still exists:
                 if price_yes + price_no >= 1.0 - float(getattr(target_state, 'state', {}).get('min_edge_pct', 0.0005) or 0.0005):
                     return False
-                order_yes = self.client.create_order(
-                    OrderArgsV2(
-                        price=price_yes,
-                        size=size_yes,
-                        side='BUY',
-                        token_id=token_yes
+                try:
+                    order_opts = PartialCreateOrderOptions(tick_size=str(tick_size), neg_risk=False)
+                except Exception:
+                    order_opts = None
+
+                supports_options = False
+                if order_opts is not None and hasattr(self.client, "create_order"):
+                    try:
+                        import inspect
+                        fn_target = getattr(self.client.create_order, "side_effect", None) or self.client.create_order
+                        sig = inspect.signature(fn_target)
+                        supports_options = 'options' in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                    except Exception:
+                        supports_options = True
+
+                if supports_options and order_opts is not None:
+                    order_yes = self.client.create_order(
+                        OrderArgsV2(
+                            price=price_yes,
+                            size=size_yes,
+                            side='BUY',
+                            token_id=token_yes
+                        ),
+                        options=order_opts
                     )
-                )
-                order_no = self.client.create_order(
-                    OrderArgsV2(
-                        price=price_no,
-                        size=size_no,
-                        side='BUY',
-                        token_id=token_no
+                    order_no = self.client.create_order(
+                        OrderArgsV2(
+                            price=price_no,
+                            size=size_no,
+                            side='BUY',
+                            token_id=token_no
+                        ),
+                        options=order_opts
                     )
-                )
+                else:
+                    order_yes = self.client.create_order(
+                        OrderArgsV2(
+                            price=price_yes,
+                            size=size_yes,
+                            side='BUY',
+                            token_id=token_yes
+                        )
+                    )
+                    order_no = self.client.create_order(
+                        OrderArgsV2(
+                            price=price_no,
+                            size=size_no,
+                            side='BUY',
+                            token_id=token_no
+                        )
+                    )
 
                 orders = [
                     PostOrdersV2Args(order=order_yes, orderType=OrderType.FOK),

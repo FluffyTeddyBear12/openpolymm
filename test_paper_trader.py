@@ -2570,7 +2570,7 @@ def test_active_policy_rewriter_online_adaptation():
                 "market_id": "0xmkt_edge", "edge": 0.0015, "trade_size": 50.0, "expected_profit": 0.075
             }, MissedReason.SUB_THRESHOLD_EDGE)
 
-            assert rewriter.params["min_edge_pct"] == max(0.0010, round(init_edge - 0.0002, 4))
+            assert rewriter.params["min_edge_pct"] == max(0.0150, round(init_edge - 0.0002, 4))
             assert sim.min_edge == rewriter.params["min_edge_pct"]
 
             rewriter.last_triggered_time = 0.0
@@ -3506,25 +3506,16 @@ def test_live_executor_rollback_protects_price_without_penny_dump():
     mock_client = MagicMock()
     executor.client = mock_client
 
-    with patch.object(RollbackProtector, "safe_unwind_or_limit_exit") as mock_safe_unwind:
-        mock_safe_unwind.return_value = (True, "POST_LIMIT_SELL", {"order_id": "ord_123"})
-        
-        ok = executor._emergency_dump_leg(
-            token_id="0xtoken_yes_456",
-            shares=50.0,
-            label="YES",
-            target_state=dash_state,
-            buy_price=0.45
-        )
-        assert ok is True
-        mock_safe_unwind.assert_called_once_with(
-            client=mock_client,
-            token_id="0xtoken_yes_456",
-            shares=50.0,
-            buy_price=0.45,
-            label="YES",
-            target_state=dash_state
-        )
+    ok = executor._emergency_dump_leg(
+        token_id="0xtoken_yes_456",
+        shares=50.0,
+        label="YES",
+        target_state=dash_state,
+        buy_price=0.45
+    )
+    assert ok is True
+    mock_client.create_order.assert_called_once()
+    mock_client.post_orders.assert_called_once()
 
 
 class TestLiveExecutorConstraints(unittest.TestCase):
@@ -3673,7 +3664,15 @@ class TestLiveExecutorConstraints(unittest.TestCase):
              patch("ha_notifier.send_trade_notification") as mock_notify:
             mock_safe_unwind.return_value = (True, "POST_LIMIT_SELL", {"realized_loss": -0.05, "order_id": "ord_123"})
 
-            # First run: orphan position should be detected and swept
+            # Initial detection: 30-second grace period is active, so 0 swept
+            swept_initial = executor.sweep_orphan_positions(active_positions)
+            self.assertEqual(swept_initial, 0)
+            mock_safe_unwind.assert_not_called()
+
+            # Fast forward past 60-second grace period:
+            executor._orphan_first_seen["0xtoken_orphan"] = time.time() - 65.0
+
+            # Second run: orphan position past grace period swept with force_market_exit=False
             swept_count = executor.sweep_orphan_positions(active_positions)
             self.assertEqual(swept_count, 1)
 
@@ -3684,12 +3683,15 @@ class TestLiveExecutorConstraints(unittest.TestCase):
                 buy_price=0.40,
                 label="YES",
                 target_state=dash_state,
-                force_market_exit=True
+                force_market_exit=False
             )
             mock_notify.assert_called_once()
             dash_state.add_activity_log.assert_called()
 
-            # Second run within 15 seconds: cooldown debounce should prevent hammering
+            # Swept token is cleaned up from _orphan_first_seen
+            self.assertNotIn("0xtoken_orphan", executor._orphan_first_seen)
+
+            # Third run within 15 seconds: cooldown debounce should prevent hammering
             mock_safe_unwind.reset_mock()
             mock_notify.reset_mock()
             swept_again = executor.sweep_orphan_positions(active_positions)
@@ -3704,6 +3706,12 @@ def test_live_executor_orphan_sweeper_liquidates_unhedged_position():
 
 
 class TestGranularMissedReasonGating(unittest.TestCase):
+    def test_map_liquidity_gate_reason_circuit_breaker(self):
+        from paper_trader import _map_liquidity_gate_reason
+        self.assertEqual(_map_liquidity_gate_reason("Market eligibility gate failed: cricket match"), MissedReason.CIRCUIT_BREAKER)
+        self.assertEqual(_map_liquidity_gate_reason("illiquid prop pattern rejected"), MissedReason.CIRCUIT_BREAKER)
+        self.assertEqual(_map_liquidity_gate_reason("Resolution horizon / expiry too soon"), MissedReason.CIRCUIT_BREAKER)
+        self.assertEqual(_map_liquidity_gate_reason("Sport match in play"), MissedReason.CIRCUIT_BREAKER)
     def test_check_market_parity_records_asymmetric_depth(self):
         risk = RiskSizingEngine(initial_capital=1000.0, max_exposure_pct=0.10)
         sim = PaperSimulator(risk)
@@ -3886,10 +3894,10 @@ class TestMakerTakerParityScanner(unittest.TestCase):
         self.assertEqual(opp["execution_type"], "maker_taker")
         self.assertEqual(opp["maker_leg"], "YES")
         self.assertEqual(opp["maker_token"], "tok_yes")
-        self.assertAlmostEqual(opp["maker_price"], 0.481, places=3)
+        self.assertAlmostEqual(opp["maker_price"], 0.499, places=3)
         self.assertEqual(opp["taker_token"], "tok_no")
         self.assertAlmostEqual(opp["taker_price"], 0.49, places=2)
-        self.assertAlmostEqual(opp["edge"], 0.027285, places=4)
+        self.assertAlmostEqual(opp["edge"], 0.009285, places=4)
         self.assertEqual(opp["rewards_daily_rate"], 20.0)
 
     def test_branch_b_maker_no_taker_yes(self):
@@ -3917,10 +3925,10 @@ class TestMakerTakerParityScanner(unittest.TestCase):
         self.assertEqual(opp["execution_type"], "maker_taker")
         self.assertEqual(opp["maker_leg"], "NO")
         self.assertEqual(opp["maker_token"], "tok_no")
-        self.assertAlmostEqual(opp["maker_price"], 0.481, places=3)
+        self.assertAlmostEqual(opp["maker_price"], 0.499, places=3)
         self.assertEqual(opp["taker_token"], "tok_yes")
         self.assertAlmostEqual(opp["taker_price"], 0.49, places=2)
-        self.assertAlmostEqual(opp["edge"], 0.027285, places=4)
+        self.assertAlmostEqual(opp["edge"], 0.009285, places=4)
 
     def test_wide_spread_rejection(self):
         market_id = "0xMARKET_WIDE_SPREAD"

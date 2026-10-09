@@ -84,7 +84,7 @@ class RollbackProtector:
         label = str(args[4] if len(args) > 4 else kwargs.get("label", "YES"))
         max_loss_cents = float(args[5] if len(args) > 5 else kwargs.get("max_loss_cents", 0.005))
         target_state = kwargs.get("target_state", default_target_state)
-        force_market_exit = kwargs.get("force_market_exit", False)
+        force_market_exit = kwargs.get("force_market_exit", None)
 
         if shares <= 0:
             return True, "NO_SHARES", {"shares": shares, "realized_loss": 0.0}
@@ -103,10 +103,13 @@ class RollbackProtector:
             max_loss_cents=max_loss_cents,
         )
 
-        if force_market_exit and best_bid > 0:
-            decision = "IMMEDIATE_EXIT"
-        elif force_market_exit and best_bid <= 0:
-            decision = "NO_BIDS_AVAILABLE"
+        if force_market_exit is not None:
+            if not force_market_exit:
+                decision = "POST_LIMIT_SELL"
+            elif best_bid > 0:
+                decision = "IMMEDIATE_EXIT"
+            else:
+                decision = "NO_BIDS_AVAILABLE"
 
         if decision == "NO_BIDS_AVAILABLE":
             err_msg = f"Zero bids on book for {token_id}. Immediate liquidation blocked by zero liquidity."

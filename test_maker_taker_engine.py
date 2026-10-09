@@ -236,45 +236,40 @@ class TestMakerTakerEngine(unittest.TestCase):
         self.assertFalse(result)
 
     def test_taker_leg_updates_to_live_ask(self):
-        self.urlopen_patcher.stop()
-        try:
-            with patch("urllib.request.urlopen") as mock_urlopen:
-                mock_resp = MagicMock()
-                mock_resp.read.return_value = json.dumps({
-                    "asks": [{"price": "0.495", "size": "50.0"}]
-                }).encode("utf-8")
-                mock_urlopen.return_value.__enter__.return_value = mock_resp
+        order_maker_obj = MagicMock()
+        order_taker_obj = MagicMock()
+        self.mock_client.create_order.side_effect = [order_maker_obj, order_taker_obj]
+        self.mock_client.post_orders.side_effect = [
+            [{"orderID": "maker_order_001"}],
+            [{"orderID": "taker_order_002", "takingAmount": "10.0", "status": "matched"}],
+        ]
+        self.mock_client.get_order.return_value = {
+            "status": "MATCHED",
+            "size_matched": "10.0",
+        }
+        in_memory_books = {
+            self.token_taker: {
+                "asks": [{"price": "0.495", "size": "50.0"}]
+            }
+        }
 
-                order_maker_obj = MagicMock()
-                order_taker_obj = MagicMock()
-                self.mock_client.create_order.side_effect = [order_maker_obj, order_taker_obj]
-                self.mock_client.post_orders.side_effect = [
-                    [{"orderID": "maker_order_001"}],
-                    [{"orderID": "taker_order_002", "takingAmount": "10.0", "status": "matched"}],
-                ]
-                self.mock_client.get_order.return_value = {
-                    "status": "MATCHED",
-                    "size_matched": "10.0",
-                }
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=self.maker_price,   # 0.48
+            token_taker=self.token_taker,
+            taker_price=self.taker_price,   # 0.49
+            size=self.size,
+            timeout_seconds=2.0,
+            market_books=in_memory_books,
+        )
 
-                success, reason, meta = self.executor.execute_maker_taker_arbitrage(
-                    token_maker=self.token_maker,
-                    maker_price=self.maker_price,   # 0.48
-                    token_taker=self.token_taker,
-                    taker_price=self.taker_price,   # 0.49
-                    size=self.size,
-                    timeout_seconds=2.0,
-                )
+        self.assertTrue(success)
+        self.assertEqual(meta["taker_price"], 0.495)
+        self.assertEqual(meta["total_cost"], 0.975)
+        self.assertEqual(meta["profit_per_share"], 0.025)
 
-                self.assertTrue(success)
-                self.assertEqual(meta["taker_price"], 0.495)
-                self.assertEqual(meta["total_cost"], 0.975)
-                self.assertEqual(meta["profit_per_share"], 0.025)
-
-                posted_taker_args = self.mock_client.create_order.call_args_list[1][0][0]
-                self.assertEqual(posted_taker_args.price, 0.495)
-        finally:
-            self.urlopen_patcher.start()
+        posted_taker_args = self.mock_client.create_order.call_args_list[1][0][0]
+        self.assertEqual(posted_taker_args.price, 0.495)
 
     def test_taker_failure_immediate_unwind_executed(self):
         """Verify that by default, Leg 2 failure executes immediate market exit on Leg 1."""

@@ -47,7 +47,7 @@ class TestLiquidityFilter(unittest.TestCase):
         }
         book_no = {
             "bids": [{"price": 0.950, "size": 100}],
-            "asks": [{"price": 0.960, "size": 100}]   # spread = 0.010 <= 0.015
+            "asks": [{"price": 0.960, "size": 100}]   # spread = 0.010 <= 0.025
         }
         passed, reason = validate_order_book_liquidity(book_yes, book_no)
         self.assertFalse(passed)
@@ -68,19 +68,19 @@ class TestLiquidityFilter(unittest.TestCase):
         self.assertEqual(reason, "NO spread (0.040) exceeds max (0.015)")
 
     def test_thin_depth_fails(self):
-        """Thin depth (< $50) at top 3 ask levels fails."""
+        """Thin depth (< $10) at top 3 ask levels fails."""
         book_yes = {
             "bids": [{"price": 0.495, "size": 100}],
-            "asks": [{"price": 0.505, "size": 40}]    # depth = 0.505 * 40 = $20.20 < $50
+            "asks": [{"price": 0.505, "size": 10}]    # depth = 0.505 * 10 = $5.05 < $10
         }
         book_no = {
             "bids": [{"price": 0.490, "size": 100}],
-            "asks": [{"price": 0.500, "size": 200}]   # depth = 0.500 * 200 = $100.00 >= $50
+            "asks": [{"price": 0.500, "size": 200}]   # depth = 0.500 * 200 = $100.00 >= $10
         }
         passed, reason = validate_order_book_liquidity(book_yes, book_no)
         self.assertFalse(passed)
         self.assertIn("Insufficient depth", reason)
-        self.assertIn("YES: $20.20", reason)
+        self.assertIn("YES: $5.05", reason)
         self.assertIn("NO: $100.00", reason)
 
     def test_illiquid_soccer_exact_score_fails(self):
@@ -188,7 +188,7 @@ class TestLiquidityFilter(unittest.TestCase):
         self.assertIn("Market eligibility gate failed", reason)
 
         opp_thin = dict(opp)
-        opp_thin["available_depth_usd"] = 15.0
+        opp_thin["available_depth_usd"] = 5.0
         passed, reason = validate_arbitrage_execution(opp_thin)
         self.assertFalse(passed)
         self.assertIn("Insufficient depth", reason)
@@ -216,14 +216,14 @@ class TestLiquidityFilter(unittest.TestCase):
         self.assertIn("Volume 24h", reason)
 
     def test_compute_dynamic_min_depth(self):
-        """Test dynamic depth computation logic enforces $250.00 floor and 2.5x desired_size."""
-        self.assertEqual(compute_dynamic_min_depth(35.0), 250.0)
-        self.assertEqual(compute_dynamic_min_depth(10.0), 250.0)
-        self.assertEqual(compute_dynamic_min_depth(1000.0, desired_size=50.0), 250.0)
+        """Test dynamic depth computation logic enforces $100.00 floor and 2.5x desired_size."""
+        self.assertEqual(compute_dynamic_min_depth(35.0), 100.0)
+        self.assertEqual(compute_dynamic_min_depth(10.0), 100.0)
+        self.assertEqual(compute_dynamic_min_depth(1000.0, desired_size=50.0), 125.0)
         self.assertEqual(compute_dynamic_min_depth(35.0, desired_size=120.0), 300.0)
         # Test bankroll floor override
-        self.assertEqual(compute_dynamic_min_depth(29.49, desired_size=5.0, floor_override=20.0), 20.0)
-        self.assertEqual(compute_dynamic_min_depth(29.49, desired_size=10.0, floor_override=20.0), 25.0)
+        self.assertEqual(compute_dynamic_min_depth(29.49, desired_size=5.0, floor_override=10.0), 10.0)
+        self.assertEqual(compute_dynamic_min_depth(29.49, desired_size=10.0, floor_override=10.0), 10.0)
     def test_is_market_eligible_rejects_turbo_patterns(self):
         """Turbo and short-duration patterns are rejected by is_market_eligible."""
         from liquidity_filter import is_market_eligible
@@ -332,5 +332,35 @@ class TestLiquidityFilter(unittest.TestCase):
         self.assertEqual(reason, "OK")
 
 
+    def test_order_book_summary_dataclass_support(self):
+        """Test py-clob-client OrderBookSummary dataclass object parsing in _parse_level and _extract_book_metrics."""
+        from dataclasses import dataclass
+        from typing import List
+
+        @dataclass
+        class PriceLevel:
+            price: float
+            size: float
+
+        @dataclass
+        class OrderBookSummary:
+            bids: List[PriceLevel]
+            asks: List[PriceLevel]
+
+        book_yes = OrderBookSummary(
+            bids=[PriceLevel(price=0.495, size=300.0)],
+            asks=[PriceLevel(price=0.505, size=300.0), PriceLevel(price=0.510, size=200.0)]
+        )
+        book_no = OrderBookSummary(
+            bids=[PriceLevel(price=0.490, size=300.0)],
+            asks=[PriceLevel(price=0.500, size=300.0)]
+        )
+
+        passed, reason = validate_order_book_liquidity(book_yes, book_no)
+        self.assertTrue(passed)
+        self.assertEqual(reason, "OK")
+
+
 if __name__ == "__main__":
     unittest.main()
+

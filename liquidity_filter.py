@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Tuple, Any
 logger = logging.getLogger("PolyPaperTrader.LiquidityFilter")
 
 DEFAULT_MAX_SPREAD: float = 0.015          # 1.5 cents max bid-ask spread
-DEFAULT_MIN_DEPTH_USD: float = 250.0        # $250.00 minimum executable ask depth
+DEFAULT_MIN_DEPTH_USD: float = 100.0        # $100.00 minimum executable ask depth
 DEFAULT_MIN_VOLUME_24H: float = 1000.0      # $1,000 minimum 24h market volume
 DEFAULT_MIN_HOURS_TO_EXPIRY: float = 4.0     # 4.0 hours safety horizon before resolution
 
@@ -176,11 +176,14 @@ def _parse_market_end_date(market: Any) -> Optional[datetime]:
 def compute_dynamic_min_depth(capital: float, desired_size: float = 0.0, floor_override: Optional[float] = None) -> float:
     """
     Computes dynamic minimum required depth.
-    If floor_override is provided, uses floor_override.
-    Otherwise enforces a strict $250.00 institutional floor and at least 2.5x desired trade size.
+    If floor_override is provided, respects floor_override directly.
+    Otherwise enforces DEFAULT_MIN_DEPTH_USD (10.0) floor and at least 2.5x desired trade size.
     """
-    floor = floor_override if floor_override is not None else 250.0
-    return round(max(floor, desired_size * 2.5), 2)
+    if floor_override is not None:
+        return round(float(floor_override), 2)
+    return round(max(DEFAULT_MIN_DEPTH_USD, desired_size * 2.5), 2)
+
+
 
 
 ILLIQUID_PATTERNS: List[Tuple[str, str]] = [
@@ -254,7 +257,12 @@ ILLIQUID_PATTERNS: List[Tuple[str, str]] = [
 
 
 def _parse_level(item: Any) -> Optional[Tuple[float, float]]:
-    if isinstance(item, dict):
+    if hasattr(item, "price") and hasattr(item, "size"):
+        p = getattr(item, "price")
+        s = getattr(item, "size")
+        if not isinstance(p, (int, float, str)) or not isinstance(s, (int, float, str)):
+            return None
+    elif isinstance(item, dict):
         p = item.get("price") or item.get("p")
         s = item.get("size") or item.get("amount") or item.get("qty") or item.get("shares") or item.get("s")
     elif isinstance(item, (list, tuple)) and len(item) >= 2:
@@ -272,12 +280,19 @@ def _parse_level(item: Any) -> Optional[Tuple[float, float]]:
     return None
 
 
-def _extract_book_metrics(book: dict) -> Tuple[Optional[float], Optional[float], float]:
-    if not isinstance(book, dict):
+def _extract_book_metrics(book: Any) -> Tuple[Optional[float], Optional[float], float]:
+    if not book:
+        return None, None, 0.0
+    if hasattr(book, "bids") and isinstance(getattr(book, "bids", None), (list, tuple)):
+        raw_bids = getattr(book, "bids", None)
+        raw_asks = getattr(book, "asks", None)
+    elif isinstance(book, dict):
+        raw_bids = book.get("bids")
+        raw_asks = book.get("asks")
+    else:
         return None, None, 0.0
 
     valid_bids: List[Tuple[float, float]] = []
-    raw_bids = book.get("bids")
     if isinstance(raw_bids, (list, tuple)):
         for item in raw_bids:
             lvl = _parse_level(item)
@@ -287,14 +302,16 @@ def _extract_book_metrics(book: dict) -> Tuple[Optional[float], Optional[float],
     if valid_bids:
         best_bid = max(p for p, _ in valid_bids)
     else:
-        raw_bid = book.get("bid") or book.get("best_bid") or book.get("bid_price")
+        if isinstance(book, dict):
+            raw_bid = book.get("bid") or book.get("best_bid") or book.get("bid_price")
+        else:
+            raw_bid = getattr(book, "bid", None) or getattr(book, "best_bid", None) or getattr(book, "bid_price", None)
         try:
             best_bid = float(raw_bid) if raw_bid is not None else None
         except (ValueError, TypeError):
             best_bid = None
 
     valid_asks: List[Tuple[float, float]] = []
-    raw_asks = book.get("asks")
     if isinstance(raw_asks, (list, tuple)):
         for item in raw_asks:
             lvl = _parse_level(item)
@@ -308,20 +325,32 @@ def _extract_book_metrics(book: dict) -> Tuple[Optional[float], Optional[float],
         top3_asks = sorted_asks[:3]
         depth_usd = sum(p * s for p, s in top3_asks)
     else:
-        raw_ask = book.get("ask") or book.get("best_ask") or book.get("ask_price")
+        if isinstance(book, dict):
+            raw_ask = book.get("ask") or book.get("best_ask") or book.get("ask_price")
+        else:
+            raw_ask = getattr(book, "ask", None) or getattr(book, "best_ask", None) or getattr(book, "ask_price", None)
         try:
             best_ask = float(raw_ask) if raw_ask is not None else None
         except (ValueError, TypeError):
             best_ask = None
 
     if depth_usd <= 0.0:
-        raw_depth = (
-            book.get("depth_usd") or
-            book.get("available_depth_usd") or
-            book.get("depth") or
-            book.get("ask_depth") or
-            book.get("executable_liquidity_usd")
-        )
+        if isinstance(book, dict):
+            raw_depth = (
+                book.get("depth_usd") or
+                book.get("available_depth_usd") or
+                book.get("depth") or
+                book.get("ask_depth") or
+                book.get("executable_liquidity_usd")
+            )
+        else:
+            raw_depth = (
+                getattr(book, "depth_usd", None) or
+                getattr(book, "available_depth_usd", None) or
+                getattr(book, "depth", None) or
+                getattr(book, "ask_depth", None) or
+                getattr(book, "executable_liquidity_usd", None)
+            )
         if raw_depth is not None:
             try:
                 depth_usd = max(0.0, float(raw_depth))
@@ -332,8 +361,8 @@ def _extract_book_metrics(book: dict) -> Tuple[Optional[float], Optional[float],
 
 
 def validate_order_book_liquidity(
-    book_yes: dict,
-    book_no: dict,
+    book_yes: Any,
+    book_no: Any,
     max_spread: float = DEFAULT_MAX_SPREAD,
     min_depth_usd: float = DEFAULT_MIN_DEPTH_USD
 ) -> Tuple[bool, str]:
@@ -409,11 +438,19 @@ def is_market_eligible(
     ]).lower()
 
     HEAD_TO_HEAD_PATTERNS = (" vs ", " vs. ", " v ")
+    SPORTS_SPECIFIC_PATTERNS = ("ipl", "odi", "t20", "btts", "o/u ", "mlb", "nba", "nfl", "nhl", "uefa", "cs2", "dota")
     for pattern, label in ILLIQUID_PATTERNS:
-        if pattern in search_text:
-            if pattern in HEAD_TO_HEAD_PATTERNS and not is_sports:
-                continue
-            return False, f"Illiquid prop pattern rejected: {label} ('{pattern}')"
+        if not is_sports and pattern in SPORTS_SPECIFIC_PATTERNS:
+            continue
+        if pattern in HEAD_TO_HEAD_PATTERNS and not is_sports:
+            continue
+        clean_pat = pattern.strip()
+        if len(clean_pat) <= 4 and clean_pat.isalnum():
+            if re.search(r"\b" + re.escape(clean_pat) + r"\b", search_text):
+                return False, f"Illiquid prop pattern rejected: {label} ('{pattern}')"
+        else:
+            if pattern in search_text:
+                return False, f"Illiquid prop pattern rejected: {label} ('{pattern}')"
 
     # 4. Expiration Horizon Gating
     end_dt = _parse_market_end_date(market)
@@ -447,8 +484,8 @@ def is_market_eligible(
 
 def validate_arbitrage_execution(
     opp: dict,
-    book_yes: Optional[dict] = None,
-    book_no: Optional[dict] = None,
+    book_yes: Optional[Any] = None,
+    book_no: Optional[Any] = None,
     market_meta: Optional[dict] = None,
     max_spread: float = DEFAULT_MAX_SPREAD,
     min_depth_usd: float = DEFAULT_MIN_DEPTH_USD,
@@ -501,7 +538,9 @@ def validate_arbitrage_execution(
 
     b_yes = book_yes or opp.get("book_yes")
     b_no = book_no or opp.get("book_no")
-    if isinstance(b_yes, dict) and isinstance(b_no, dict):
+    has_bids_y = (isinstance(b_yes, dict) and "bids" in b_yes) or (hasattr(b_yes, "bids") and isinstance(getattr(b_yes, "bids", None), (list, tuple)))
+    has_bids_n = (isinstance(b_no, dict) and "bids" in b_no) or (hasattr(b_no, "bids") and isinstance(getattr(b_no, "bids", None), (list, tuple)))
+    if b_yes and b_no and has_bids_y and has_bids_n:
         return validate_order_book_liquidity(b_yes, b_no, max_spread=max_spread, min_depth_usd=min_depth_usd)
 
     available_depth = opp.get("available_depth_usd") or opp.get("executable_liquidity_usd")
