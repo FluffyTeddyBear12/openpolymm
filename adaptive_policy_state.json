@@ -5,10 +5,10 @@
   "reserve_cash_pct": 0.25,
   "max_exposure_pct": 0.8,
   "sizing_multiplier": 1.0,
-  "total_adaptations": 28,
-  "recovered_pnl": 58.4027,
+  "total_adaptations": 43,
+  "recovered_pnl": 99.959,
   "primary_bottleneck": "CONCURRENCY_EXHAUSTED",
   "model_version": "Model v2.0",
   "status": "ONLINE ACTIVE LEARNING: ACTIVE (Model v2.0)",
-  "updated_at": 1791557786.395701
+  "updated_at": 1791562130.2681658
 }

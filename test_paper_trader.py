@@ -4030,7 +4030,8 @@ class TestMakerTakerParityScanner(unittest.TestCase):
             timeout_seconds=15.0,
             dash_state=dash,
             min_edge=executor.min_edge,
-            tick_size=0.001
+            tick_size=0.001,
+            initial_taker_depth=None
         )
 
     def test_live_executor_maker_timeout_zero_loss_releases_state(self):

@@ -15,6 +15,16 @@ import sys
 import time
 from typing import Any, Dict, Optional, Tuple
 
+try:
+    from microstructure_guard import MicrostructureGuard
+except ImportError:
+    MicrostructureGuard = None
+
+try:
+    from dynamic_hedge_router import DynamicHedgeRouter
+except ImportError:
+    DynamicHedgeRouter = None
+
 logger = logging.getLogger("MakerTakerEngine")
 
 def _round_to_tick_size(price: float, tick_size: float = 0.001) -> float:
@@ -106,9 +116,15 @@ class MakerTakerExecutor:
     Asymmetric Maker-Taker Execution Engine for Polymarket binary parity arbitrage.
     """
 
-    def __init__(self, client, dash_state=None):
+    def __init__(self, client, dash_state=None, microstructure_guard=None):
         self.client = client
         self.dash_state = dash_state
+        if microstructure_guard is not None:
+            self.guard = microstructure_guard
+        elif MicrostructureGuard is not None:
+            self.guard = MicrostructureGuard()
+        else:
+            self.guard = None
 
     def _log_activity(self, message: str):
         logger.info(message)
@@ -195,6 +211,8 @@ class MakerTakerExecutor:
         min_edge: float = 0.0150,
         tick_size: float = 0.001,
         market_books: Optional[Dict[str, Any]] = None,
+        taker_fee_rate: float = 0.0035,
+        initial_taker_depth: Optional[float] = None,
     ) -> Tuple[bool, str, dict]:
         if dash_state is not None:
             self.dash_state = dash_state
@@ -254,12 +272,40 @@ class MakerTakerExecutor:
         # STEP 2: Wait for Fill or Timeout
         # -------------------------------------------------------------
         start_time = time.time()
-        poll_interval = 0.05
+        poll_interval = 0.03
         leg_1_filled = False
         matched_size = 0.0
+        init_taker_depth = initial_taker_depth if initial_taker_depth is not None else 50.0
 
         while time.time() - start_time < timeout_seconds:
             time.sleep(poll_interval)
+
+            # Pre-fill toxicity evasion check
+            if self.guard:
+                try:
+                    evade, reason, metrics = self.guard.check_toxicity_evasion(
+                        token_maker=token_maker,
+                        token_taker=token_taker,
+                        maker_price=maker_price,
+                        initial_taker_depth=init_taker_depth,
+                        initial_taker_price=taker_price,
+                        fee_rate=taker_fee_rate,
+                    )
+                    if evade:
+                        warn_msg = f"🚨 [TOXICITY EVASION] Aborting Leg 1: {reason} | metrics={metrics}"
+                        logger.warning(warn_msg)
+                        self._log_activity(f"🚨 [TOXICITY EVASION] Aborting Leg 1: {reason}")
+                        self.cancel_order(order_id_maker)
+                        return False, "TOXICITY_EVASION_CANCEL", {
+                            "reason": reason,
+                            "order_id_maker": order_id_maker,
+                            "maker_price": maker_price,
+                            "realized_loss": 0.0,
+                            "metrics": metrics,
+                        }
+                except Exception as e:
+                    logger.debug(f"Toxicity evasion check encountered non-fatal error: {e}")
+
             try:
                 order_info = self.client.get_order(order_id_maker)
             except Exception as e:
@@ -305,10 +351,21 @@ class MakerTakerExecutor:
             }
 
         # -------------------------------------------------------------
-        # STEP 3: Taker Leg (Instant FOK on Leg 2 with Secured Leg 1)
+        # STEP 3: Taker Leg (Instant FOK on Leg 2 with Elastic Ceiling)
         # -------------------------------------------------------------
-        # Factor in taker fees and minimum required margin buffer
-        max_viable_taker_price = round(1.0 - maker_price - min_edge, 4)
+        actual_taker_tick, actual_taker_neg = _resolve_token_metadata(self.client, token_taker, default_tick=tick_size)
+
+        if DynamicHedgeRouter is not None:
+            elastic_taker_ceiling = DynamicHedgeRouter.calculate_elastic_taker_price(
+                maker_price=maker_price,
+                fee_rate=taker_fee_rate,
+                breakeven_buffer=0.0005,
+                tick_size=actual_taker_tick,
+            )
+        else:
+            elastic_taker_ceiling = round(1.0 - maker_price - min_edge, 4)
+
+        max_viable_taker_price = min(round(1.0 - maker_price - min_edge, 4), elastic_taker_ceiling)
         fresh_taker_price = taker_price
 
         books_source = market_books
@@ -328,53 +385,61 @@ class MakerTakerExecutor:
                 asks_t = mkt_book.get("asks", [])
                 if asks_t:
                     live_ask = float(asks_t[0].get("price") if isinstance(asks_t[0], dict) else asks_t[0][0])
-                    if live_ask <= max_viable_taker_price:
+                    if live_ask <= elastic_taker_ceiling:
                         fresh_taker_price = live_ask
-                        logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (max viable: ${max_viable_taker_price:.4f})")
+                        logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (elastic ceiling: ${elastic_taker_ceiling:.4f})")
             elif isinstance(mkt_book, (int, float)) and mkt_book > 0:
-                if mkt_book <= max_viable_taker_price:
+                if mkt_book <= elastic_taker_ceiling:
                     fresh_taker_price = float(mkt_book)
-                    logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (max viable: ${max_viable_taker_price:.4f})")
+                    logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (elastic ceiling: ${elastic_taker_ceiling:.4f})")
 
-        # Ensure taker price does not exceed max viable price
-        actual_taker_tick, actual_taker_neg = _resolve_token_metadata(self.client, token_taker, default_tick=tick_size)
-        target_taker_price = min(fresh_taker_price, max_viable_taker_price)
-        target_taker_price = _floor_to_tick_size(target_taker_price, actual_taker_tick)
-
-        self._log_activity(
-            f"⚡ [TAKER LEG] Leg 1 in hand. Firing instant FOK taker order: {matched_size:.2f} shares @ ${target_taker_price:.4f} on token {token_taker[-6:]}..."
-        )
-        try:
-            order_opts = PartialCreateOrderOptions(tick_size=str(actual_taker_tick), neg_risk=actual_taker_neg)
-            try:
-                order_taker = self.client.create_order(
-                    OrderArgsV2(
-                        price=target_taker_price,
-                        size=matched_size,
-                        side="BUY",
-                        token_id=token_taker,
-                    ),
-                    options=order_opts,
-                )
-            except TypeError:
-                order_taker = self.client.create_order(
-                    OrderArgsV2(
-                        price=target_taker_price,
-                        size=matched_size,
-                        side="BUY",
-                        token_id=token_taker,
-                    )
-                )
-            resp_taker = self.client.post_orders(
-                [PostOrdersV2Args(order=order_taker, orderType=OrderType.FOK)]
+        if fresh_taker_price > elastic_taker_ceiling:
+            logger.warning(
+                f"🚨 [EDGE COMPRESSION BLOCKED] Live taker ask ${fresh_taker_price:.4f} > "
+                f"elastic ceiling ${elastic_taker_ceiling:.4f}. Skipping unprofitable FOK."
             )
-        except Exception as e:
-            logger.error(f"Failed to post Taker FOK order: {e}")
-            resp_taker = {"errorMsg": str(e)}
+            taker_err = "EDGE_COMPRESSION_CEILING_EXCEEDED"
+            resp_taker = {"errorMsg": taker_err}
+            order_id_taker = None
+            taker_taking = 0.0
+        else:
+            target_taker_price = min(fresh_taker_price, elastic_taker_ceiling)
+            target_taker_price = _floor_to_tick_size(target_taker_price, actual_taker_tick)
 
-        leg_taker = resp_taker[0] if isinstance(resp_taker, list) and len(resp_taker) > 0 and isinstance(resp_taker[0], dict) else (resp_taker if isinstance(resp_taker, dict) else {})
-        taker_err = leg_taker.get("errorMsg")
-        order_id_taker = leg_taker.get("orderID") or leg_taker.get("order_id")
+            self._log_activity(
+                f"⚡ [TAKER LEG] Leg 1 in hand. Firing instant FOK taker order: {matched_size:.2f} shares @ ${target_taker_price:.4f} on token {token_taker[-6:]}..."
+            )
+            try:
+                order_opts = PartialCreateOrderOptions(tick_size=str(actual_taker_tick), neg_risk=actual_taker_neg)
+                try:
+                    order_taker = self.client.create_order(
+                        OrderArgsV2(
+                            price=target_taker_price,
+                            size=matched_size,
+                            side="BUY",
+                            token_id=token_taker,
+                        ),
+                        options=order_opts,
+                    )
+                except TypeError:
+                    order_taker = self.client.create_order(
+                        OrderArgsV2(
+                            price=target_taker_price,
+                            size=matched_size,
+                            side="BUY",
+                            token_id=token_taker,
+                        )
+                    )
+                resp_taker = self.client.post_orders(
+                    [PostOrdersV2Args(order=order_taker, orderType=OrderType.FOK)]
+                )
+            except Exception as e:
+                logger.error(f"Failed to post Taker FOK order: {e}")
+                resp_taker = {"errorMsg": str(e)}
+
+            leg_taker = resp_taker[0] if isinstance(resp_taker, list) and len(resp_taker) > 0 and isinstance(resp_taker[0], dict) else (resp_taker if isinstance(resp_taker, dict) else {})
+            taker_err = leg_taker.get("errorMsg")
+            order_id_taker = leg_taker.get("orderID") or leg_taker.get("order_id")
 
         try:
             taker_taking = float(leg_taker.get("takingAmount") or 0.0) if not taker_err else 0.0

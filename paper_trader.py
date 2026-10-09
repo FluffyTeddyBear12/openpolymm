@@ -44,6 +44,11 @@ from liquidity_filter import (
 from rollback_protector import RollbackProtector, safe_unwind_or_limit_exit
 from maker_taker_engine import MakerTakerExecutor
 from ha_notifier import send_trade_notification
+try:
+    from negrisk_scanner import NegRiskBasketScanner, NegRiskAdapter
+except ImportError:
+    NegRiskBasketScanner = None
+    NegRiskAdapter = None
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("PolyPaperTrader")
@@ -2036,6 +2041,20 @@ class PaperSimulator:
             self.reward_harvester = RewardHarvester(market_token_map=self.market_token_map, dash_state=dash_state)
         except Exception:
             self.reward_harvester = None
+        try:
+            from microstructure_guard import MicrostructureGuard
+            self.guard = MicrostructureGuard()
+        except Exception:
+            self.guard = None
+        if NegRiskBasketScanner:
+            try:
+                self.negrisk_scanner = NegRiskBasketScanner()
+                if self.market_token_map:
+                    self.negrisk_scanner.index_market_universe(self.market_token_map)
+            except Exception:
+                self.negrisk_scanner = None
+        else:
+            self.negrisk_scanner = None
         # Track market cooldowns to prevent rapid re-entry after failed execution/unwind
         self.market_cooldowns: Dict[str, float] = {}
         # Track last processed ask & size per (market_id, asset_id) for dual-active tick deduplication
@@ -2158,9 +2177,42 @@ class PaperSimulator:
             self.market_depths[market_id][asset_id] = parsed_size
             self.last_processed_quotes[quote_key] = (best_ask, parsed_size)
 
+            if hasattr(self, "guard") and self.guard and asset_id:
+                try:
+                    self.guard.record_quote(
+                        token_id=str(asset_id),
+                        best_bid=float(best_bid or 0.0),
+                        bid_size=float(bid_size or 0.0),
+                        best_ask=float(best_ask or 0.0),
+                        ask_size=float(parsed_size) if not math.isinf(parsed_size) else 0.0,
+                        timestamp=time.time(),
+                    )
+                except Exception:
+                    pass
+
         if evaluate:
             self.evaluate_parity(market_id)
         return True
+
+    def on_trade_tick(
+        self,
+        token_id: str,
+        price: float,
+        size: float,
+        side: str = "BUY",
+        timestamp: Optional[float] = None,
+    ):
+        if hasattr(self, "guard") and self.guard and token_id:
+            try:
+                self.guard.record_trade(
+                    token_id=str(token_id),
+                    price=float(price or 0.0),
+                    size=float(size or 0.0),
+                    side=str(side or "BUY"),
+                    timestamp=timestamp or time.time(),
+                )
+            except Exception:
+                pass
 
 
     def check_market_parity(self, market_id: str) -> Optional[dict]:
@@ -2481,7 +2533,18 @@ class PaperSimulator:
         max_spread = 0.030
         branch_a = None
         branch_b = None
-        reward_bonus = (rewards_daily_rate * 0.001) if rewards_daily_rate > 0 else 0.0
+
+        current_capital = float(getattr(self.risk, "available_cash", getattr(self.risk, "capital", 1000.0)) or 1000.0) if self.risk else 1000.0
+        can_harvest = False
+        rei_val = 0.0
+        if self.reward_harvester:
+            can_harvest = self.reward_harvester.can_quote_reward_market(market_id, available_cash=current_capital)
+            rm = self.reward_harvester.reward_markets.get(str(market_id), {})
+            rei_val = float(rm.get("rei", 0.0) or 0.0)
+            if rei_val <= 0.0 and rewards_daily_rate > 0:
+                min_sz = float(rm.get("min_size", 200.0) or 200.0)
+                max_sp = float(rm.get("max_spread", 3.5) or 3.5)
+                rei_val = self.reward_harvester.compute_reward_efficiency_index(rewards_daily_rate, min_size=min_sz, max_spread=max_sp)
 
         desired_trade_size = self.risk.calculate_sizing() if (hasattr(self, "risk") and self.risk) else 100.0
 
@@ -2505,12 +2568,19 @@ class PaperSimulator:
                 spread_yes <= max_spread + 1e-7 and
                 edge_a >= self.min_edge):
 
-
-
                 trade_size_a = min(desired_trade_size, taker_depth_a) if taker_depth_a > 0 else desired_trade_size
                 trade_size_a = max(5.0, trade_size_a)
                 expected_profit_a = trade_size_a * edge_a
-                priority_score_a = edge_a + reward_bonus
+                if self.reward_harvester:
+                    priority_score_a = self.reward_harvester.calculate_reward_priority(
+                        market_id=market_id,
+                        edge=edge_a,
+                        expected_profit=expected_profit_a,
+                        available_cash=current_capital
+                    )
+                else:
+                    reward_bonus_a = (rewards_daily_rate * 0.001) if rewards_daily_rate > 0 else 0.0
+                    priority_score_a = edge_a + reward_bonus_a
 
                 branch_a = {
                     "execution_type": "maker_taker",
@@ -2526,6 +2596,9 @@ class PaperSimulator:
                     "expected_profit": expected_profit_a,
                     "priority_score": priority_score_a,
                     "rewards_daily_rate": rewards_daily_rate,
+                    "rei": rei_val,
+                    "can_harvest_rewards": can_harvest,
+                    "depth_taker": taker_depth_a,
                     "market_id": market_id,
                     "short_id": short_id,
                     "question": q_name or short_id,
@@ -2560,12 +2633,19 @@ class PaperSimulator:
                 spread_no <= max_spread + 1e-7 and
                 edge_b >= self.min_edge):
 
-
-
                 trade_size_b = min(desired_trade_size, taker_depth_b) if taker_depth_b > 0 else desired_trade_size
                 trade_size_b = max(5.0, trade_size_b)
                 expected_profit_b = trade_size_b * edge_b
-                priority_score_b = edge_b + reward_bonus
+                if self.reward_harvester:
+                    priority_score_b = self.reward_harvester.calculate_reward_priority(
+                        market_id=market_id,
+                        edge=edge_b,
+                        expected_profit=expected_profit_b,
+                        available_cash=current_capital
+                    )
+                else:
+                    reward_bonus_b = (rewards_daily_rate * 0.001) if rewards_daily_rate > 0 else 0.0
+                    priority_score_b = edge_b + reward_bonus_b
 
                 branch_b = {
                     "execution_type": "maker_taker",
@@ -2581,6 +2661,9 @@ class PaperSimulator:
                     "expected_profit": expected_profit_b,
                     "priority_score": priority_score_b,
                     "rewards_daily_rate": rewards_daily_rate,
+                    "rei": rei_val,
+                    "can_harvest_rewards": can_harvest,
+                    "depth_taker": taker_depth_b,
                     "market_id": market_id,
                     "short_id": short_id,
                     "question": q_name or short_id,
@@ -2782,7 +2865,95 @@ class PaperSimulator:
                         return opp_mt
         return None
 
+    def execute_negrisk_basket(self, opp: dict) -> bool:
+        """
+        Executes or paper-trades a multi-outcome Neg-Risk basket parity arbitrage.
+        Buys 1 share of YES across all N mutually exclusive outcomes.
+        """
+        basket_id = opp["neg_risk_market_id"]
+        trade_size = opp["trade_size"]
+        expected_profit = opp["expected_profit"]
+        edge = opp["edge"]
+        num_outcomes = opp["num_outcomes"]
+
+        with self.trade_lock:
+            if self.risk:
+                with self.risk.lock:
+                    total_cap = _safe_float(getattr(self.risk, "capital", None), 1000.0)
+                    available_cash = _safe_float(getattr(self.risk, "available_cash", None), total_cap)
+                    reserve_pct = _safe_float(getattr(self.risk, "reserve_cash_pct", None), 0.0)
+                    spendable = max(0.0, available_cash - (available_cash * reserve_pct)) if total_cap >= 100.0 else available_cash
+
+                trade_size = min(trade_size, spendable)
+                if trade_size < 5.0:
+                    if hasattr(self, "shadow_tracker") and self.shadow_tracker:
+                        opp_copy = dict(opp)
+                        opp_copy["trade_size"] = trade_size
+                        self.shadow_tracker.record_missed(opp_copy, MissedReason.INSUFFICIENT_CASH)
+                    return False
+
+                if not self.risk.can_trade(trade_size, market_id=basket_id):
+                    return False
+
+                opened = self.risk.open_position(basket_id, trade_size, expected_profit)
+                if not opened:
+                    return False
+
+            logger.info(f"🚨 NEG-RISK BASKET ARBITRAGE EXECUTED 🚨 | Basket {basket_id} ({num_outcomes} outcomes)")
+            logger.info(f"Sum Asks: {opp['sum_ask']:.4f} | Total Cost: {opp['total_cost']:.4f} | Edge: {edge*100:.2f}%")
+            logger.info(f"BASKET TRADE -> Size: ${trade_size:.2f} | Exp. Profit: ${expected_profit:.2f}")
+
+            self.on_trade_executed(basket_id, trade_size, expected_profit)
+
+            time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            if self.dash_state:
+                self.dash_state.add_trade(basket_id, round(trade_size, 2), round(expected_profit, 4), time_str)
+                self.dash_state.add_activity_log(
+                    f"🎉 [NEG-RISK BASKET FILLED] Basket {basket_id[:8]} ({num_outcomes} legs) -> Size: ${trade_size:.2f} | Edge: {edge*100:+.2f}% | Profit: +${expected_profit:.2f}"
+                )
+
+            # Reset books for all basket legs non-destructively
+            with self.lock:
+                for o in opp.get("outcomes", []):
+                    cid = o.get("condition_id")
+                    if cid and cid in self.market_books:
+                        for k in self.market_books[cid]:
+                            self.market_books[cid][k] = None
+                    if cid and cid in self.market_depths:
+                        del self.market_depths[cid]
+
+            return True
+
     def evaluate_parity(self, market_id: str) -> Optional[dict]:
+        if getattr(self, "negrisk_scanner", None):
+            neg_risk_id = None
+            m_info = self.market_token_map.get(market_id, {})
+            if isinstance(m_info, dict):
+                neg_risk_id = (
+                    m_info.get("neg_risk_market_id")
+                    or m_info.get("negRiskMarketID")
+                    or m_info.get("negRiskMarketId")
+                    or (m_info.get("market_meta", {}).get("neg_risk_market_id") if isinstance(m_info.get("market_meta"), dict) else None)
+                )
+            if not neg_risk_id:
+                neg_risk_id = getattr(self.negrisk_scanner, "market_to_basket", {}).get(market_id)
+
+            if neg_risk_id:
+                opp_nr = self.negrisk_scanner.check_basket_parity(
+                    neg_risk_market_id=neg_risk_id,
+                    market_books=self.market_books,
+                    market_depths=self.market_depths,
+                    fee_rate=self.fee_rate,
+                    min_edge=self.min_edge
+                )
+                if opp_nr:
+                    if self.dash_state:
+                        self.dash_state.add_activity_log(
+                            f"🪢 [NEG-RISK BASKET] Edge {opp_nr['edge']*100:+.2f}% on Basket {neg_risk_id[:10]}... | {opp_nr['num_outcomes']} outcomes | Sum Asks: ${opp_nr['sum_ask']:.4f} | Size: ${opp_nr['trade_size']:.2f}"
+                        )
+                    if self.execute_negrisk_basket(opp_nr):
+                        return opp_nr
+
         return self.on_book_tick(market_id)
 
 
@@ -3912,8 +4083,13 @@ class LiveExecutor(PaperSimulator):
             except Exception as e:
                 logger.warning(f"Startup sync_live_positions check encountered: {e}")
 
+        try:
+            from microstructure_guard import MicrostructureGuard
+            self.guard = getattr(self, "guard", None) or MicrostructureGuard()
+        except Exception:
+            self.guard = None
         self.rollback_protector = RollbackProtector(target_state=self.dash_state)
-        self.maker_taker_executor = MakerTakerExecutor(self.client, dash_state=self.dash_state)
+        self.maker_taker_executor = MakerTakerExecutor(self.client, dash_state=self.dash_state, microstructure_guard=self.guard)
         try:
             self.seed_clob_token_cache()
         except Exception as e:
@@ -4666,6 +4842,7 @@ class LiveExecutor(PaperSimulator):
 
             timeout_sec = 15.0
             min_edge_val = float(getattr(target_state, "state", {}).get("min_edge_pct", self.min_edge) or self.min_edge)
+            init_taker_depth = opp.get("depth_taker") or (opp.get("depth_no") if opp.get("maker_leg") == "YES" else opp.get("depth_yes"))
 
             ok, action, details = self.maker_taker_executor.execute_maker_taker_arbitrage(
                 token_maker=maker_token,
@@ -4676,14 +4853,16 @@ class LiveExecutor(PaperSimulator):
                 timeout_seconds=timeout_sec,
                 dash_state=self.dash_state,
                 min_edge=min_edge_val,
-                tick_size=tick_size
+                tick_size=tick_size,
+                initial_taker_depth=init_taker_depth
             )
 
             if not ok:
-                if action == "MAKER_TIMEOUT_ZERO_LOSS":
-                    logger.info(f"MAKER_TIMEOUT_ZERO_LOSS on {short_id}: Passive limit order timed out after {timeout_sec}s. Cancelled with ZERO loss.")
+                if action in ("MAKER_TIMEOUT_ZERO_LOSS", "TOXICITY_EVASION_CANCEL"):
+                    tag = action
+                    logger.info(f"{tag} on {short_id}: Leg 1 order safely aborted with ZERO loss. Reason: {details.get('reason', 'n/a') if isinstance(details, dict) else 'n/a'}")
                     if self.dash_state and hasattr(self.dash_state, "add_activity_log"):
-                        self.dash_state.add_activity_log(f"⏱️ [MAKER_TIMEOUT_ZERO_LOSS] Market {short_id} maker order timed out. Cancelled with $0 loss.")
+                        self.dash_state.add_activity_log(f"🛡️ [{tag}] Market {short_id} maker order cancelled with $0 loss.")
                     if self.risk and hasattr(self.risk, "open_positions"):
                         if market_id in self.risk.open_positions:
                             del self.risk.open_positions[market_id]
@@ -4706,7 +4885,7 @@ class LiveExecutor(PaperSimulator):
                     opp_copy = dict(opp)
                     opp_copy["trade_size"] = trade_size
                     opp_copy["expected_profit"] = expected_profit
-                    miss_r = MissedReason.CONCURRENCY_EXHAUSTED if action == "MAKER_TIMEOUT_ZERO_LOSS" else MissedReason.CLOB_ORDER_KILLED
+                    miss_r = MissedReason.CONCURRENCY_EXHAUSTED if action in ("MAKER_TIMEOUT_ZERO_LOSS", "TOXICITY_EVASION_CANCEL") else MissedReason.CLOB_ORDER_KILLED
                     self.shadow_tracker.record_missed(opp_copy, miss_r)
                 return False
 
@@ -4995,6 +5174,7 @@ class LiveExecutor(PaperSimulator):
                         taker_price = ask_no
 
                     timeout_sec = float(getattr(target_state, "state", {}).get("maker_timeout_seconds", 5.0) or 5.0)
+                    init_taker_depth = opp.get("depth_taker") or (opp.get("depth_no") if opp.get("maker_leg") == "YES" else opp.get("depth_yes"))
                     ok, action, details = self.maker_taker_executor.execute_maker_taker_arbitrage(
                         token_maker=token_maker,
                         maker_price=maker_price,
@@ -5004,10 +5184,18 @@ class LiveExecutor(PaperSimulator):
                         timeout_seconds=timeout_sec,
                         dash_state=self.dash_state,
                         min_edge=min_edge_val,
-                        tick_size=tick_size
+                        tick_size=tick_size,
+                        initial_taker_depth=init_taker_depth
                     )
                     if not ok:
-                        if action == "MAKER_TIMEOUT_ZERO_LOSS":
+                        if action in ("MAKER_TIMEOUT_ZERO_LOSS", "TOXICITY_EVASION_CANCEL"):
+                            tag = action
+                            logger.info(f"{tag} on {short_id}: Leg 1 order safely aborted with ZERO loss. Reason: {details.get('reason', 'n/a') if isinstance(details, dict) else 'n/a'}")
+                            if self.dash_state and hasattr(self.dash_state, "add_activity_log"):
+                                self.dash_state.add_activity_log(f"🛡️ [{tag}] Market {short_id} maker order cancelled with $0 loss.")
+                            if self.risk and hasattr(self.risk, "open_positions"):
+                                if market_id in self.risk.open_positions:
+                                    del self.risk.open_positions[market_id]
                             cooldown_duration = 5.0
                             miss_r = MissedReason.CONCURRENCY_EXHAUSTED
                         else:
