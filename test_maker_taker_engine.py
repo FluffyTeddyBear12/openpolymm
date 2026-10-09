@@ -346,8 +346,53 @@ class TestMakerTakerEngine(unittest.TestCase):
         self.assertEqual(str(opts_maker.tick_size), "0.01")
         self.assertTrue(opts_maker.neg_risk)
 
+    def test_preflight_depth_shield_aborts_thin_leg2(self):
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=self.maker_price,
+            token_taker=self.token_taker,
+            taker_price=self.taker_price,
+            size=10.0,
+            initial_taker_depth=20.0,
+            timeout_seconds=2.0,
+        )
+        self.assertFalse(success)
+        self.assertEqual(reason, "INSUFFICIENT_PREFLIGHT_TAKER_DEPTH")
+        self.assertEqual(meta["initial_taker_depth"], 20.0)
+        self.assertEqual(meta["required_buffer"], 30.0)
+        self.assertEqual(self.mock_client.post_orders.call_count, 0)
+
+    def test_leg2_taker_price_ceiled_to_tick_size(self):
+        order_maker_obj = MagicMock()
+        order_taker_obj = MagicMock()
+        self.mock_client.create_order.side_effect = [order_maker_obj, order_taker_obj]
+        self.mock_client.post_orders.side_effect = [
+            [{"orderID": "maker_001"}],
+            [{"orderID": "taker_002", "takingAmount": "10.0", "status": "matched"}],
+        ]
+        self.mock_client.get_order.return_value = {
+            "status": "MATCHED",
+            "size_matched": "10.0",
+        }
+        self.mock_client.get_tick_size.return_value = "0.01"
+
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=0.48,
+            token_taker=self.token_taker,
+            taker_price=0.491,
+            size=10.0,
+            initial_taker_depth=50.0,
+            timeout_seconds=2.0,
+        )
+        self.assertTrue(success)
+        taker_call_args = self.mock_client.create_order.call_args_list[1]
+        order_args = taker_call_args[0][0]
+        self.assertAlmostEqual(order_args.price, 0.50, places=4)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

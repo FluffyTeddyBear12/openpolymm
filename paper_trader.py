@@ -229,6 +229,7 @@ class MissedReason(str, Enum):
     TAKER_MICRO_PRICE_SPIKE = "TAKER_MICRO_PRICE_SPIKE"
     TOXIC_DOBI_SKEW = "TOXIC_DOBI_SKEW"
     VOLUME_BURST_SURGE = "VOLUME_BURST_SURGE"
+    INSUFFICIENT_PREFLIGHT_TAKER_DEPTH = "INSUFFICIENT_PREFLIGHT_TAKER_DEPTH"
 
 
 class ShadowParityTracker:
@@ -262,6 +263,7 @@ class ShadowParityTracker:
             MissedReason.TAKER_MICRO_PRICE_SPIKE.value,
             MissedReason.TOXIC_DOBI_SKEW.value,
             MissedReason.VOLUME_BURST_SURGE.value,
+            MissedReason.INSUFFICIENT_PREFLIGHT_TAKER_DEPTH.value,
             "ZERO_LIQUIDITY",
             "ASYMMETRIC_DEPTH",
             "WIDE_SPREAD",
@@ -274,6 +276,7 @@ class ShadowParityTracker:
             "VOLUME_BURST_SURGE",
             "PARITY_COST_EXCEEDS_BREAKEVEN",
             "LEG2_DEPTH_COLLAPSE",
+            "INSUFFICIENT_PREFLIGHT_TAKER_DEPTH",
         ):
             pnl = 0.0
         elif exp_prof is not None:
@@ -2490,9 +2493,10 @@ class PaperSimulator:
             }
             cost_pair = ask_yes + ask_no
             shares_avail = int(trade_size / cost_pair) if cost_pair > 0 else 0
-            if edge >= self.min_edge and shares_avail >= 5:
+            avail_depth = min(depth_yes, depth_no)
+            if (cost_pair <= 1.0000 - self.min_edge or edge >= self.min_edge) and avail_depth >= 5.0:
                 opp_dict["execution_type"] = "simultaneous_dual_taker"
-                opp_dict["shares"] = float(shares_avail)
+                opp_dict["shares"] = float(max(5.0, shares_avail))
             return opp_dict
 
 
@@ -2662,12 +2666,16 @@ class PaperSimulator:
             edge_a = 1.000 - cost_a
             taker_depth_a = depth_no if (depth_no is not None and not math.isinf(depth_no)) else 50.0
             spread_yes = ask_yes - bid_yes
+            cost_pair_a = maker_price_yes + ask_no
+            desired_shares_a = (desired_trade_size / cost_pair_a) if cost_pair_a > 0 else 5.0
+            required_size_a = max(5.0, min(desired_shares_a, taker_depth_a / 3.0)) if taker_depth_a > 0 else 5.0
 
             if (taker_depth_a >= 5.0 and
+                taker_depth_a >= required_size_a * 3.0 and
                 spread_yes <= max_spread + 1e-7 and
                 edge_a >= self.min_edge):
 
-                trade_size_a = min(desired_trade_size, taker_depth_a) if taker_depth_a > 0 else desired_trade_size
+                trade_size_a = max(5.0, min(desired_trade_size, (taker_depth_a / 3.0) * cost_pair_a))
                 trade_size_a = max(5.0, trade_size_a)
                 expected_profit_a = trade_size_a * edge_a
                 if self.reward_harvester:
@@ -2727,12 +2735,16 @@ class PaperSimulator:
             edge_b = 1.000 - cost_b
             taker_depth_b = depth_yes if (depth_yes is not None and not math.isinf(depth_yes)) else 50.0
             spread_no = ask_no - bid_no
+            cost_pair_b = ask_yes + maker_price_no
+            desired_shares_b = (desired_trade_size / cost_pair_b) if cost_pair_b > 0 else 5.0
+            required_size_b = max(5.0, min(desired_shares_b, taker_depth_b / 3.0)) if taker_depth_b > 0 else 5.0
 
             if (taker_depth_b >= 5.0 and
+                taker_depth_b >= required_size_b * 3.0 and
                 spread_no <= max_spread + 1e-7 and
                 edge_b >= self.min_edge):
 
-                trade_size_b = min(desired_trade_size, taker_depth_b) if taker_depth_b > 0 else desired_trade_size
+                trade_size_b = max(5.0, min(desired_trade_size, (taker_depth_b / 3.0) * cost_pair_b))
                 trade_size_b = max(5.0, trade_size_b)
                 expected_profit_b = trade_size_b * edge_b
                 if self.reward_harvester:
@@ -2943,21 +2955,24 @@ class PaperSimulator:
         If opportunity is discovered, dispatches directly to execute_arbitrage.
         """
         with self.trade_lock:
+            taker_opp = self.check_market_parity(market_id)
+            if taker_opp and taker_opp.get("execution_type") == "simultaneous_dual_taker":
+                if self.execute_arbitrage(taker_opp):
+                    return taker_opp
+
             exec_style = getattr(self.dash_state, "state", {}).get("execution_style", "") if self.dash_state else ""
             if exec_style == "maker_taker":
                 opp = self.check_maker_taker_parity(market_id)
                 if opp:
                     if self.execute_arbitrage(opp):
                         return opp
-                opp_taker = self.check_market_parity(market_id)
-                if opp_taker:
-                    if self.execute_arbitrage(opp_taker):
-                        return opp_taker
+                if taker_opp:
+                    if self.execute_arbitrage(taker_opp):
+                        return taker_opp
             else:
-                opp = self.check_market_parity(market_id)
-                if opp:
-                    if self.execute_arbitrage(opp):
-                        return opp
+                if taker_opp:
+                    if self.execute_arbitrage(taker_opp):
+                        return taker_opp
                 opp_mt = self.check_maker_taker_parity(market_id)
                 if opp_mt:
                     if self.execute_arbitrage(opp_mt):
@@ -3293,26 +3308,31 @@ def on_message(ws, message, simulator):
         exec_style = getattr(simulator.dash_state, "state", {}).get("execution_style", "maker_taker") if simulator.dash_state else "maker_taker"
         for m_id in touched_markets:
             opp = None
-            if exec_style == "maker_taker":
-                opp = simulator.check_maker_taker_parity(m_id) or simulator.check_market_parity(m_id)
+            taker_opp = simulator.check_market_parity(m_id)
+            if taker_opp and taker_opp.get("execution_type") == "simultaneous_dual_taker":
+                opp = taker_opp
+            elif exec_style == "maker_taker":
+                opp = simulator.check_maker_taker_parity(m_id) or taker_opp
             else:
-                opp = simulator.check_market_parity(m_id) or simulator.check_maker_taker_parity(m_id)
+                opp = taker_opp or simulator.check_maker_taker_parity(m_id)
             if opp:
                 candidates.append(opp)
 
-        # Prioritize candidates by highest expected profit / edge factoring in rewards
+        # Prioritize candidates: simultaneous dual taker first, then highest expected profit
         if candidates:
-            if hasattr(simulator, "reward_harvester") and simulator.reward_harvester:
-                candidates.sort(
-                    key=lambda x: simulator.reward_harvester.calculate_reward_priority(
+            def _sort_key(x):
+                is_dual = 1 if x.get("execution_type") == "simultaneous_dual_taker" else 0
+                if hasattr(simulator, "reward_harvester") and simulator.reward_harvester:
+                    score = simulator.reward_harvester.calculate_reward_priority(
                         x["market_id"],
                         edge=x.get("edge", 0.0),
                         expected_profit=x.get("expected_profit")
-                    ),
-                    reverse=True
-                )
-            else:
-                candidates.sort(key=lambda x: x.get("expected_profit", 0.0), reverse=True)
+                    )
+                else:
+                    score = float(x.get("expected_profit", 0.0) or 0.0)
+                return (is_dual, score)
+
+            candidates.sort(key=_sort_key, reverse=True)
             for opp in candidates:
                 if hasattr(simulator, "dispatch_arbitrage"):
                     simulator.dispatch_arbitrage(opp)
@@ -5219,7 +5239,7 @@ class LiveExecutor(PaperSimulator):
             )
 
             if not ok:
-                if action in ("MAKER_TIMEOUT_ZERO_LOSS", "TOXICITY_EVASION_CANCEL"):
+                if action in ("MAKER_TIMEOUT_ZERO_LOSS", "TOXICITY_EVASION_CANCEL", "INSUFFICIENT_PREFLIGHT_TAKER_DEPTH"):
                     tag = action
                     logger.info(f"{tag} on {short_id}: Leg 1 order safely aborted with ZERO loss. Reason: {details.get('reason', 'n/a') if isinstance(details, dict) else 'n/a'}")
                     if self.dash_state and hasattr(self.dash_state, "add_activity_log"):
@@ -5251,6 +5271,8 @@ class LiveExecutor(PaperSimulator):
                         miss_r = getattr(MissedReason, sub_r, MissedReason.TOXICITY_EVASION)
                     elif action == "MAKER_TIMEOUT_ZERO_LOSS":
                         miss_r = MissedReason.MAKER_TIMEOUT
+                    elif action == "INSUFFICIENT_PREFLIGHT_TAKER_DEPTH":
+                        miss_r = MissedReason.INSUFFICIENT_PREFLIGHT_TAKER_DEPTH
                     else:
                         miss_r = MissedReason.CLOB_ORDER_KILLED
                     self.shadow_tracker.record_missed(opp_copy, miss_r)

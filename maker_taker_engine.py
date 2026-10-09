@@ -322,6 +322,16 @@ class MakerTakerExecutor:
         taker_price = round(taker_price, 4)
         size = float(size)
 
+        # Pre-Flight Depth Shield: Ensure Leg 2 has sufficient depth buffer to absorb sweeps
+        min_taker_depth_buffer = float(size) * 3.0
+        if initial_taker_depth is not None and initial_taker_depth < min_taker_depth_buffer:
+            warn_msg = f"🛡️ [PRE-FLIGHT SHIELD] Leg 2 depth ({initial_taker_depth:.1f} shares) < 3x buffer ({min_taker_depth_buffer:.1f} shares). Aborting entry."
+            logger.info(warn_msg)
+            return False, "INSUFFICIENT_PREFLIGHT_TAKER_DEPTH", {
+                "initial_taker_depth": initial_taker_depth,
+                "required_buffer": min_taker_depth_buffer,
+            }
+
         # -------------------------------------------------------------
         # STEP 1: Maker Leg (Passive Limit Order with 0% Taker Fee)
         # -------------------------------------------------------------
@@ -537,19 +547,19 @@ class MakerTakerExecutor:
                     fresh_taker_price = float(mkt_book)
                     logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (elastic ceiling: ${elastic_taker_ceiling:.4f})")
 
-        if fresh_taker_price > elastic_taker_ceiling:
+        # For BUY orders, ceil to tick size so bid meets or crosses the seller ask.
+        target_taker_price = _ceil_to_tick_size(fresh_taker_price, actual_taker_tick)
+        if target_taker_price > elastic_taker_ceiling:
             logger.warning(
-                f"🚨 [EDGE COMPRESSION BLOCKED] Live taker ask ${fresh_taker_price:.4f} > "
+                f"🚨 [EDGE COMPRESSION BLOCKED] Ceiled taker price ${target_taker_price:.4f} > "
                 f"elastic ceiling ${elastic_taker_ceiling:.4f}. Skipping unprofitable FOK."
             )
             taker_err = "EDGE_COMPRESSION_CEILING_EXCEEDED"
             resp_taker = {"errorMsg": taker_err}
             order_id_taker = None
             taker_taking = 0.0
+            leg_taker = resp_taker
         else:
-            target_taker_price = min(fresh_taker_price, elastic_taker_ceiling)
-            target_taker_price = _floor_to_tick_size(target_taker_price, actual_taker_tick)
-
             self._log_activity(
                 f"⚡ [TAKER LEG] Leg 1 in hand. Firing instant FOK taker order: {matched_size:.2f} shares @ ${target_taker_price:.4f} on token {token_taker[-6:]}..."
             )
