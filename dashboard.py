@@ -438,6 +438,22 @@ button[kind="primary"]:hover, button[kind="secondary"]:hover {
     border-color: var(--neon-cyan) !important;
     box-shadow: 0 0 10px rgba(0, 229, 255, 0.2) !important;
 }
+
+/* Anti-dimming: prevent Streamlit fragment running fade and pulse */
+[data-st-fragment-running="true"],
+[data-testid="stFragment"][data-st-fragment-running="true"],
+[data-testid="stFragment"],
+[data-testid="stFragment"] > div,
+div[data-testid="stVerticalBlock"] > div,
+.stElementContainer:has([data-testid="stStatusWidget"]) {
+    opacity: 1 !important;
+    filter: none !important;
+    transition: none !important;
+}
+
+[data-testid="stStatusWidget"] {
+    display: none !important;
+}
 </style>
 """
 
