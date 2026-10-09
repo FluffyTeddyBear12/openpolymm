@@ -3683,7 +3683,8 @@ class TestLiveExecutorConstraints(unittest.TestCase):
                 buy_price=0.40,
                 label="YES",
                 target_state=dash_state,
-                force_market_exit=False
+                force_market_exit=False,
+                limit_price_override=0.40
             )
             mock_notify.assert_called_once()
             dash_state.add_activity_log.assert_called()

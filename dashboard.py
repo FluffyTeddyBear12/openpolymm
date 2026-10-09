@@ -1046,6 +1046,21 @@ def live_dashboard():
 
     if live_positions:
         with st.expander(f"📊 Active Polymarket Positions ({len(live_positions)} In-Play Contracts)", expanded=False):
+            col_unwind1, col_unwind2 = st.columns([3, 1])
+            with col_unwind1:
+                st.markdown("<span style='font-family: var(--font-mono); font-size: 0.80rem; color: #00E5FF;'>⚡ Recover capital: Instant market exit for tight spreads (<=2¢) + protected par limit sells.</span>", unsafe_allow_html=True)
+            with col_unwind2:
+                if st.button("⚡ Unwind to Cash", key="unwind_orphans_pos_btn", type="primary", use_container_width=True):
+                    try:
+                        tmp_update = UPDATE_FILE + ".tmp"
+                        with open(tmp_update, "w", encoding="utf-8") as f:
+                            json.dump({"unwind_orphans": True, "max_slippage": 0.020}, f)
+                        os.replace(tmp_update, UPDATE_FILE)
+                        st.toast("⚡ Unwind command dispatched! Liquidating tight spreads and posting par limit sells...", icon="🧹")
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to trigger orphan unwind: {e}")
             pos_rows = []
             for p in live_positions:
                 if not isinstance(p, dict):
@@ -1950,6 +1965,22 @@ def render_app():
             • <strong>Engine 2 (Rewards Harvester):</strong> Prioritizes high-rate liquidity mining pools to earn daily USDC rewards from Polymarket on resting capital.
         </div>
         """, unsafe_allow_html=True)
+
+        col_unw1, col_unw2 = st.columns([2, 1])
+        with col_unw1:
+            st.markdown("<span style='font-family: var(--font-mono); font-size: 0.82rem; color: #00E5FF;'>⚡ ORPHAN UNWIND: Recover cash from unhedged positions (market exits tight spreads &le; 2¢, posts protected par limit sells on wider spreads).</span>", unsafe_allow_html=True)
+        with col_unw2:
+            if st.button("⚡ Unwind Orphan Positions to Cash", key="unwind_orphans_ctrl_btn", type="primary"):
+                try:
+                    tmp_update = UPDATE_FILE + ".tmp"
+                    with open(tmp_update, "w", encoding="utf-8") as f:
+                        json.dump({"unwind_orphans": True, "max_slippage": 0.020}, f)
+                    os.replace(tmp_update, UPDATE_FILE)
+                    st.toast("⚡ Unwind command dispatched! Liquidating tight spreads and posting par limit sells...", icon="🧹")
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to trigger orphan unwind: {e}")
 
         col_em1, col_em2 = st.columns([2, 1])
         with col_em1:

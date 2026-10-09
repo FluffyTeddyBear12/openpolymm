@@ -155,6 +155,7 @@ class RollbackProtector:
         force_market_exit = kwargs.get("force_market_exit", None)
         tick_size = float(kwargs.get("tick_size", 0.001) or 0.001)
         neg_risk = kwargs.get("neg_risk", None)
+        limit_price_override = kwargs.get("limit_price_override", None)
 
         if shares <= 0:
             return True, "NO_SHARES", {"shares": shares, "realized_loss": 0.0}
@@ -259,7 +260,10 @@ class RollbackProtector:
                 }
 
         else:
-            limit_price = round(buy_price, 4)
+            if limit_price_override is not None:
+                limit_price = round(float(limit_price_override), 4)
+            else:
+                limit_price = round(buy_price, 4)
             success, resp, err = cls_or_self._post_sell_order(
                 client=client,
                 token_id=token_id,
@@ -288,17 +292,17 @@ class RollbackProtector:
                 order_id = cls_or_self.extract_order_id(resp) or ""
                 log_msg = (
                     f"🛡️ [LOSS-FREE EXIT] Best bid ${best_bid:.4f} is below floor ${floor_price:.4f}. "
-                    f"Placed limit sell at purchase price ${buy_price:.4f} to eliminate slippage loss."
+                    f"Placed limit sell at ${limit_price:.4f} (buy price ${buy_price:.4f}) to eliminate slippage loss."
                 )
                 logger.info(log_msg)
                 if target_state:
                     target_state.add_activity_log(log_msg)
-                return True, "LIMIT_ORDER_PLACED", {"order_id": order_id, "price": buy_price, "realized_loss": 0.0}
+                return True, "LIMIT_ORDER_PLACED", {"order_id": order_id, "price": limit_price, "realized_loss": 0.0}
             else:
                 logger.error(
                     f"Failed to place passive limit sell order at ${limit_price:.4f} for {token_id}: {err}"
                 )
-                return False, "LIMIT_ORDER_FAILED", {"error": err, "price": buy_price, "resp": resp, "realized_loss": round(shares * buy_price, 4)}
+                return False, "LIMIT_ORDER_FAILED", {"error": err, "price": limit_price, "resp": resp, "realized_loss": round(shares * buy_price, 4)}
 
     @staticmethod
     def fetch_order_book(client: Any, token_id: str) -> dict:
@@ -353,6 +357,38 @@ class RollbackProtector:
                 continue
 
         return max(bid_prices) if bid_prices else 0.0
+
+    @staticmethod
+    def extract_best_ask(book: Any) -> float:
+        if not book:
+            return 0.0
+
+        asks = []
+        if isinstance(book, dict):
+            asks = book.get("asks", [])
+        elif hasattr(book, "asks"):
+            asks = getattr(book, "asks", [])
+
+        if not isinstance(asks, (list, tuple)):
+            return 0.0
+
+        ask_prices = []
+        for a in asks:
+            try:
+                if isinstance(a, dict):
+                    ap = float(a.get("price", 0.0))
+                elif isinstance(a, (list, tuple)) and len(a) > 0:
+                    ap = float(a[0])
+                elif hasattr(a, "price"):
+                    ap = float(getattr(a, "price", 0.0))
+                else:
+                    ap = float(a)
+                if ap > 0:
+                    ask_prices.append(ap)
+            except (ValueError, TypeError):
+                continue
+
+        return min(ask_prices) if ask_prices else 0.0
 
     @staticmethod
     def extract_order_id(resp: Any) -> Optional[str]:
@@ -494,3 +530,5 @@ class RollbackProtector:
 
 safe_unwind_or_limit_exit = RollbackProtector.safe_unwind_or_limit_exit
 evaluate_position_hold_vs_exit = RollbackProtector.evaluate_position_hold_vs_exit
+extract_best_bid = RollbackProtector.extract_best_bid
+extract_best_ask = RollbackProtector.extract_best_ask

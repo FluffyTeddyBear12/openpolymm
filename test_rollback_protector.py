@@ -316,4 +316,48 @@ class TestRollbackProtector(unittest.TestCase):
         assert err is None
         assert mock_client.create_order.call_count == 2
 
+    def test_extract_best_ask(self):
+        # Dict with asks list
+        book_dict = {
+            "asks": [
+                {"price": "0.52", "size": "100"},
+                {"price": "0.50", "size": "50"},
+                {"price": "0.55", "size": "200"},
+            ]
+        }
+        assert RollbackProtector.extract_best_ask(book_dict) == 0.50
+
+        # Empty or invalid book
+        assert RollbackProtector.extract_best_ask({}) == 0.0
+        assert RollbackProtector.extract_best_ask(None) == 0.0
+
+    def test_limit_price_override_applied(self):
+        mock_client = MagicMock()
+        mock_client.get_order_book.return_value = {
+            "bids": [{"price": "0.32", "size": "50.0"}],
+            "asks": [{"price": "0.50", "size": "100.0"}],
+        }
+        mock_client.create_order.return_value = {"order_payload": "valid"}
+        mock_client.post_orders.return_value = [{"orderID": "0xlimit_override", "status": "open"}]
+
+        # Buy price is 0.45, but override is set to 0.48
+        ok, action, details = RollbackProtector.safe_unwind_or_limit_exit(
+            client=mock_client,
+            token_id="tok_bolsonaro",
+            shares=18.0,
+            buy_price=0.45,
+            label="NO",
+            max_loss_cents=0.005,
+            force_market_exit=False,
+            limit_price_override=0.48,
+        )
+
+        assert ok is True
+        assert action == "LIMIT_ORDER_PLACED"
+        assert details["price"] == 0.48
+        mock_client.create_order.assert_called_once()
+        order_arg = mock_client.create_order.call_args[0][0]
+        actual_price = getattr(order_arg, "price", order_arg.get("price") if isinstance(order_arg, dict) else None)
+        assert actual_price == 0.48
+
 

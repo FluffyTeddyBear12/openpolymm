@@ -169,6 +169,43 @@ class TestOrderReaper(unittest.TestCase):
         self.reaper.stop(timeout=1.0)
         self.assertIsNone(self.reaper._thread)
 
+    def test_passive_unwind_order_protected_from_zombie_reap(self):
+        self.reaper.register_order(
+            "unwind_order_777",
+            token_id="tok_unwind",
+            side="SELL",
+            size=18.0,
+            price=0.45,
+            is_passive_unwind=True,
+        )
+        self.reaper._active_registry["unwind_order_777"]["created_at"] = time.time() - 100.0
+
+        self.mock_client.get_open_orders.return_value = [{"id": "unwind_order_777"}]
+        self.mock_client.get_order.return_value = {"status": "LIVE", "size_matched": "0.0"}
+
+        reaped = self.reaper.reconcile_open_orders()
+        self.assertEqual(reaped, [])
+        self.mock_client.cancel_orders.assert_not_called()
+        self.assertIn("unwind_order_777", self.reaper._active_registry)
+
+    def test_passive_unwind_order_fill_detection_and_deregistration(self):
+        self.reaper.register_order(
+            "unwind_order_888",
+            token_id="tok_unwind",
+            side="SELL",
+            size=10.0,
+            price=0.52,
+            is_passive_unwind=True,
+        )
+        self.mock_client.get_open_orders.return_value = [{"id": "unwind_order_888"}]
+        self.mock_client.get_order.return_value = {"status": "MATCHED", "size_matched": "10.0"}
+
+        reaped = self.reaper.reconcile_open_orders()
+        self.assertEqual(reaped, [])
+        self.mock_client.cancel_orders.assert_not_called()
+        self.assertNotIn("unwind_order_888", self.reaper._active_registry)
+        self.mock_dash.add_activity_log.assert_called()
+
 
 class TestMakerTakerIntegrationWithReaper(unittest.TestCase):
     def setUp(self):

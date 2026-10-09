@@ -151,6 +151,8 @@ class OrderReaper:
         side: str = "BUY",
         size: float = 0.0,
         price: float = 0.0,
+        is_passive_unwind: bool = False,
+        ttl_sec: Optional[float] = None,
     ):
         if not order_id:
             return
@@ -161,9 +163,12 @@ class OrderReaper:
                 "side": side,
                 "size": float(size),
                 "price": float(price),
+                "is_passive_unwind": bool(is_passive_unwind),
+                "ttl_sec": float(ttl_sec) if ttl_sec is not None else None,
                 "created_at": time.time(),
             }
-        logger.debug(f"Registered order {order_id} in OrderReaper (TTL: {self.max_order_ttl_sec}s).")
+        ttl_desc = f"{ttl_sec}s" if ttl_sec is not None else f"{self.max_order_ttl_sec}s"
+        logger.debug(f"Registered order {order_id} in OrderReaper (TTL: {ttl_desc}, passive_unwind={is_passive_unwind}).")
 
     def deregister_order(self, order_id: str):
         if not order_id:
@@ -213,16 +218,39 @@ class OrderReaper:
 
             is_zombie = False
             zombie_reason = ""
+            reg_entry = None
             with self._lock:
                 reg_entry = self._active_registry.get(order_id)
                 if reg_entry is None:
                     is_zombie = True
                     zombie_reason = "UNKNOWN_ORPHAN"
+                elif reg_entry.get("is_passive_unwind", False):
+                    # Protected passive unwind order - never mark as zombie
+                    is_zombie = False
                 else:
+                    effective_ttl = reg_entry.get("ttl_sec") or self.max_order_ttl_sec
                     age = now - reg_entry.get("created_at", now)
-                    if age > self.max_order_ttl_sec:
+                    if age > effective_ttl:
                         is_zombie = True
-                        zombie_reason = f"EXPIRED_TTL ({age:.1f}s > {self.max_order_ttl_sec}s)"
+                        zombie_reason = f"EXPIRED_TTL ({age:.1f}s > {effective_ttl:.1f}s)"
+
+            # Passive unwind fill monitor & protection
+            if reg_entry and reg_entry.get("is_passive_unwind", False):
+                if hasattr(self.client, "get_order"):
+                    try:
+                        order_info = self.client.get_order(order_id)
+                        if order_info:
+                            status, matched_size = self._extract_status_and_matched(order_info)
+                            target_size = float(reg_entry.get("size", 0.0) or 0.0)
+                            unwind_price = float(reg_entry.get("price", 0.0) or 0.0)
+                            if status in ("MATCHED", "FILLED") or (target_size > 0 and matched_size >= target_size - 1e-6):
+                                fill_msg = f"🎉 [ORPHAN UNWIND FILLED] Order {order_id} filled {matched_size:.2f} shares @ ${unwind_price:.4f}! Cash recovered."
+                                logger.info(fill_msg)
+                                self._log_activity(fill_msg)
+                                self.deregister_order(order_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to inspect fill status for passive unwind order {order_id}: {e}")
+                continue
 
             if not is_zombie:
                 continue

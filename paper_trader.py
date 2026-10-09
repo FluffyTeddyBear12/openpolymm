@@ -773,6 +773,12 @@ class DashboardState:
                                         unwound = self.simulator.unwind_positions_to_cash(max_unwind=50)
                                         self.add_activity_log(f"🚨 [EMERGENCY SWEEP] Manually unwound {unwound} open positions to 100% cash.")
 
+                                if update.get("unwind_orphans"):
+                                    if getattr(self, "simulator", None) and hasattr(self.simulator, "sweep_orphan_positions"):
+                                        max_slip = float(update.get("max_slippage", 0.020) or 0.020)
+                                        processed = self.simulator.sweep_orphan_positions(max_slippage=max_slip, force_now=True)
+                                        self.add_activity_log(f"⚡ [ORPHAN SWEEPER] Evaluated and processed {processed} orphan positions (max slippage {max_slip*100:.1f}¢).")
+
                                 with self.lock:
                                     if new_insp is not None:
                                         self.inspected_market = str(new_insp)
@@ -2084,6 +2090,10 @@ class PaperSimulator:
     def dispatch_arbitrage(self, opp: dict) -> bool:
         """Synchronous dispatch for paper simulation."""
         return self.execute_arbitrage(opp)
+
+    def sweep_orphan_positions(self, active_positions: Optional[List[dict]] = None, max_slippage: float = 0.020, force_now: bool = False) -> int:
+        """Stub for paper simulation mode."""
+        return 0
 
     def saver_thread(self):
         """
@@ -4467,14 +4477,39 @@ class LiveExecutor(PaperSimulator):
         except Exception as e:
             logger.warning(f"Error syncing live trades from Polymarket CLOB: {e}")
 
-    def sweep_orphan_positions(self, active_positions: List[dict]) -> int:
+    def sweep_orphan_positions(self, active_positions: Optional[List[dict]] = None, max_slippage: float = 0.020, force_now: bool = False) -> int:
         """
-        Autonomous Orphan Position Sweeper & Background Liquidation Watchdog.
-        Detects unhedged single-sided positions sitting in the user's wallet that
-        lack an opposite leg, and automatically executes a market exit on the CLOB.
-        Protects capital when the operator is away from the desk.
+        Autonomous Orphan Position Sweeper & 2-Tier Liquidation Engine.
+        1. Identifies unhedged single-sided positions sitting in the user's wallet.
+        2. Tier 1 (Instant Market Exit): If slippage <= max_slippage (default 2.0¢), executes immediate market sell.
+        3. Tier 2 (Protected Par / Top-of-Book Limit Sell): If slippage > max_slippage, posts limit sell order
+           pegged to cost basis or top-of-book, and registers it into OrderReaper as is_passive_unwind=True
+           so it is never reaped.
         """
-        if self.client is None or not active_positions:
+        if self.client is None:
+            return 0
+
+        if active_positions is None:
+            if not self.address:
+                return 0
+            try:
+                import urllib.request
+                url = f"https://data-api.polymarket.com/positions?user={self.address}"
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PolymarketBot/2.0"}
+                )
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    raw_positions = json.loads(resp.read().decode('utf-8'))
+                active_positions = [
+                    p for p in raw_positions
+                    if isinstance(p, dict) and float(p.get('size', 0) or 0) >= 1.0 and not p.get('redeemable')
+                ]
+            except Exception as e:
+                logger.warning(f"Failed to fetch active positions for orphan sweep: {e}")
+                return 0
+
+        if not active_positions:
             return 0
 
         # Group active positions by conditionId
@@ -4483,9 +4518,15 @@ class LiveExecutor(PaperSimulator):
             cid = str(p.get("conditionId") or p.get("market") or "")
             if cid:
                 by_market[cid].append(p)
+            else:
+                by_market[str(p.get("asset", ""))].append(p)
 
         if not hasattr(self, "_orphan_first_seen"):
             self._orphan_first_seen = {}
+        if not hasattr(self, "_active_unwind_orders"):
+            self._active_unwind_orders = set()
+        if not hasattr(self, "_swept_cooldowns"):
+            self._swept_cooldowns = {}
 
         active_unhedged_tokens = set()
         swept_count = 0
@@ -4506,37 +4547,20 @@ class LiveExecutor(PaperSimulator):
                 title = str(p.get("title", f"Market {cid[:8]}"))
                 outcome = str(p.get("outcome", "SHARES"))
 
-                # Ignore expired/worthless markets (currentValue <= 0 or curPrice <= 0)
-                if size < 1.0 or cur_val <= 0.01 or cur_price <= 0.001 or not token_id:
+                # Ignore dust or zero-value positions
+                if size < 1.0 or cur_val <= 0.05 or not token_id:
                     continue
 
                 active_unhedged_tokens.add(token_id)
                 first_seen = self._orphan_first_seen.setdefault(token_id, now)
-                if (now - first_seen) < 60.0:
+
+                # If not force_now, wait 30 seconds debounce before taking action
+                if not force_now and (now - first_seen) < 30.0:
                     continue
 
-                # Resting unwind orders deduplication & cooldown guard
-                if not hasattr(self, "_active_unwind_orders"):
-                    self._active_unwind_orders = set()
-                if not hasattr(self, "_swept_cooldowns"):
-                    self._swept_cooldowns = {}
-                if token_id in self._active_unwind_orders and now < self._swept_cooldowns.get(token_id, 0.0):
+                # Cooldown / debounce: don't hammer the same token repeatedly within 15 seconds unless forced
+                if not force_now and now < self._swept_cooldowns.get(token_id, 0.0):
                     continue
-
-                # Cooldown / debounce: don't hammer the same token repeatedly within 15 seconds
-                if not hasattr(self, "_swept_cooldowns"):
-                    self._swept_cooldowns = {}
-                if now < self._swept_cooldowns.get(token_id, 0.0):
-                    continue
-
-                logger.warning(
-                    f"🧹 [ORPHAN SWEEPER] Detected unhedged {size:.1f} {outcome} shares on '{title}' "
-                    f"(value: ${cur_val:.2f}). Executing automatic market exit..."
-                )
-                if self.dash_state:
-                    self.dash_state.add_activity_log(
-                        f"🧹 [AUTO-SWEEPER] Liquidating unhedged {size:.1f} {outcome} shares on '{title}'"
-                    )
 
                 init_val = float(p.get("initialValue", 0.0) or 0.0)
                 raw_avg = p.get("avgPrice")
@@ -4546,6 +4570,62 @@ class LiveExecutor(PaperSimulator):
                     buy_price = round(init_val / size, 4)
                 else:
                     buy_price = max(0.01, cur_price)
+
+                # Fetch live orderbook to check bids and asks
+                book = RollbackProtector.fetch_order_book(self.client, token_id)
+                best_bid = RollbackProtector.extract_best_bid(book)
+                best_ask = RollbackProtector.extract_best_ask(book)
+                slippage = max(0.0, buy_price - best_bid) if best_bid > 0 else 1.0
+
+                # Tier 1: Instant Market Exit if slippage is small
+                if best_bid >= 0.01 and slippage <= max_slippage:
+                    logger.warning(
+                        f"🧹 [ORPHAN SWEEPER] Tier 1 Market Exit: {size:.1f} {outcome} shares on '{title}' "
+                        f"(Paid ${buy_price:.4f}, Best Bid ${best_bid:.4f}, Slippage {slippage*100:.1f}¢ <= {max_slippage*100:.1f}¢)"
+                    )
+                    ok, action, details = RollbackProtector.safe_unwind_or_limit_exit(
+                        client=self.client,
+                        token_id=token_id,
+                        shares=size,
+                        buy_price=buy_price,
+                        label=outcome,
+                        target_state=self.dash_state,
+                        force_market_exit=True,
+                    )
+                    self._swept_cooldowns[token_id] = now + 15.0
+                    if ok:
+                        swept_count += 1
+                        self._orphan_first_seen.pop(token_id, None)
+                        recovered_usd = size * best_bid
+                        realized_loss = details.get("realized_loss", size * slippage)
+                        log_msg = f"🧹 [ORPHAN LIQUIDATED] Market sold {size:.1f} {outcome} on '{title}' @ ${best_bid:.4f}. Recovered ${recovered_usd:.2f} USDC (loss ${realized_loss:.2f})."
+                        logger.info(log_msg)
+                        if self.dash_state:
+                            self.dash_state.add_activity_log(log_msg)
+                        try:
+                            from ha_notifier import send_trade_notification
+                            send_trade_notification(
+                                question=f"[AUTO-SWEEP] {title}",
+                                trade_size=cur_val,
+                                expected_profit=float(details.get("realized_loss", 0.0) or 0.0),
+                                execution_style="orphan_sweeper",
+                                wallet_balance=getattr(self.risk, "available_cash", 0.0) if self.risk else 0.0
+                            )
+                        except Exception as e:
+                            logger.debug(f"HA sweep notification error: {e}")
+                    continue
+
+                # Tier 2: Protected Limit Sell at Par or Top of Book
+                # If best_ask > buy_price: undercut best_ask by 1 tick (0.001) while staying >= buy_price
+                if best_ask > 0 and best_ask > buy_price:
+                    limit_price = min(round(buy_price, 4), round(best_ask - 0.001, 4))
+                else:
+                    limit_price = round(buy_price, 4)
+
+                logger.info(
+                    f"🛡️ [ORPHAN SWEEPER] Tier 2 Protected Limit Sell: {size:.1f} {outcome} on '{title}' at ${limit_price:.4f} "
+                    f"(Paid ${buy_price:.4f}, Bid ${best_bid:.4f}, Ask ${best_ask:.4f}, Spread {slippage*100:.1f}¢ > {max_slippage*100:.1f}¢)"
+                )
                 ok, action, details = RollbackProtector.safe_unwind_or_limit_exit(
                     client=self.client,
                     token_id=token_id,
@@ -4553,18 +4633,29 @@ class LiveExecutor(PaperSimulator):
                     buy_price=buy_price,
                     label=outcome,
                     target_state=self.dash_state,
-                    force_market_exit=False
+                    force_market_exit=False,
+                    limit_price_override=limit_price,
                 )
-
-                self._swept_cooldowns[token_id] = now + 15.0
+                self._swept_cooldowns[token_id] = now + 60.0
 
                 if ok:
-                    if action in ("LIMIT_ORDER_PLACED", "POST_LIMIT_SELL"):
-                        self._active_unwind_orders.add(token_id)
-                        self._swept_cooldowns[token_id] = now + 120.0
+                    order_id = details.get("order_id")
+                    if order_id and self.order_reaper:
+                        self.order_reaper.register_order(
+                            order_id=order_id,
+                            token_id=token_id,
+                            side="SELL",
+                            size=size,
+                            price=limit_price,
+                            is_passive_unwind=True,
+                        )
+                    self._active_unwind_orders.add(token_id)
                     swept_count += 1
                     self._orphan_first_seen.pop(token_id, None)
-                    logger.info(f"✅ [ORPHAN SWEEPER] Successfully auto-liquidated orphan {outcome} shares on '{title}'.")
+                    log_msg = f"🛡️ [ORPHAN LIMIT PROTECTED] Posted limit sell for {size:.1f} {outcome} on '{title}' at ${limit_price:.4f}. Protected by OrderReaper."
+                    logger.info(log_msg)
+                    if self.dash_state:
+                        self.dash_state.add_activity_log(log_msg)
                     try:
                         from ha_notifier import send_trade_notification
                         send_trade_notification(
@@ -4581,8 +4672,7 @@ class LiveExecutor(PaperSimulator):
         for tid in list(self._orphan_first_seen.keys()):
             if tid not in active_unhedged_tokens:
                 self._orphan_first_seen.pop(tid, None)
-                if hasattr(self, "_active_unwind_orders"):
-                    self._active_unwind_orders.discard(tid)
+                self._active_unwind_orders.discard(tid)
 
         return swept_count
 
