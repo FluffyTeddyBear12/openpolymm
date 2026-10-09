@@ -21,11 +21,9 @@ load_dotenv()
 from rollback_protector import RollbackProtector, _resolve_token_metadata, _round_to_tick_size
 
 try:
-    from py_clob_client.client import ClobClient
-    from py_clob_client.constants import POLYGON
+    from py_clob_client_v2.client import ClobClient
 except ImportError:
-    logger.error("py_clob_client not installed.")
-    sys.exit(1)
+    from py_clob_client.client import ClobClient
 
 
 def get_client() -> ClobClient:
@@ -40,13 +38,17 @@ def get_client() -> ClobClient:
     host = os.getenv("POLYMARKET_HOST", "https://clob.polymarket.com")
 
     client = ClobClient(
-        host=host,
+        host,
         key=key,
         chain_id=137,
         signature_type=sig_type,
         funder=proxy,
     )
-    client.set_api_creds(client.create_or_derive_api_creds())
+    if hasattr(client, "derive_api_key"):
+        creds = client.derive_api_key()
+        client.set_api_creds(creds)
+    elif hasattr(client, "create_or_derive_api_creds"):
+        client.set_api_creds(client.create_or_derive_api_creds())
     return client
 
 

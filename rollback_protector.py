@@ -29,22 +29,24 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 logger = logging.getLogger("RollbackProtector")
 
 try:
-    from py_clob_client.clob_types import (
-        OrderArgs as OrderArgsV2,
+    from py_clob_client_v2.clob_types import (
+        OrderArgsV2,
+        PostOrdersV2Args,
         OrderType,
         PartialCreateOrderOptions,
     )
 except ImportError:
-    OrderArgsV2 = None
-    OrderType = None
-    PartialCreateOrderOptions = None
-
-try:
-    from py_clob_client.clob_types import PostOrdersArgs as PostOrdersV2Args
-except ImportError:
     try:
-        from py_clob_client_v2.clob_types import PostOrdersV2Args
+        from py_clob_client.clob_types import (
+            OrderArgs as OrderArgsV2,
+            OrderType,
+            PartialCreateOrderOptions,
+            PostOrdersArgs as PostOrdersV2Args,
+        )
     except ImportError:
+        OrderArgsV2 = None
+        OrderType = None
+        PartialCreateOrderOptions = None
         PostOrdersV2Args = None
 
 if PostOrdersV2Args is None:
