@@ -6,10 +6,10 @@
   "max_exposure_pct": 0.8,
   "sizing_multiplier": 1.0,
   "maker_timeout_seconds": 1.25,
-  "total_adaptations": 55,
-  "recovered_pnl": 128.9721,
+  "total_adaptations": 60,
+  "recovered_pnl": 142.2242,
   "primary_bottleneck": "MAKER_TIMEOUT",
   "model_version": "Model v2.0",
   "status": "ONLINE ACTIVE LEARNING: ACTIVE (Model v2.0)",
-  "updated_at": 1791575773.3670259
+  "updated_at": 1791579956.9354942
 }

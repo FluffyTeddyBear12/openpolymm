@@ -754,7 +754,7 @@ class DashboardState:
         self.last_disk_write_time = 0.0
         self.inspected_market = None
         
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self._stop_event = threading.Event()
         def _saver():
             state_dir = os.path.dirname(os.path.abspath(self.filename))
@@ -2178,7 +2178,7 @@ class PaperSimulator:
         Collateral is preserved at 100% face value; positions are never sold periodically.
         """
         now = time.time()
-        if hasattr(self, "sync_live_balance"):
+        if hasattr(self, "sync_live_balance") and not getattr(self, "_periodic_sync_thread", None):
             if now - getattr(self, "last_balance_sync_time", 0.0) >= 15.0:
                 try:
                     self.sync_live_balance()
@@ -4457,12 +4457,14 @@ class LiveExecutor(PaperSimulator):
                 if self.risk:
                     with self.risk.lock:
                         self.risk.available_cash = bal_usd
-                        self.risk.capital = bal_usd + getattr(self.risk, "locked_collateral", 0.0)
-                        if hasattr(self.risk, "_sync_to_dash_state"):
-                            self.risk._sync_to_dash_state()
+                        calc_cap = bal_usd + getattr(self.risk, "locked_collateral", 0.0)
+                    self.risk.capital = calc_cap
+                else:
+                    calc_cap = bal_usd
+
                 if self.dash_state and hasattr(self.dash_state, "state"):
-                    with getattr(self.dash_state, "lock", threading.Lock()):
-                        self.dash_state.state["capital"] = self.risk.capital if self.risk else bal_usd
+                    with getattr(self.dash_state, "lock", threading.RLock()):
+                        self.dash_state.state["capital"] = calc_cap
                         self.dash_state.state["available_cash"] = bal_usd
                         self.dash_state.dirty = True
                 self.last_balance_sync_time = time.time()
