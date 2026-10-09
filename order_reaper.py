@@ -144,6 +144,14 @@ class OrderReaper:
         except (ValueError, TypeError):
             return 0.0
 
+    @staticmethod
+    def _extract_side(order_info: Any) -> str:
+        if not order_info:
+            return ""
+        if isinstance(order_info, dict):
+            return str(order_info.get("side", "") or "").upper()
+        return str(getattr(order_info, "side", "") or "").upper()
+
     def register_order(
         self,
         order_id: str,
@@ -222,8 +230,26 @@ class OrderReaper:
             with self._lock:
                 reg_entry = self._active_registry.get(order_id)
                 if reg_entry is None:
-                    is_zombie = True
-                    zombie_reason = "UNKNOWN_ORPHAN"
+                    side = self._extract_side(item)
+                    if side == "SELL":
+                        token_id = self._extract_token_id(item)
+                        price = self._extract_price(item)
+                        self._active_registry[order_id] = {
+                            "order_id": order_id,
+                            "token_id": token_id,
+                            "side": "SELL",
+                            "size": 0.0,
+                            "price": price,
+                            "is_passive_unwind": True,
+                            "ttl_sec": None,
+                            "created_at": now,
+                        }
+                        reg_entry = self._active_registry[order_id]
+                        is_zombie = False
+                        logger.info(f"🛡️ [ADOPTED PASSIVE UNWIND] OrderReaper auto-adopted resting SELL order {order_id} (token {token_id[:10]}... @ ${price:.4f}). Protected from reaper.")
+                    else:
+                        is_zombie = True
+                        zombie_reason = "UNKNOWN_ORPHAN"
                 elif reg_entry.get("is_passive_unwind", False):
                     # Protected passive unwind order - never mark as zombie
                     is_zombie = False

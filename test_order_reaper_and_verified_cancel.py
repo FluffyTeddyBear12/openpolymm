@@ -206,6 +206,20 @@ class TestOrderReaper(unittest.TestCase):
         self.assertNotIn("unwind_order_888", self.reaper._active_registry)
         self.mock_dash.add_activity_log.assert_called()
 
+    def test_auto_adopt_unregistered_sell_order(self):
+        # Open order on CLOB with side=SELL, not registered in _active_registry
+        self.mock_client.get_open_orders.return_value = [
+            {"id": "external_unwind_999", "side": "SELL", "asset_id": "tok_bolsonaro", "price": 0.45, "size": 18.0}
+        ]
+        self.mock_client.get_order.return_value = {"status": "LIVE", "size_matched": "0.0"}
+
+        reaped = self.reaper.reconcile_open_orders()
+        self.assertEqual(reaped, [])
+        self.mock_client.cancel_orders.assert_not_called()
+        # Verify order was adopted into active registry with is_passive_unwind=True
+        self.assertIn("external_unwind_999", self.reaper._active_registry)
+        self.assertTrue(self.reaper._active_registry["external_unwind_999"]["is_passive_unwind"])
+
 
 class TestMakerTakerIntegrationWithReaper(unittest.TestCase):
     def setUp(self):
