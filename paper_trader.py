@@ -2438,20 +2438,20 @@ class PaperSimulator:
                 return None
 
             if m_info and "token_yes" in m_info and "token_no" in m_info:
-                depth_yes = depths.get(m_info["token_yes"], float('inf'))
-                depth_no = depths.get(m_info["token_no"], float('inf'))
+                depth_yes = depths.get(m_info["token_yes"], 0.0)
+                depth_no = depths.get(m_info["token_no"], 0.0)
             elif "YES" in depths and "NO" in depths:
-                depth_yes = depths.get("YES", float('inf'))
-                depth_no = depths.get("NO", float('inf'))
+                depth_yes = depths.get("YES", 0.0)
+                depth_no = depths.get("NO", 0.0)
             else:
                 keys = sorted(books.keys())
-                depth_yes = depths.get(keys[0], float('inf'))
-                depth_no = depths.get(keys[1], float('inf'))
+                depth_yes = depths.get(keys[0], 0.0)
+                depth_no = depths.get(keys[1], 0.0)
 
             if depth_yes is None:
-                depth_yes = float('inf')
+                depth_yes = 0.0
             if depth_no is None:
-                depth_no = float('inf')
+                depth_no = 0.0
 
             executable_liquidity_usd = min(depth_yes, depth_no)
             min_depth_threshold = 15.0
@@ -2511,10 +2511,16 @@ class PaperSimulator:
             }
             cost_pair = ask_yes + ask_no
             shares_avail = int(trade_size / cost_pair) if cost_pair > 0 else 0
+            if shares_avail < 5.0:
+                opp_dict["forfeited_pnl"] = 0.0
+                opp_dict["trade_size"] = 0.0
+                if hasattr(self, "shadow_tracker") and self.shadow_tracker:
+                    self.shadow_tracker.record_missed(opp_dict, MissedReason.ZERO_LIQUIDITY)
+                return None
             avail_depth = min(depth_yes, depth_no)
             if (cost_pair <= 1.0000 - self.min_edge or edge >= self.min_edge) and avail_depth >= 5.0:
                 opp_dict["execution_type"] = "simultaneous_dual_taker"
-                opp_dict["shares"] = float(max(5.0, shares_avail))
+                opp_dict["shares"] = float(shares_avail)
             return opp_dict
 
 
@@ -4115,6 +4121,11 @@ def run_socket_pool(
                     w.close()
                 except Exception:
                     pass
+        if hasattr(simulator, "stop"):
+            try:
+                simulator.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping simulator during shutdown: {e}")
         pool_dash = simulator.dash_state or globals().get("dash_state")
         if pool_dash:
             pool_dash.set_bot_status("SHUTDOWN")
@@ -4237,7 +4248,7 @@ class LiveExecutor(PaperSimulator):
                 self.order_reaper = OrderReaper(
                     client=self.client,
                     poll_interval_sec=1.0,
-                    max_order_ttl_sec=2.5,
+                    max_order_ttl_sec=6.0,
                     dash_state=self.dash_state,
                     rollback_protector=RollbackProtector,
                 )
@@ -4750,8 +4761,8 @@ class LiveExecutor(PaperSimulator):
 
                 # Tier 2: Protected Limit Sell at Par or Top of Book
                 # If best_ask > buy_price: undercut best_ask by 1 tick (0.001) while staying >= buy_price
-                if best_ask > 0 and best_ask > buy_price:
-                    limit_price = min(round(buy_price, 4), round(best_ask - 0.001, 4))
+                if best_ask > 0 and (best_ask - 0.001) >= buy_price:
+                    limit_price = round(best_ask - 0.001, 4)
                 else:
                     limit_price = round(buy_price, 4)
 

@@ -380,6 +380,7 @@ class MakerTakerExecutor:
                 side="BUY",
                 size=size,
                 price=maker_price,
+                ttl_sec=max(6.0, float(timeout_seconds) + 2.0),
             )
 
         self._log_activity(f"⏳ [MAKER PENDING] Order {order_id_maker} active. Awaiting fill (timeout={timeout_seconds}s)...")

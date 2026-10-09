@@ -26,7 +26,7 @@ class OrderReaper:
         self,
         client: Any,
         poll_interval_sec: float = 1.0,
-        max_order_ttl_sec: float = 2.5,
+        max_order_ttl_sec: float = 6.0,
         dash_state: Optional[Any] = None,
         rollback_protector: Optional[Any] = None,
     ):
@@ -254,7 +254,7 @@ class OrderReaper:
                     # Protected passive unwind order - never mark as zombie
                     is_zombie = False
                 else:
-                    effective_ttl = reg_entry.get("ttl_sec") or self.max_order_ttl_sec
+                    effective_ttl = reg_entry.get("ttl_sec") if reg_entry.get("ttl_sec") is not None else self.max_order_ttl_sec
                     age = now - reg_entry.get("created_at", now)
                     if age > effective_ttl:
                         is_zombie = True

@@ -260,6 +260,7 @@ class TestMakerTakerIntegrationWithReaper(unittest.TestCase):
             side="BUY",
             size=10.0,
             price=0.48,
+            ttl_sec=6.0,
         )
         self.mock_reaper.deregister_order.assert_called_with("maker_reg_001")
 

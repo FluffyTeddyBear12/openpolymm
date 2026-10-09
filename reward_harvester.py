@@ -315,11 +315,9 @@ class RewardHarvester:
             min_size = _safe_float(market.get("min_size", 200.0), 200.0)
 
         cash = _safe_float(available_cash, 0.0)
-        price = max(_safe_float(mid_price, 0.50), 0.01)
-        req_capital = min_size * price
+        # Sizing against full binary pair ($1.00) ensures sufficient margin for Leg 2 taker
+        req_capital = min_size * 1.00
         max_allowed = max(cash * 0.40, 5.0)
-        if cash >= 50.0:
-            max_allowed = max(max_allowed, 36.50)
         return req_capital <= max_allowed
 
     def get_top_reward_markets(self, limit: int = 10, sort_by: str = "rei") -> List[dict]:

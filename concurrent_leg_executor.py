@@ -402,7 +402,8 @@ class ConcurrentLegExecutor:
             try:
                 live_book = rb.fetch_order_book(self.client, missing_token)
                 best_ask = rb.extract_best_ask(live_book)
-                max_acceptable_hedge = round(1.0000 + max_hedge_tolerance - filled_price, 4)
+                effective_tolerance = max(float(max_hedge_tolerance), 1.5 * float(tick_size))
+                max_acceptable_hedge = round(1.0000 + effective_tolerance - filled_price, 4)
 
                 if 0.0 < best_ask <= max_acceptable_hedge:
                     hedge_price = self._ceil_to_tick(best_ask, tick_size)

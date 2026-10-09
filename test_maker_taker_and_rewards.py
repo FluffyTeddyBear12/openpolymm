@@ -181,7 +181,7 @@ class TestMakerTakerAndRewards(unittest.TestCase):
             },
             "mkt_light": {
                 "rewards_daily_rate": 100.0,
-                "min_size": 10.0,   # req capital @ $0.50 is $5.00
+                "min_size": 5.0,    # req capital @ $1.00 full pair is $5.00
             }
         }
         harvester = RewardHarvester(market_token_map=markets, state_file="nonexistent_test_state.json")
