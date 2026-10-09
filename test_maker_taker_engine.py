@@ -77,10 +77,12 @@ class TestMakerTakerEngine(unittest.TestCase):
         self.mock_client.create_order.return_value = order_maker_obj
         self.mock_client.post_orders.return_value = [{"orderID": "maker_order_timeout_001"}]
 
-        self.mock_client.get_order.return_value = {
-            "status": "LIVE",
-            "size_matched": "0.0",
-        }
+        def _get_order_side_effect(oid):
+            if self.mock_client.cancel_orders.called or self.mock_client.cancel.called:
+                return {"status": "CANCELED", "size_matched": "0.0"}
+            return {"status": "LIVE", "size_matched": "0.0"}
+
+        self.mock_client.get_order.side_effect = _get_order_side_effect
 
         success, reason, meta = self.executor.execute_maker_taker_arbitrage(
             token_maker=self.token_maker,

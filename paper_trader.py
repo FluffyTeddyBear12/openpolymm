@@ -43,6 +43,7 @@ from liquidity_filter import (
 )
 from rollback_protector import RollbackProtector, safe_unwind_or_limit_exit
 from maker_taker_engine import MakerTakerExecutor
+from order_reaper import OrderReaper
 from ha_notifier import send_trade_notification
 try:
     from negrisk_scanner import NegRiskBasketScanner, NegRiskAdapter
@@ -4089,11 +4090,76 @@ class LiveExecutor(PaperSimulator):
         except Exception:
             self.guard = None
         self.rollback_protector = RollbackProtector(target_state=self.dash_state)
-        self.maker_taker_executor = MakerTakerExecutor(self.client, dash_state=self.dash_state, microstructure_guard=self.guard)
+
+        # OrderReaper Background Daemon & Startup CLOB Hygiene
+        if self.client is not None:
+            try:
+                self.order_reaper = OrderReaper(
+                    client=self.client,
+                    poll_interval_sec=10.0,
+                    max_order_ttl_sec=15.0,
+                    dash_state=self.dash_state,
+                    rollback_protector=RollbackProtector,
+                )
+                self.order_reaper.purge_all_orders()
+                self.order_reaper.start()
+            except Exception as e:
+                logger.warning(f"Failed to initialize OrderReaper on startup: {e}")
+                self.order_reaper = None
+        else:
+            self.order_reaper = None
+
+        self.maker_taker_executor = MakerTakerExecutor(
+            self.client,
+            dash_state=self.dash_state,
+            microstructure_guard=self.guard,
+            order_reaper=self.order_reaper,
+        )
+
+        # 30s Periodic Background Balance & Position Sync Thread
+        self._sync_stop_event = threading.Event()
+        self._sync_thread = threading.Thread(
+            target=self._periodic_sync_loop,
+            daemon=True,
+            name="LiveExecutorSyncThread",
+        )
+        self._sync_thread.start()
+
         try:
             self.seed_clob_token_cache()
         except Exception as e:
             logger.warning(f"Error during initial CLOB token cache seeding: {e}")
+
+    def _periodic_sync_loop(self):
+        """Periodic background sync loop (every 30s) for live balance and positions."""
+        while not self._sync_stop_event.is_set():
+            slept = 0.0
+            while slept < 30.0 and not self._sync_stop_event.is_set():
+                time.sleep(1.0)
+                slept += 1.0
+            if not self._sync_stop_event.is_set() and self.client is not None:
+                try:
+                    self.sync_live_balance()
+                except Exception as e:
+                    logger.debug(f"Periodic live balance sync error: {e}")
+                try:
+                    self.sync_live_positions()
+                except Exception as e:
+                    logger.debug(f"Periodic live positions sync error: {e}")
+
+    def stop(self, timeout: float = 2.0):
+        """Gracefully stop background sync and OrderReaper, then purge CLOB orders."""
+        if hasattr(self, "_sync_stop_event"):
+            self._sync_stop_event.set()
+        if hasattr(self, "_sync_thread") and self._sync_thread and self._sync_thread.is_alive():
+            self._sync_thread.join(timeout=timeout)
+            self._sync_thread = None
+        if getattr(self, "order_reaper", None):
+            try:
+                self.order_reaper.stop(timeout=timeout)
+                self.order_reaper.purge_all_orders()
+            except Exception as e:
+                logger.warning(f"Error stopping order reaper: {e}")
 
     def seed_clob_token_cache(self):
         """

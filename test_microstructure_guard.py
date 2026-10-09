@@ -151,7 +151,12 @@ class TestMicrostructureGuard(unittest.TestCase):
         # Mock order posting
         mock_client.create_order.return_value = MagicMock()
         mock_client.post_orders.return_value = [{"orderID": "maker_order_toxic_001"}]
-        mock_client.get_order.return_value = {"status": "LIVE", "size_matched": "0.0"}
+        def _get_order_side_effect(oid):
+            if mock_client.cancel_orders.called or mock_client.cancel.called:
+                return {"status": "CANCELED", "size_matched": "0.0"}
+            return {"status": "LIVE", "size_matched": "0.0"}
+
+        mock_client.get_order.side_effect = _get_order_side_effect
 
         ok, action, details = executor.execute_maker_taker_arbitrage(
             token_maker=self.token_yes,

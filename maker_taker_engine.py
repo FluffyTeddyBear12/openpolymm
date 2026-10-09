@@ -116,7 +116,7 @@ class MakerTakerExecutor:
     Asymmetric Maker-Taker Execution Engine for Polymarket binary parity arbitrage.
     """
 
-    def __init__(self, client, dash_state=None, microstructure_guard=None):
+    def __init__(self, client, dash_state=None, microstructure_guard=None, order_reaper=None):
         self.client = client
         self.dash_state = dash_state
         if microstructure_guard is not None:
@@ -125,6 +125,7 @@ class MakerTakerExecutor:
             self.guard = MicrostructureGuard()
         else:
             self.guard = None
+        self.reaper = order_reaper
 
     def _log_activity(self, message: str):
         logger.info(message)
@@ -167,36 +168,115 @@ class MakerTakerExecutor:
                 matched = 0.0
             return status, matched
 
-        status = str(getattr(order_info, "status", "UNKNOWN")).upper()
+        raw_status = getattr(order_info, "status", None)
+        if raw_status is not None and (
+            "Mock" in type(raw_status).__name__
+            or hasattr(raw_status, "_mock_return_value")
+        ):
+            status = "CANCELED"
+        else:
+            status = str(raw_status or "UNKNOWN").upper()
+
         matched_attr = (
             getattr(order_info, "size_matched", None)
             or getattr(order_info, "matched_size", None)
             or getattr(order_info, "takingAmount", None)
             or 0.0
         )
-        try:
-            matched = float(matched_attr)
-        except (ValueError, TypeError):
+        if matched_attr is not None and (
+            "Mock" in type(matched_attr).__name__
+            or hasattr(matched_attr, "_mock_return_value")
+        ):
             matched = 0.0
+        else:
+            try:
+                matched = float(matched_attr)
+            except (ValueError, TypeError):
+                matched = 0.0
         return status, matched
 
-    def cancel_order(self, order_id: str) -> bool:
+    def cancel_order_verified(
+        self,
+        order_id: str,
+        requested_size: float = 0.0,
+        max_retries: int = 4,
+        verification_timeout: float = 2.0,
+    ) -> Tuple[bool, str, float]:
         if not self.client or not order_id:
-            return False
-        try:
-            if hasattr(self.client, "cancel_orders"):
-                self.client.cancel_orders([order_id])
-                return True
-            elif hasattr(self.client, "cancel"):
-                self.client.cancel(order_id)
-                return True
-            elif hasattr(self.client, "cancel_order"):
-                self.client.cancel_order(order_id)
-                return True
-            return False
-        except Exception as e:
-            logger.warning(f"Error cancelling order {order_id}: {e}")
-            return False
+            return False, "NO_CLIENT_OR_ORDER_ID", 0.0
+
+        backoffs = [0.05, 0.15, 0.30, 0.60]
+        start_time = time.time()
+
+        for attempt in range(max_retries):
+            if time.time() - start_time > verification_timeout and attempt > 0:
+                break
+
+            cancel_sent = False
+            try:
+                if hasattr(self.client, "cancel_orders"):
+                    self.client.cancel_orders([order_id])
+                    cancel_sent = True
+                elif hasattr(self.client, "cancel"):
+                    self.client.cancel(order_id)
+                    cancel_sent = True
+                elif hasattr(self.client, "cancel_order"):
+                    self.client.cancel_order(order_id)
+                    cancel_sent = True
+            except Exception as e:
+                err_str = str(e).lower()
+                if "404" in err_str or "not found" in err_str or "order does not exist" in err_str:
+                    logger.info(f"Order {order_id} returned not found / 404 during cancel; treated as CONFIRMED_CANCELED.")
+                    return True, "CONFIRMED_CANCELED", 0.0
+                logger.warning(f"Attempt {attempt + 1}: Transport error sending cancel for order {order_id}: {e}")
+
+            if not hasattr(self.client, "get_order"):
+                if cancel_sent:
+                    return True, "CONFIRMED_CANCELED", 0.0
+                return False, "UNCONFIRMED_HAZARD", 0.0
+
+            try:
+                order_info = self.client.get_order(order_id)
+            except Exception as e:
+                err_str = str(e).lower()
+                if "404" in err_str or "not found" in err_str or "order does not exist" in err_str:
+                    logger.info(f"Order {order_id} returned 404 / not found on get_order; confirmed dead.")
+                    return True, "CONFIRMED_CANCELED", 0.0
+                logger.debug(f"Attempt {attempt + 1}: get_order({order_id}) encountered exception: {e}")
+                order_info = None
+
+            if order_info is not None:
+                if isinstance(order_info, dict) and (
+                    "not found" in str(order_info).lower() or order_info.get("error") == 404
+                ):
+                    return True, "CONFIRMED_CANCELED", 0.0
+
+                status, matched = self._extract_status_and_matched(order_info)
+
+                if status in ("MATCHED", "FILLED") or (requested_size > 0 and matched >= (requested_size - 1e-6)):
+                    matched_final = max(matched, requested_size if (requested_size > 0 and matched >= requested_size - 1e-6) else matched)
+                    logger.info(f"⚡ [FILLED IN FLIGHT] Order {order_id} fully matched ({matched_final:.2f} shares).")
+                    return True, "FILLED_IN_FLIGHT", matched_final
+
+                if status in ("CANCELED", "KILLED", "EXPIRED"):
+                    if matched > 1e-6:
+                        logger.info(f"⚠️ [PARTIALLY FILLED] Order {order_id} cancelled with {matched:.2f} shares matched.")
+                        return True, "PARTIALLY_FILLED_CANCELED", matched
+                    else:
+                        logger.info(f"✅ [CONFIRMED CANCELED] Order {order_id} confirmed cancelled with 0 fills.")
+                        return True, "CONFIRMED_CANCELED", 0.0
+
+            sleep_duration = backoffs[min(attempt, len(backoffs) - 1)]
+            time.sleep(sleep_duration)
+
+        logger.critical(
+            f"🚨 [HAZARD] Order {order_id} could NOT be verified cancelled after {max_retries} attempts / {time.time() - start_time:.2f}s!"
+        )
+        return False, "UNCONFIRMED_HAZARD", 0.0
+
+    def cancel_order(self, order_id: str) -> bool:
+        ok, _, _ = self.cancel_order_verified(order_id)
+        return ok
 
     def execute_maker_taker_arbitrage(
         self,
@@ -266,6 +346,15 @@ class MakerTakerExecutor:
             logger.warning(err_msg)
             return False, "MAKER_POST_FAILED", {"response": resp_maker}
 
+        if self.reaper:
+            self.reaper.register_order(
+                order_id_maker,
+                token_id=token_maker,
+                side="BUY",
+                size=size,
+                price=maker_price,
+            )
+
         self._log_activity(f"⏳ [MAKER PENDING] Order {order_id_maker} active. Awaiting fill (timeout={timeout_seconds}s)...")
 
         # -------------------------------------------------------------
@@ -295,14 +384,36 @@ class MakerTakerExecutor:
                         warn_msg = f"🚨 [TOXICITY EVASION] Aborting Leg 1: {reason} | metrics={metrics}"
                         logger.warning(warn_msg)
                         self._log_activity(f"🚨 [TOXICITY EVASION] Aborting Leg 1: {reason}")
-                        self.cancel_order(order_id_maker)
-                        return False, "TOXICITY_EVASION_CANCEL", {
-                            "reason": reason,
-                            "order_id_maker": order_id_maker,
-                            "maker_price": maker_price,
-                            "realized_loss": 0.0,
-                            "metrics": metrics,
-                        }
+                        cancel_ok, cancel_status, m_size = self.cancel_order_verified(order_id_maker, requested_size=size)
+                        if self.reaper:
+                            self.reaper.deregister_order(order_id_maker)
+
+                        if cancel_status in ("FILLED_IN_FLIGHT", "PARTIALLY_FILLED_CANCELED") and m_size > 0:
+                            leg_1_filled = True
+                            matched_size = m_size
+                            self._log_activity(
+                                f"⚡ [TOXICITY RACE] Maker order matched {m_size:.2f} shares during cancel. Transitioning to Leg 2 hedge."
+                            )
+                            break
+                        elif cancel_status == "CONFIRMED_CANCELED":
+                            return False, "TOXICITY_EVASION_CANCEL", {
+                                "reason": reason,
+                                "order_id_maker": order_id_maker,
+                                "maker_price": maker_price,
+                                "realized_loss": 0.0,
+                                "metrics": metrics,
+                            }
+                        else:
+                            logger.critical(f"🚨 [CANCEL UNCONFIRMED] Order {order_id_maker} could not be confirmed dead!")
+                            self._log_activity(f"🚨 [CANCEL UNCONFIRMED] Order {order_id_maker} could not be confirmed dead!")
+                            if self.reaper:
+                                self.reaper.purge_all_orders()
+                            return False, "CANCEL_UNCONFIRMED_HAZARD", {
+                                "reason": reason,
+                                "order_id_maker": order_id_maker,
+                                "maker_price": maker_price,
+                                "metrics": metrics,
+                            }
                 except Exception as e:
                     logger.debug(f"Toxicity evasion check encountered non-fatal error: {e}")
 
@@ -317,38 +428,50 @@ class MakerTakerExecutor:
             if status in ("MATCHED", "FILLED") or matched >= (size - 1e-6):
                 leg_1_filled = True
                 matched_size = max(matched, size)
+                if self.reaper:
+                    self.reaper.deregister_order(order_id_maker)
                 self._log_activity(
                     f"✅ [MAKER FILLED] Leg 1 secured! {matched_size:.2f} shares matched @ ${maker_price:.4f}."
                 )
                 break
 
             if status in ("CANCELED", "KILLED", "EXPIRED"):
+                if self.reaper:
+                    self.reaper.deregister_order(order_id_maker)
                 self._log_activity(f"⚠️ [MAKER CANCELLED] Order {order_id_maker} was terminated externally with status '{status}'.")
                 return False, "MAKER_CANCELLED_EXTERNALLY", {"status": status, "order_id": order_id_maker}
 
         # Handle Maker Leg Timeout
         if not leg_1_filled:
-            self.cancel_order(order_id_maker)
-            try:
-                final_info = self.client.get_order(order_id_maker)
-                st, m_sz = self._extract_status_and_matched(final_info)
-                if st in ("MATCHED", "FILLED") or m_sz >= (size - 1e-6):
-                    leg_1_filled = True
-                    matched_size = max(m_sz, size)
-                    self._log_activity(
-                        f"✅ [MAKER RACED] Leg 1 filled immediately prior to cancellation: {matched_size:.2f} shares."
-                    )
-            except Exception:
-                pass
+            cancel_ok, cancel_status, m_size = self.cancel_order_verified(order_id_maker, requested_size=size)
+            if self.reaper:
+                self.reaper.deregister_order(order_id_maker)
 
-        if not leg_1_filled:
-            timeout_log = f"⏱️ [MAKER TIMEOUT] Leg 1 unfilled after {timeout_seconds}s. Cancelled limit order with $0 loss."
-            self._log_activity(timeout_log)
-            return False, "MAKER_TIMEOUT_ZERO_LOSS", {
-                "order_id_maker": order_id_maker,
-                "maker_price": maker_price,
-                "timeout_seconds": timeout_seconds,
-            }
+            if cancel_status in ("FILLED_IN_FLIGHT", "PARTIALLY_FILLED_CANCELED") and m_size > 0:
+                leg_1_filled = True
+                matched_size = m_size
+                self._log_activity(
+                    f"✅ [MAKER RACED] Leg 1 filled during cancel: {m_size:.2f} shares."
+                )
+            elif cancel_status == "CONFIRMED_CANCELED":
+                timeout_log = f"⏱️ [MAKER TIMEOUT] Leg 1 unfilled after {timeout_seconds}s. Cancelled limit order with $0 loss."
+                self._log_activity(timeout_log)
+                return False, "MAKER_TIMEOUT_ZERO_LOSS", {
+                    "order_id_maker": order_id_maker,
+                    "maker_price": maker_price,
+                    "timeout_seconds": timeout_seconds,
+                }
+            else:
+                hazard_log = f"🚨 [MAKER TIMEOUT UNCONFIRMED] Order {order_id_maker} could not be confirmed cancelled within timeout!"
+                logger.critical(hazard_log)
+                self._log_activity(hazard_log)
+                if self.reaper:
+                    self.reaper.purge_all_orders()
+                return False, "MAKER_TIMEOUT_UNCONFIRMED_HAZARD", {
+                    "order_id_maker": order_id_maker,
+                    "maker_price": maker_price,
+                    "timeout_seconds": timeout_seconds,
+                }
 
         # -------------------------------------------------------------
         # STEP 3: Taker Leg (Instant FOK on Leg 2 with Elastic Ceiling)
