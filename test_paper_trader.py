@@ -2410,7 +2410,7 @@ def test_adaptive_policy_evaluation():
     optimizer = AdaptivePolicyOptimizer()
     policy = optimizer.evaluate(sim)
 
-    assert policy["total_missed_pnl"] == 5.50
+    assert policy["total_missed_pnl"] == 4.00
     assert policy["leakage_ratio"] > 0.0
     assert policy["recommended_reserve_cash_pct"] == 0.25
     assert policy["primary_bottleneck"] in (MissedReason.SUB_THRESHOLD_EDGE.value, MissedReason.INSUFFICIENT_CASH.value)
@@ -4028,7 +4028,7 @@ class TestMakerTakerParityScanner(unittest.TestCase):
             token_taker="tok_taker",
             taker_price=0.49,
             size=20.0,
-            timeout_seconds=1.0,
+            timeout_seconds=4.0,
             dash_state=dash,
             min_edge=executor.min_edge,
             tick_size=0.001,

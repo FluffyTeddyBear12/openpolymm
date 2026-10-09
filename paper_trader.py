@@ -247,42 +247,58 @@ class ShadowParityTracker:
     def record_missed(self, opportunity: dict, reason: MissedReason) -> dict:
         reason_val = reason.value if isinstance(reason, MissedReason) else str(reason)
         edge = float(opportunity.get("edge", 0.0) or 0.0)
-        size = float(opportunity.get("trade_size", 0.0) or opportunity.get("size", 0.0) or opportunity.get("executable_liquidity_usd", 0.0) or 0.0)
+        avail_depth = opportunity.get("available_depth_usd")
+        if avail_depth is None:
+            avail_depth = opportunity.get("executable_liquidity_usd")
+        avail_depth_val = float(avail_depth) if avail_depth is not None else None
+
+        size = float(opportunity.get("trade_size", 0.0) or opportunity.get("size", 0.0) or 0.0)
+        if size <= 0.0 and avail_depth_val is not None and avail_depth_val > 0:
+            size = avail_depth_val
         if size <= 0.0:
-            size = float(opportunity.get("available_depth_usd", 0.0) or 100.0)
-            
+            size = 0.0
+
         exp_prof = opportunity.get("expected_profit")
-        if reason_val in (
-            MissedReason.ZERO_LIQUIDITY.value,
-            MissedReason.ASYMMETRIC_DEPTH.value,
-            MissedReason.WIDE_SPREAD.value,
-            MissedReason.MAKER_TIMEOUT.value,
-            MissedReason.TOXICITY_EVASION.value,
-            MissedReason.LEG2_INSUFFICIENT_DEPTH.value,
-            MissedReason.PARITY_EDGE_EVAPORATED.value,
-            MissedReason.TAKER_MICRO_PRICE_SPIKE.value,
-            MissedReason.TOXIC_DOBI_SKEW.value,
-            MissedReason.VOLUME_BURST_SURGE.value,
-            MissedReason.INSUFFICIENT_PREFLIGHT_TAKER_DEPTH.value,
-            "ZERO_LIQUIDITY",
-            "ASYMMETRIC_DEPTH",
-            "WIDE_SPREAD",
-            "MAKER_TIMEOUT",
-            "TOXICITY_EVASION",
-            "LEG2_INSUFFICIENT_DEPTH",
-            "PARITY_EDGE_EVAPORATED",
-            "TAKER_MICRO_PRICE_SPIKE",
-            "TOXIC_DOBI_SKEW",
-            "VOLUME_BURST_SURGE",
-            "PARITY_COST_EXCEEDS_BREAKEVEN",
-            "LEG2_DEPTH_COLLAPSE",
-            "INSUFFICIENT_PREFLIGHT_TAKER_DEPTH",
+        forfeited = opportunity.get("forfeited_pnl")
+
+        if (
+            reason_val in (
+                MissedReason.SUB_THRESHOLD_EDGE.value,
+                "SUB_THRESHOLD_EDGE",
+                MissedReason.ZERO_LIQUIDITY.value,
+                MissedReason.ASYMMETRIC_DEPTH.value,
+                MissedReason.WIDE_SPREAD.value,
+                MissedReason.MAKER_TIMEOUT.value,
+                MissedReason.TOXICITY_EVASION.value,
+                MissedReason.LEG2_INSUFFICIENT_DEPTH.value,
+                MissedReason.PARITY_EDGE_EVAPORATED.value,
+                MissedReason.TAKER_MICRO_PRICE_SPIKE.value,
+                MissedReason.TOXIC_DOBI_SKEW.value,
+                MissedReason.VOLUME_BURST_SURGE.value,
+                MissedReason.INSUFFICIENT_PREFLIGHT_TAKER_DEPTH.value,
+                "ZERO_LIQUIDITY",
+                "ASYMMETRIC_DEPTH",
+                "WIDE_SPREAD",
+                "MAKER_TIMEOUT",
+                "TOXICITY_EVASION",
+                "LEG2_INSUFFICIENT_DEPTH",
+                "PARITY_EDGE_EVAPORATED",
+                "TAKER_MICRO_PRICE_SPIKE",
+                "TOXIC_DOBI_SKEW",
+                "VOLUME_BURST_SURGE",
+                "PARITY_COST_EXCEEDS_BREAKEVEN",
+                "LEG2_DEPTH_COLLAPSE",
+                "INSUFFICIENT_PREFLIGHT_TAKER_DEPTH",
+            )
+            or (avail_depth_val is not None and avail_depth_val <= 0.0)
+            or size <= 0.0
+            or forfeited == 0.0
         ):
             pnl = 0.0
+        elif forfeited is not None:
+            pnl = float(forfeited)
         elif exp_prof is not None:
             pnl = float(exp_prof)
-        elif opportunity.get("available_depth_usd") is not None and float(opportunity["available_depth_usd"]) <= 0:
-            pnl = 0.0
         else:
             pnl = edge * size
         pnl = max(0.0, round(pnl, 4))
@@ -432,6 +448,8 @@ class ActivePolicyRewriter:
                     for k in self.params:
                         if k in saved:
                             self.params[k] = type(self.params[k])(saved[k])
+                    self.params["min_edge_pct"] = max(0.0060, float(self.params.get("min_edge_pct", 0.0060)))
+                    self.params["maker_timeout_seconds"] = min(6.0, max(3.0, float(self.params.get("maker_timeout_seconds", 4.0))))
                     self.total_adaptations = int(saved.get("total_adaptations", 0))
                     self.recovered_pnl = float(saved.get("recovered_pnl", 0.0))
                     self.primary_bottleneck = str(saved.get("primary_bottleneck", "NONE"))
@@ -542,8 +560,8 @@ class ActivePolicyRewriter:
                     adapted = True
 
             elif reason in (getattr(MissedReason, "MAKER_TIMEOUT", "MAKER_TIMEOUT").value if hasattr(getattr(MissedReason, "MAKER_TIMEOUT", None), "value") else "MAKER_TIMEOUT", "MAKER_TIMEOUT"):
-                cur_timeout = self.params.get("maker_timeout_seconds", 1.0)
-                new_timeout = min(2.5, max(0.5, round(cur_timeout + 0.25, 2)))
+                cur_timeout = self.params.get("maker_timeout_seconds", 4.0)
+                new_timeout = min(6.0, max(3.0, round(cur_timeout + 0.5, 2)))
                 if new_timeout != cur_timeout:
                     self.params["maker_timeout_seconds"] = new_timeout
                     param_name = "maker_timeout_seconds"
@@ -2399,7 +2417,9 @@ class PaperSimulator:
             target_state.add_activity_log(f"⚡ {short_id}: YES {ask_yes:.4f} | NO {ask_no:.4f} | Cost {effective_cost:.4f} | Edge {edge*100:+.2f}%")
 
         if effective_cost < 1.00:
-            if edge <= self.min_edge:
+            tick_size = float(m_info.get("tick_size") or 0.0005) if m_info else 0.0005
+            effective_min_edge = max(float(self.min_edge), 2.0 * float(tick_size) + float(self.fee_rate))
+            if edge < effective_min_edge:
                 opp_info = {
                     "market_id": market_id,
                     "question": q_name or short_id,
@@ -2410,8 +2430,8 @@ class PaperSimulator:
                     "cost": effective_cost,
                     "edge": edge,
                     "available_depth_usd": 0.0,
-                    "trade_size": self.risk.calculate_sizing(),
-                    "expected_profit": self.risk.calculate_sizing() * edge
+                    "trade_size": 0.0,
+                    "expected_profit": 0.0
                 }
                 if hasattr(self, "shadow_tracker") and self.shadow_tracker:
                     self.shadow_tracker.record_missed(opp_info, MissedReason.SUB_THRESHOLD_EDGE)
@@ -2434,36 +2454,34 @@ class PaperSimulator:
                 depth_no = float('inf')
 
             executable_liquidity_usd = min(depth_yes, depth_no)
-            if executable_liquidity_usd <= 0.0:
-                if depth_yes <= 0.0 and depth_no <= 0.0 and ask_yes > 0 and ask_no > 0:
-                    executable_liquidity_usd = self.risk.calculate_sizing()
+            min_depth_threshold = 15.0
+            if executable_liquidity_usd < min_depth_threshold:
+                d_y = depth_yes if depth_yes != float('inf') else 0.0
+                d_n = depth_no if depth_no != float('inf') else 0.0
+                if (d_y > 0.0 and d_n <= 0.0) or (d_n > 0.0 and d_y <= 0.0):
+                    missed_reason = MissedReason.ASYMMETRIC_DEPTH
+                    avail_depth = max(d_y, d_n)
                 else:
-                    d_y = depth_yes if depth_yes != float('inf') else 0.0
-                    d_n = depth_no if depth_no != float('inf') else 0.0
-                    if (d_y > 0.0 and d_n <= 0.0) or (d_n > 0.0 and d_y <= 0.0):
-                        missed_reason = MissedReason.ASYMMETRIC_DEPTH
-                        avail_depth = max(d_y, d_n)
-                    else:
-                        missed_reason = MissedReason.ZERO_LIQUIDITY
-                        avail_depth = 0.0
-                    opp_info = {
-                        "market_id": market_id,
-                        "question": q_name or short_id,
-                        "short_id": short_id,
-                        "ask_yes": ask_yes,
-                        "ask_no": ask_no,
-                        "depth_yes": d_y,
-                        "depth_no": d_n,
-                        "effective_cost": effective_cost,
-                        "cost": effective_cost,
-                        "edge": edge,
-                        "available_depth_usd": avail_depth,
-                        "trade_size": self.risk.calculate_sizing(),
-                        "expected_profit": 0.0
-                    }
-                    if hasattr(self, "shadow_tracker") and self.shadow_tracker:
-                        self.shadow_tracker.record_missed(opp_info, missed_reason)
-                    return None
+                    missed_reason = MissedReason.ZERO_LIQUIDITY
+                    avail_depth = executable_liquidity_usd if executable_liquidity_usd > 0 else 0.0
+                opp_info = {
+                    "market_id": market_id,
+                    "question": q_name or short_id,
+                    "short_id": short_id,
+                    "ask_yes": ask_yes,
+                    "ask_no": ask_no,
+                    "depth_yes": d_y,
+                    "depth_no": d_n,
+                    "effective_cost": effective_cost,
+                    "cost": effective_cost,
+                    "edge": edge,
+                    "available_depth_usd": avail_depth,
+                    "trade_size": 0.0,
+                    "expected_profit": 0.0
+                }
+                if hasattr(self, "shadow_tracker") and self.shadow_tracker:
+                    self.shadow_tracker.record_missed(opp_info, missed_reason)
+                return None
 
             desired_trade_size = self.risk.calculate_sizing()
             trade_size = min(desired_trade_size, executable_liquidity_usd)
@@ -2650,13 +2668,14 @@ class PaperSimulator:
                 rei_val = self.reward_harvester.compute_reward_efficiency_index(rewards_daily_rate, min_size=min_sz, max_spread=max_sp)
 
         desired_trade_size = self.risk.calculate_sizing() if (hasattr(self, "risk") and self.risk) else 100.0
+        effective_min_edge = max(float(self.min_edge), 1.5 * float(tick_size) + (float(self.fee_rate) * 0.5), 0.0035)
 
         # Branch A (Maker YES, Taker NO):
         if (bid_yes is not None and bid_yes > 0 and
             ask_no is not None and ask_no > 0 and
             ask_yes is not None and ask_yes > bid_yes):
 
-            max_viable_yes = round(1.000 - ask_no * (1 + self.fee_rate) - self.min_edge, 4)
+            max_viable_yes = round(1.000 - ask_no * (1 + self.fee_rate) - effective_min_edge, 4)
             maker_price_yes = min(ask_yes - tick_size, max_viable_yes)
             if bid_yes is not None and bid_yes >= (ask_yes - 3 * tick_size):
                 maker_price_yes = max(bid_yes + tick_size, maker_price_yes)
@@ -2670,10 +2689,10 @@ class PaperSimulator:
             desired_shares_a = (desired_trade_size / cost_pair_a) if cost_pair_a > 0 else 5.0
             required_size_a = max(5.0, min(desired_shares_a, taker_depth_a / 3.0)) if taker_depth_a > 0 else 5.0
 
-            if (taker_depth_a >= 5.0 and
+            if (taker_depth_a >= 15.0 and
                 taker_depth_a >= required_size_a * 3.0 and
                 spread_yes <= max_spread + 1e-7 and
-                edge_a >= self.min_edge):
+                edge_a >= effective_min_edge):
 
                 trade_size_a = max(5.0, min(desired_trade_size, (taker_depth_a / 3.0) * cost_pair_a))
                 trade_size_a = max(5.0, trade_size_a)
@@ -2725,7 +2744,7 @@ class PaperSimulator:
             ask_yes is not None and ask_yes > 0 and
             ask_no is not None and ask_no > bid_no):
 
-            max_viable_no = round(1.000 - ask_yes * (1 + self.fee_rate) - self.min_edge, 4)
+            max_viable_no = round(1.000 - ask_yes * (1 + self.fee_rate) - effective_min_edge, 4)
             maker_price_no = min(ask_no - tick_size, max_viable_no)
             if bid_no is not None and bid_no >= (ask_no - 3 * tick_size):
                 maker_price_no = max(bid_no + tick_size, maker_price_no)
@@ -2739,10 +2758,10 @@ class PaperSimulator:
             desired_shares_b = (desired_trade_size / cost_pair_b) if cost_pair_b > 0 else 5.0
             required_size_b = max(5.0, min(desired_shares_b, taker_depth_b / 3.0)) if taker_depth_b > 0 else 5.0
 
-            if (taker_depth_b >= 5.0 and
+            if (taker_depth_b >= 15.0 and
                 taker_depth_b >= required_size_b * 3.0 and
                 spread_no <= max_spread + 1e-7 and
-                edge_b >= self.min_edge):
+                edge_b >= effective_min_edge):
 
                 trade_size_b = max(5.0, min(desired_trade_size, (taker_depth_b / 3.0) * cost_pair_b))
                 trade_size_b = max(5.0, trade_size_b)
@@ -5221,7 +5240,7 @@ class LiveExecutor(PaperSimulator):
             trade_size = round(shares * cost_per_pair, 2)
             expected_profit = round((shares * 1.0) - trade_size, 4)
 
-            timeout_sec = float(target_state.state.get("maker_timeout_seconds", 1.0) or 1.0) if target_state else 1.0
+            timeout_sec = float(target_state.state.get("maker_timeout_seconds", 4.0) or 4.0) if target_state else 4.0
             min_edge_val = float(getattr(target_state, "state", {}).get("min_edge_pct", self.min_edge) or self.min_edge)
             init_taker_depth = opp.get("depth_taker") or (opp.get("depth_no") if opp.get("maker_leg") == "YES" else opp.get("depth_yes"))
 

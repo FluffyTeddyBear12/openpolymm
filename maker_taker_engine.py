@@ -302,7 +302,7 @@ class MakerTakerExecutor:
         token_taker: str,
         taker_price: float,
         size: float,
-        timeout_seconds: float = 1.0,
+        timeout_seconds: float = 4.0,
         rollback_mode: str = "LIMIT_SELL",
         dash_state: Optional[Any] = None,
         min_edge: float = 0.0150,

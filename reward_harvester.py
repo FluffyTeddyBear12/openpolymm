@@ -318,6 +318,8 @@ class RewardHarvester:
         price = max(_safe_float(mid_price, 0.50), 0.01)
         req_capital = min_size * price
         max_allowed = max(cash * 0.40, 5.0)
+        if cash >= 50.0:
+            max_allowed = max(max_allowed, 36.50)
         return req_capital <= max_allowed
 
     def get_top_reward_markets(self, limit: int = 10, sort_by: str = "rei") -> List[dict]:
@@ -384,8 +386,8 @@ class RewardHarvester:
         if daily_rate <= 0.0:
             return round(base, 6)
 
-        reward_factor = 1e-4 if expected_profit is not None else 1e-5
-        bonus = (daily_rate * reward_factor) * (1.0 + rei)
+        reward_factor = 0.002 if expected_profit is not None else 0.001
+        bonus = (daily_rate * reward_factor) * (1.0 + min(rei, 10.0))
         combined_score = base + bonus
         return round(combined_score, 6)
 
