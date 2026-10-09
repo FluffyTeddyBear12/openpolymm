@@ -40,15 +40,19 @@ except ImportError:
     PartialCreateOrderOptions = None
 
 try:
-    from py_clob_client_v2.clob_types import PostOrdersV2Args
+    from py_clob_client.clob_types import PostOrdersArgs as PostOrdersV2Args
 except ImportError:
-    PostOrdersV2Args = None
+    try:
+        from py_clob_client_v2.clob_types import PostOrdersV2Args
+    except ImportError:
+        PostOrdersV2Args = None
 
 if PostOrdersV2Args is None:
     class PostOrdersV2Args:
-        def __init__(self, order: Any, orderType: Any):
+        def __init__(self, order: Any, orderType: Any, postOnly: bool = False):
             self.order = order
             self.orderType = orderType
+            self.postOnly = postOnly
 
 if OrderType is None:
     class OrderType:
@@ -446,7 +450,12 @@ class RollbackProtector:
             resp = None
             if created_order is not None and hasattr(client, "post_orders"):
                 if PostOrdersV2Args is not None:
-                    post_arg = PostOrdersV2Args(order=created_order, orderType=target_order_type)
+                    try:
+                        post_arg = PostOrdersV2Args(order=created_order, orderType=target_order_type, postOnly=False)
+                    except TypeError:
+                        post_arg = PostOrdersV2Args(order=created_order, orderType=target_order_type)
+                    if not hasattr(post_arg, "postOnly"):
+                        setattr(post_arg, "postOnly", False)
                     resp = client.post_orders([post_arg])
                 else:
                     resp = client.post_orders([created_order])
