@@ -265,3 +265,55 @@ class TestRollbackProtector(unittest.TestCase):
         mock_sleep.assert_called_with(1.0)
         assert mock_client.post_orders.call_count == 2
 
+    def test_safe_unwind_dynamic_tick_size_and_neg_risk(self):
+        mock_client = MagicMock()
+        mock_client.get_order_book.return_value = {
+            "bids": [{"price": "0.485", "size": "100.0"}]
+        }
+        mock_client.create_order.return_value = {"order_payload": "valid"}
+        mock_client.post_orders.return_value = [{"orderID": "0xneg_risk_ok", "status": "matched"}]
+        mock_client.get_tick_size.return_value = "0.01"
+        mock_client.get_neg_risk.return_value = True
+
+        ok, action, resp = RollbackProtector.safe_unwind_or_limit_exit(
+            client=mock_client,
+            token_id="tok_neg_risk_123",
+            shares=50.0,
+            buy_price=0.49,
+            label="YES",
+            max_loss_cents=0.01,
+        )
+
+        assert ok is True
+        assert action == "MARKET_EXIT_SAFE"
+        mock_client.create_order.assert_called_once()
+        args, kwargs = mock_client.create_order.call_args
+        opts = kwargs.get("options")
+        assert opts is not None
+        assert str(opts.tick_size) == "0.01"
+        assert opts.neg_risk is True
+
+    def test_post_sell_order_fallback_on_type_error(self):
+        mock_client = MagicMock()
+        valid_order = {"order_payload": "legacy"}
+        def create_order_side_effect(*args, **kwargs):
+            if "options" in kwargs:
+                raise TypeError("create_order() got an unexpected keyword argument 'options'")
+            return valid_order
+
+        mock_client.create_order.side_effect = create_order_side_effect
+        mock_client.post_orders.return_value = [{"orderID": "0xlegacy_ok", "status": "matched"}]
+
+        success, resp, err = RollbackProtector._post_sell_order(
+            client=mock_client,
+            token_id="tok_legacy",
+            price=0.50,
+            shares=10.0,
+            order_type="FOK",
+        )
+
+        assert success is True
+        assert err is None
+        assert mock_client.create_order.call_count == 2
+
+

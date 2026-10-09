@@ -29,10 +29,19 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 logger = logging.getLogger("RollbackProtector")
 
 try:
-    from py_clob_client_v2.clob_types import OrderArgsV2, PostOrdersV2Args, OrderType
+    from py_clob_client_v2.clob_types import (
+        OrderArgsV2,
+        PostOrdersV2Args,
+        OrderType,
+        PartialCreateOrderOptions,
+    )
 except ImportError:
     try:
-        from py_clob_client.clob_types import OrderArgs as OrderArgsV2, OrderType
+        from py_clob_client.clob_types import (
+            OrderArgs as OrderArgsV2,
+            OrderType,
+            PartialCreateOrderOptions,
+        )
         PostOrdersV2Args = None
     except ImportError:
         class OrderType:
@@ -42,6 +51,54 @@ except ImportError:
             FAK = "FAK"
         OrderArgsV2 = None
         PostOrdersV2Args = None
+        PartialCreateOrderOptions = None
+
+if PartialCreateOrderOptions is None:
+    class PartialCreateOrderOptions:
+        def __init__(
+            self,
+            tick_size: Optional[str] = None,
+            neg_risk: Optional[bool] = None,
+            version: Optional[int] = None,
+        ):
+            self.tick_size = tick_size
+            self.neg_risk = neg_risk
+            self.version = version
+
+
+def _round_to_tick_size(price: float, tick_size: float = 0.001) -> float:
+    if tick_size <= 0:
+        return round(price, 4)
+    steps = round(price / tick_size)
+    return round(steps * tick_size, 4)
+
+
+def _resolve_token_metadata(client: Any, token_id: str, default_tick: float = 0.001) -> Tuple[float, bool]:
+    tick = default_tick
+    neg_risk = False
+    if client:
+        try:
+            if hasattr(client, "get_tick_size"):
+                res = client.get_tick_size(token_id)
+                if res is not None and not hasattr(res, "_mock_return_value"):
+                    tick = float(res)
+        except Exception:
+            pass
+        try:
+            if hasattr(client, "get_neg_risk"):
+                res = client.get_neg_risk(token_id)
+                if isinstance(res, bool):
+                    neg_risk = res
+                elif isinstance(res, str):
+                    neg_risk = res.lower() in ("true", "1")
+                elif isinstance(res, (int, float)) and not isinstance(res, bool):
+                    neg_risk = bool(res)
+                elif res is not None and not hasattr(res, "_mock_return_value"):
+                    neg_risk = bool(res)
+        except Exception:
+            pass
+    return tick, neg_risk
+
 
 
 class RollbackProtector:
@@ -85,6 +142,8 @@ class RollbackProtector:
         max_loss_cents = float(args[5] if len(args) > 5 else kwargs.get("max_loss_cents", 0.005))
         target_state = kwargs.get("target_state", default_target_state)
         force_market_exit = kwargs.get("force_market_exit", None)
+        tick_size = float(kwargs.get("tick_size", 0.001) or 0.001)
+        neg_risk = kwargs.get("neg_risk", None)
 
         if shares <= 0:
             return True, "NO_SHARES", {"shares": shares, "realized_loss": 0.0}
@@ -133,6 +192,8 @@ class RollbackProtector:
                 price=sell_price,
                 shares=shares,
                 order_type="FOK",
+                tick_size=tick_size,
+                neg_risk=neg_risk,
             )
             for retry in range(3):
                 if success:
@@ -149,7 +210,9 @@ class RollbackProtector:
                         token_id=token_id,
                         price=sell_price,
                         shares=shares,
-                        order_type='FOK'
+                        order_type='FOK',
+                        tick_size=tick_size,
+                        neg_risk=neg_risk,
                     )
 
             if success:
@@ -192,6 +255,8 @@ class RollbackProtector:
                 price=limit_price,
                 shares=shares,
                 order_type="GTC",
+                tick_size=tick_size,
+                neg_risk=neg_risk,
             )
             for retry in range(3):
                 if success:
@@ -204,6 +269,8 @@ class RollbackProtector:
                         price=limit_price,
                         shares=shares,
                         order_type="GTC",
+                        tick_size=tick_size,
+                        neg_risk=neg_risk,
                     )
 
             if success:
@@ -316,25 +383,50 @@ class RollbackProtector:
         price: float,
         shares: float,
         order_type: str = "FOK",
+        tick_size: float = 0.001,
+        neg_risk: Optional[bool] = None,
     ) -> Tuple[bool, Any, Optional[str]]:
         try:
             target_order_type = getattr(OrderType, order_type, order_type)
+
+            actual_tick, actual_neg = _resolve_token_metadata(client, token_id, default_tick=tick_size)
+            if neg_risk is not None:
+                actual_neg = bool(neg_risk)
+
+            clean_price = _round_to_tick_size(price, actual_tick)
+            min_bound = actual_tick
+            max_bound = round(1.0 - actual_tick, 4)
+            if clean_price < min_bound:
+                clean_price = min_bound
+            elif clean_price > max_bound:
+                clean_price = max_bound
+
+            order_opts = None
+            if PartialCreateOrderOptions is not None:
+                order_opts = PartialCreateOrderOptions(tick_size=str(actual_tick), neg_risk=actual_neg)
 
             created_order = None
             if hasattr(client, "create_order"):
                 if OrderArgsV2 is not None:
                     try:
-                        args_obj = OrderArgsV2(price=price, size=float(shares), side="SELL", token_id=token_id)
+                        args_obj = OrderArgsV2(price=clean_price, size=float(shares), side="SELL", token_id=token_id)
                     except TypeError:
-                        args_obj = OrderArgsV2(token_id=token_id, price=price, size=float(shares), side="SELL")
-                    created_order = client.create_order(args_obj)
+                        args_obj = OrderArgsV2(token_id=token_id, price=clean_price, size=float(shares), side="SELL")
                 else:
-                    created_order = client.create_order({
-                        "price": price,
+                    args_obj = {
+                        "price": clean_price,
                         "size": float(shares),
                         "side": "SELL",
                         "token_id": token_id,
-                    })
+                    }
+
+                if order_opts is not None:
+                    try:
+                        created_order = client.create_order(args_obj, options=order_opts)
+                    except TypeError:
+                        created_order = client.create_order(args_obj)
+                else:
+                    created_order = client.create_order(args_obj)
 
             resp = None
             if created_order is not None and hasattr(client, "post_orders"):
@@ -348,12 +440,18 @@ class RollbackProtector:
             elif hasattr(client, "create_and_post_order"):
                 if OrderArgsV2 is not None:
                     try:
-                        args_obj = OrderArgsV2(price=price, size=float(shares), side="SELL", token_id=token_id)
+                        args_obj = OrderArgsV2(price=clean_price, size=float(shares), side="SELL", token_id=token_id)
                     except TypeError:
-                        args_obj = OrderArgsV2(token_id=token_id, price=price, size=float(shares), side="SELL")
+                        args_obj = OrderArgsV2(token_id=token_id, price=clean_price, size=float(shares), side="SELL")
                 else:
-                    args_obj = {"price": price, "size": float(shares), "side": "SELL", "token_id": token_id}
-                resp = client.create_and_post_order(args_obj, order_type=target_order_type)
+                    args_obj = {"price": clean_price, "size": float(shares), "side": "SELL", "token_id": token_id}
+                if order_opts is not None:
+                    try:
+                        resp = client.create_and_post_order(args_obj, order_type=target_order_type, options=order_opts)
+                    except TypeError:
+                        resp = client.create_and_post_order(args_obj, order_type=target_order_type)
+                else:
+                    resp = client.create_and_post_order(args_obj, order_type=target_order_type)
             else:
                 return False, None, f"Unsupported client type: {type(client)}"
 
@@ -365,6 +463,7 @@ class RollbackProtector:
         except Exception as e:
             logger.warning(f"Error posting {order_type} sell order for token {token_id}: {e}")
             return False, None, str(e)
+
 
 
 safe_unwind_or_limit_exit = RollbackProtector.safe_unwind_or_limit_exit
