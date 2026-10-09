@@ -4027,7 +4027,7 @@ class TestMakerTakerParityScanner(unittest.TestCase):
             token_taker="tok_taker",
             taker_price=0.49,
             size=20.0,
-            timeout_seconds=15.0,
+            timeout_seconds=1.0,
             dash_state=dash,
             min_edge=executor.min_edge,
             tick_size=0.001,

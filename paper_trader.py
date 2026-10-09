@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import collections
 import threading
+import concurrent.futures
 
 # Using official Polymarket py_clob_client
 from py_clob_client.client import ClobClient
@@ -2080,6 +2081,10 @@ class PaperSimulator:
         """Alias for update_book to standardize book update ingestion."""
         return self.update_book(market_id, asset_id, best_ask, ask_size=ask_size, evaluate=evaluate)
 
+    def dispatch_arbitrage(self, opp: dict) -> bool:
+        """Synchronous dispatch for paper simulation."""
+        return self.execute_arbitrage(opp)
+
     def saver_thread(self):
         """
         Periodic maintenance routine for live balance synchronization.
@@ -3216,7 +3221,10 @@ def on_message(ws, message, simulator):
             else:
                 candidates.sort(key=lambda x: x.get("expected_profit", 0.0), reverse=True)
             for opp in candidates:
-                simulator.execute_arbitrage(opp)
+                if hasattr(simulator, "dispatch_arbitrage"):
+                    simulator.dispatch_arbitrage(opp)
+                else:
+                    simulator.execute_arbitrage(opp)
 
     except Exception as e:
         logger.error(f"Error parsing message: {e}")
@@ -4096,8 +4104,8 @@ class LiveExecutor(PaperSimulator):
             try:
                 self.order_reaper = OrderReaper(
                     client=self.client,
-                    poll_interval_sec=10.0,
-                    max_order_ttl_sec=15.0,
+                    poll_interval_sec=1.0,
+                    max_order_ttl_sec=2.5,
                     dash_state=self.dash_state,
                     rollback_protector=RollbackProtector,
                 )
@@ -4109,6 +4117,10 @@ class LiveExecutor(PaperSimulator):
         else:
             self.order_reaper = None
 
+        self._trade_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="LiveTradeWorker")
+        self._active_trading_markets: Set[str] = set()
+        self._trading_lock = threading.Lock()
+
         self.maker_taker_executor = MakerTakerExecutor(
             self.client,
             dash_state=self.dash_state,
@@ -4116,7 +4128,7 @@ class LiveExecutor(PaperSimulator):
             order_reaper=self.order_reaper,
         )
 
-        # 30s Periodic Background Balance & Position Sync Thread
+        # 1.0s Periodic Background Balance & Position Sync Thread
         self._sync_stop_event = threading.Event()
         self._sync_thread = threading.Thread(
             target=self._periodic_sync_loop,
@@ -4130,13 +4142,37 @@ class LiveExecutor(PaperSimulator):
         except Exception as e:
             logger.warning(f"Error during initial CLOB token cache seeding: {e}")
 
+    def dispatch_arbitrage(self, opp: dict) -> bool:
+        exec_mode = self.dash_state.state.get("execution_mode", "Paper Trading") if self.dash_state else "Paper Trading"
+        if self.client is None or exec_mode != "Live Trading":
+            return self.execute_arbitrage(opp)
+        market_id = opp.get("market_id")
+        if not market_id:
+            return False
+        with self._trading_lock:
+            if market_id in self._active_trading_markets:
+                return False
+            self._active_trading_markets.add(market_id)
+
+        def _run():
+            try:
+                self.execute_arbitrage(opp)
+            except Exception as e:
+                logger.error(f"Error during async arbitrage execution for {market_id}: {e}", exc_info=True)
+            finally:
+                with self._trading_lock:
+                    self._active_trading_markets.discard(market_id)
+
+        self._trade_executor.submit(_run)
+        return True
+
     def _periodic_sync_loop(self):
-        """Periodic background sync loop (every 30s) for live balance and positions."""
+        """Periodic background sync loop (every 15s) for live balance and positions."""
         while not self._sync_stop_event.is_set():
             slept = 0.0
-            while slept < 30.0 and not self._sync_stop_event.is_set():
-                time.sleep(1.0)
-                slept += 1.0
+            while slept < 15.0 and not self._sync_stop_event.is_set():
+                time.sleep(0.5)
+                slept += 0.5
             if not self._sync_stop_event.is_set() and self.client is not None:
                 try:
                     self.sync_live_balance()
@@ -4154,6 +4190,11 @@ class LiveExecutor(PaperSimulator):
         if hasattr(self, "_sync_thread") and self._sync_thread and self._sync_thread.is_alive():
             self._sync_thread.join(timeout=timeout)
             self._sync_thread = None
+        if hasattr(self, "_trade_executor") and self._trade_executor:
+            try:
+                self._trade_executor.shutdown(wait=False)
+            except Exception:
+                pass
         if getattr(self, "order_reaper", None):
             try:
                 self.order_reaper.stop(timeout=timeout)
@@ -4906,7 +4947,7 @@ class LiveExecutor(PaperSimulator):
             trade_size = round(shares * cost_per_pair, 2)
             expected_profit = round((shares * 1.0) - trade_size, 4)
 
-            timeout_sec = 15.0
+            timeout_sec = float(target_state.state.get("maker_timeout_seconds", 1.0) or 1.0) if target_state else 1.0
             min_edge_val = float(getattr(target_state, "state", {}).get("min_edge_pct", self.min_edge) or self.min_edge)
             init_taker_depth = opp.get("depth_taker") or (opp.get("depth_no") if opp.get("maker_leg") == "YES" else opp.get("depth_yes"))
 
@@ -4964,7 +5005,7 @@ class LiveExecutor(PaperSimulator):
             self.on_trade_executed(market_id, trade_size, expected_profit)
             return True
             
-        if time.time() - getattr(self, "last_balance_sync_time", 0.0) > 15.0:
+        if time.time() - getattr(self, "last_balance_sync_time", 0.0) > 1.0:
 
             try:
                 self.sync_live_balance()

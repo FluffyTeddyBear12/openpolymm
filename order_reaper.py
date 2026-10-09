@@ -25,8 +25,8 @@ class OrderReaper:
     def __init__(
         self,
         client: Any,
-        poll_interval_sec: float = 10.0,
-        max_order_ttl_sec: float = 15.0,
+        poll_interval_sec: float = 1.0,
+        max_order_ttl_sec: float = 2.5,
         dash_state: Optional[Any] = None,
         rollback_protector: Optional[Any] = None,
     ):
@@ -343,8 +343,8 @@ class OrderReaper:
 
             slept = 0.0
             while slept < self.poll_interval_sec and not self._stop_event.is_set():
-                time.sleep(0.5)
-                slept += 0.5
+                time.sleep(0.1)
+                slept += 0.1
 
     def start(self):
         with self._lock:

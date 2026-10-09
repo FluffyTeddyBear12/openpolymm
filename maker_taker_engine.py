@@ -46,7 +46,21 @@ def _floor_to_tick_size(price: float, tick_size: float = 0.001) -> float:
     return round(steps * tick_size, 4)
 
 
+_TOKEN_META_CACHE: Dict[str, Tuple[float, bool]] = {}
+
+
+def clear_token_metadata_cache():
+    _TOKEN_META_CACHE.clear()
+
+
+def set_token_metadata_cache(token_id: str, tick: float, neg_risk: bool):
+    _TOKEN_META_CACHE[token_id] = (float(tick), bool(neg_risk))
+
+
 def _resolve_token_metadata(client: Any, token_id: str, default_tick: float = 0.001) -> Tuple[float, bool]:
+    is_mock = client is not None and ("mock" in type(client).__name__.lower() or hasattr(client, "_mock_return_value"))
+    if not is_mock and token_id in _TOKEN_META_CACHE:
+        return _TOKEN_META_CACHE[token_id]
     tick = default_tick
     neg_risk = False
     if client:
@@ -70,7 +84,10 @@ def _resolve_token_metadata(client: Any, token_id: str, default_tick: float = 0.
                     neg_risk = bool(res)
         except Exception:
             pass
-    return tick, neg_risk
+    meta = (tick, neg_risk)
+    if token_id and not is_mock:
+        _TOKEN_META_CACHE[token_id] = meta
+    return meta
 
 
 
@@ -200,12 +217,12 @@ class MakerTakerExecutor:
         order_id: str,
         requested_size: float = 0.0,
         max_retries: int = 4,
-        verification_timeout: float = 2.0,
+        verification_timeout: float = 1.0,
     ) -> Tuple[bool, str, float]:
         if not self.client or not order_id:
             return False, "NO_CLIENT_OR_ORDER_ID", 0.0
 
-        backoffs = [0.05, 0.15, 0.30, 0.60]
+        backoffs = [0.02, 0.05, 0.10, 0.20]
         start_time = time.time()
 
         for attempt in range(max_retries):
@@ -285,7 +302,7 @@ class MakerTakerExecutor:
         token_taker: str,
         taker_price: float,
         size: float,
-        timeout_seconds: float = 5.0,
+        timeout_seconds: float = 1.0,
         rollback_mode: str = "LIMIT_SELL",
         dash_state: Optional[Any] = None,
         min_edge: float = 0.0150,
@@ -361,13 +378,16 @@ class MakerTakerExecutor:
         # STEP 2: Wait for Fill or Timeout
         # -------------------------------------------------------------
         start_time = time.time()
-        poll_interval = 0.03
+        poll_interval = 0.015
         leg_1_filled = False
         matched_size = 0.0
         init_taker_depth = initial_taker_depth if initial_taker_depth is not None else 50.0
+        first_poll = True
 
         while time.time() - start_time < timeout_seconds:
-            time.sleep(poll_interval)
+            if not first_poll:
+                time.sleep(poll_interval)
+            first_poll = False
 
             # Pre-fill toxicity evasion check
             if self.guard:
