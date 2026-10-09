@@ -312,7 +312,40 @@ class TestMakerTakerEngine(unittest.TestCase):
         self.assertEqual(meta["unwind_action"], "MARKET_EXIT_SAFE")
         self.assertAlmostEqual(meta["realized_loss"], 10.0 * (0.48 - 0.47), places=4)
 
+    def test_dynamic_tick_size_and_neg_risk_resolution(self):
+        order_maker_obj = MagicMock()
+        order_taker_obj = MagicMock()
+        self.mock_client.create_order.side_effect = [order_maker_obj, order_taker_obj]
+        self.mock_client.post_orders.side_effect = [
+            [{"orderID": "maker_order_001"}],
+            [{"orderID": "taker_order_002", "takingAmount": "10.0", "status": "matched"}],
+        ]
+        self.mock_client.get_order.return_value = {
+            "status": "MATCHED",
+            "size_matched": "10.0",
+        }
+        self.mock_client.get_tick_size.return_value = "0.01"
+        self.mock_client.get_neg_risk.return_value = True
+
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=0.485,
+            token_taker=self.token_taker,
+            taker_price=0.495,
+            size=10.0,
+            timeout_seconds=2.0,
+        )
+
+        self.assertTrue(success)
+        self.assertEqual(reason, "SUCCESS")
+        call_args_list = self.mock_client.create_order.call_args_list
+        self.assertEqual(len(call_args_list), 2)
+        opts_maker = call_args_list[0][1].get("options")
+        self.assertEqual(str(opts_maker.tick_size), "0.01")
+        self.assertTrue(opts_maker.neg_risk)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -2382,8 +2382,21 @@ class PaperSimulator:
         q_name = m_info.get("question") if m_info else None
         short_id = (q_name[:26] + "...") if q_name else f"Market {market_id[-6:]}"
         market_meta = m_info.get("market_meta", m_info) if m_info else {}
-        tick_size = float(m_info.get("tick_size") or m_info.get("minimum_tick_size") or 0.001)
-        rewards_daily_rate = float(m_info.get("rewards_daily_rate") or market_meta.get("rewards_daily_rate") or 0.0)
+        meta_dict = market_meta if isinstance(market_meta, dict) else {}
+        actual_tick_size = float(
+            meta_dict.get("minimum_tick_size")
+            or m_info.get("minimum_tick_size")
+            or m_info.get("tick_size")
+            or meta_dict.get("tick_size")
+            or 0.001
+        )
+        actual_neg_risk = bool(
+            meta_dict.get("neg_risk")
+            if "neg_risk" in meta_dict
+            else m_info.get("neg_risk", False)
+        )
+        tick_size = actual_tick_size
+        rewards_daily_rate = float(m_info.get("rewards_daily_rate") or meta_dict.get("rewards_daily_rate") or 0.0)
 
         bid_yes = None
         ask_yes = None
@@ -2523,6 +2536,7 @@ class PaperSimulator:
                     "depth_yes": depth_yes if not math.isinf(depth_yes) else 50.0,
                     "depth_no": taker_depth_a,
                     "tick_size": tick_size,
+                    "neg_risk": actual_neg_risk,
                     "market_meta": market_meta
                 }
 
@@ -2577,6 +2591,7 @@ class PaperSimulator:
                     "depth_yes": taker_depth_b,
                     "depth_no": depth_no if not math.isinf(depth_no) else 50.0,
                     "tick_size": tick_size,
+                    "neg_risk": actual_neg_risk,
                     "market_meta": market_meta
                 }
 
@@ -3544,6 +3559,11 @@ def refresh_market_universe(
                 seed_order_books_via_rest(simulator, new_tokens_to_seed, chunk_size=500)
             except Exception as e:
                 logger.warning(f"Error seeding new dynamic markets via REST: {e}")
+        if hasattr(simulator, "seed_clob_token_cache"):
+            try:
+                simulator.seed_clob_token_cache()
+            except Exception:
+                pass
 
     # 3. Synchronize with dashboard state
     target_dash = simulator.dash_state or globals().get("dash_state")
@@ -3892,6 +3912,32 @@ class LiveExecutor(PaperSimulator):
 
         self.rollback_protector = RollbackProtector(target_state=self.dash_state)
         self.maker_taker_executor = MakerTakerExecutor(self.client, dash_state=self.dash_state)
+        try:
+            self.seed_clob_token_cache()
+        except Exception as e:
+            logger.warning(f"Error during initial CLOB token cache seeding: {e}")
+
+    def seed_clob_token_cache(self):
+        """
+        Pre-seeds ClobClient internal tick-size and neg-risk caches from market_token_map.
+        Completely eliminates HTTP calls for tick-size and neg-risk on monitored tokens!
+        """
+        if self.client and hasattr(self.client, "_ClobClient__tick_sizes"):
+            now_mono = time.monotonic()
+            for cid, info in (self.market_token_map or {}).items():
+                if not isinstance(info, dict):
+                    continue
+                meta = info.get("market_meta", {}) if isinstance(info.get("market_meta"), dict) else {}
+                min_tick = meta.get("minimum_tick_size") or info.get("minimum_tick_size") or info.get("tick_size") or 0.001
+                neg_risk = bool(meta.get("neg_risk") if "neg_risk" in meta else info.get("neg_risk", False))
+                for t_key in ("token_yes", "token_no"):
+                    tid = info.get(t_key)
+                    if tid:
+                        self.client._ClobClient__tick_sizes[tid] = str(min_tick)
+                        if hasattr(self.client, "_ClobClient__tick_size_timestamps"):
+                            self.client._ClobClient__tick_size_timestamps[tid] = now_mono
+                        if hasattr(self.client, "_ClobClient__neg_risk"):
+                            self.client._ClobClient__neg_risk[tid] = neg_risk
 
     def redeem_resolved_positions(self) -> int:
         """

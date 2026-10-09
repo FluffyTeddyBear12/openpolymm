@@ -36,6 +36,34 @@ def _floor_to_tick_size(price: float, tick_size: float = 0.001) -> float:
     return round(steps * tick_size, 4)
 
 
+def _resolve_token_metadata(client: Any, token_id: str, default_tick: float = 0.001) -> Tuple[float, bool]:
+    tick = default_tick
+    neg_risk = False
+    if client:
+        try:
+            if hasattr(client, "get_tick_size"):
+                res = client.get_tick_size(token_id)
+                if res is not None and not hasattr(res, "_mock_return_value"):
+                    tick = float(res)
+        except Exception:
+            pass
+        try:
+            if hasattr(client, "get_neg_risk"):
+                res = client.get_neg_risk(token_id)
+                if isinstance(res, bool):
+                    neg_risk = res
+                elif isinstance(res, str):
+                    neg_risk = res.lower() in ("true", "1")
+                elif isinstance(res, (int, float)) and not isinstance(res, bool):
+                    neg_risk = bool(res)
+                elif res is not None and not hasattr(res, "_mock_return_value"):
+                    neg_risk = bool(res)
+        except Exception:
+            pass
+    return tick, neg_risk
+
+
+
 try:
     from py_clob_client_v2.clob_types import (
         OrderArgsV2,
@@ -174,7 +202,8 @@ class MakerTakerExecutor:
         if not self.client:
             return False, "CLIENT_NOT_INITIALIZED", {}
 
-        maker_price = _round_to_tick_size(maker_price, tick_size)
+        actual_maker_tick, actual_maker_neg = _resolve_token_metadata(self.client, token_maker, default_tick=tick_size)
+        maker_price = _round_to_tick_size(maker_price, actual_maker_tick)
         taker_price = round(taker_price, 4)
         size = float(size)
 
@@ -185,7 +214,7 @@ class MakerTakerExecutor:
             f"🎯 [MAKER LEG] Posting passive limit order: {size} shares @ ${maker_price:.4f} (GTC) on token {token_maker[-6:]}..."
         )
         try:
-            order_opts = PartialCreateOrderOptions(tick_size=str(tick_size), neg_risk=False)
+            order_opts = PartialCreateOrderOptions(tick_size=str(actual_maker_tick), neg_risk=actual_maker_neg)
             try:
                 order_maker = self.client.create_order(
                     OrderArgsV2(
@@ -308,14 +337,15 @@ class MakerTakerExecutor:
                     logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (max viable: ${max_viable_taker_price:.4f})")
 
         # Ensure taker price does not exceed max viable price
+        actual_taker_tick, actual_taker_neg = _resolve_token_metadata(self.client, token_taker, default_tick=tick_size)
         target_taker_price = min(fresh_taker_price, max_viable_taker_price)
-        target_taker_price = _floor_to_tick_size(target_taker_price, tick_size)
+        target_taker_price = _floor_to_tick_size(target_taker_price, actual_taker_tick)
 
         self._log_activity(
             f"⚡ [TAKER LEG] Leg 1 in hand. Firing instant FOK taker order: {matched_size:.2f} shares @ ${target_taker_price:.4f} on token {token_taker[-6:]}..."
         )
         try:
-            order_opts = PartialCreateOrderOptions(tick_size=str(tick_size), neg_risk=False)
+            order_opts = PartialCreateOrderOptions(tick_size=str(actual_taker_tick), neg_risk=actual_taker_neg)
             try:
                 order_taker = self.client.create_order(
                     OrderArgsV2(
@@ -397,7 +427,7 @@ class MakerTakerExecutor:
                 f"🛡️ [SAFE ROLLBACK] Leg 2 missed. Deploying break-even limit sell for {matched_size:.2f} shares at ${maker_price:.4f}."
             )
             try:
-                order_opts = PartialCreateOrderOptions(tick_size=str(tick_size), neg_risk=False)
+                order_opts = PartialCreateOrderOptions(tick_size=str(actual_maker_tick), neg_risk=actual_maker_neg)
                 try:
                     order_rollback = self.client.create_order(
                         OrderArgsV2(
