@@ -43,7 +43,7 @@ from liquidity_filter import (
     _parse_market_start_date,
 )
 from rollback_protector import RollbackProtector, safe_unwind_or_limit_exit
-from maker_taker_engine import MakerTakerExecutor
+from maker_taker_engine import MakerTakerExecutor, set_token_metadata_cache
 from order_reaper import OrderReaper
 from concurrent_leg_executor import ConcurrentLegExecutor
 from ha_notifier import send_trade_notification
@@ -1901,6 +1901,9 @@ def fetch_top_markets(
             "description": item.get("description"),
             "startDateIso": item.get("startDateIso") or item.get("startDate") or item.get("gameStartTime"),
             "gameStartTime": item.get("gameStartTime"),
+            "tick_size": float(item.get("orderPriceMinTickSize") or item.get("minimum_tick_size") or item.get("tick_size") or 0.001),
+            "minimum_tick_size": float(item.get("orderPriceMinTickSize") or item.get("minimum_tick_size") or item.get("tick_size") or 0.001),
+            "neg_risk": bool(item.get("negRisk") or item.get("neg_risk") or False),
         }
 
     target_buffer = int(limit * 1.25)
@@ -4249,6 +4252,7 @@ class LiveExecutor(PaperSimulator):
                             self.client._ClobClient__tick_size_timestamps[tid] = now_mono
                         if hasattr(self.client, "_ClobClient__neg_risk"):
                             self.client._ClobClient__neg_risk[tid] = neg_risk
+                        set_token_metadata_cache(tid, float(min_tick), neg_risk)
 
     def redeem_resolved_positions(self) -> int:
         """
