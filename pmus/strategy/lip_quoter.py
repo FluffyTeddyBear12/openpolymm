@@ -80,9 +80,14 @@ def desired_quotes(
     if quote_bid:
         collateral = bid_price
         if collateral > Decimal("0"):
-            existing_bid_raw = sum(lvl.qty for lvl in book.bids)
+            existing_bid_raw = sum(
+                lvl.qty for lvl in book.bids
+                if window.max_spread is None or (best_bid - lvl.price) <= window.max_spread
+            )
             shortfall_bid = max(Decimal("0"), window.target_size - existing_bid_raw)
-            if shortfall_bid > Decimal("0") and (shortfall_bid * collateral) <= side_budget_bid:
+            if shortfall_bid <= Decimal("0"):
+                bid_qty = Decimal("0")
+            elif (shortfall_bid * collateral) <= side_budget_bid:
                 bid_qty = min(shortfall_bid, max_bid_contracts) // market.min_qty * market.min_qty
             else:
                 budget_qty = (side_budget_bid / collateral) // market.min_qty * market.min_qty
@@ -94,10 +99,15 @@ def desired_quotes(
 
     if quote_ask:
         collateral = (Decimal("1") - ask_price) if net <= Decimal("0") else Decimal("0")
-        existing_ask_raw = sum(lvl.qty for lvl in book.asks)
+        existing_ask_raw = sum(
+            lvl.qty for lvl in book.asks
+            if window.max_spread is None or (lvl.price - best_ask) <= window.max_spread
+        )
         shortfall_ask = max(Decimal("0"), window.target_size - existing_ask_raw)
 
-        if shortfall_ask > Decimal("0") and (collateral == Decimal("0") or (shortfall_ask * collateral) <= side_budget_ask):
+        if shortfall_ask <= Decimal("0"):
+            ask_qty = Decimal("0")
+        elif collateral == Decimal("0") or (shortfall_ask * collateral) <= side_budget_ask:
             ask_qty = min(shortfall_ask, max_ask_contracts) // market.min_qty * market.min_qty
         else:
             if collateral > Decimal("0"):

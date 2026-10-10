@@ -1,3 +1,4 @@
+from datetime import datetime
 import sqlite3
 import time
 from decimal import Decimal
@@ -18,6 +19,7 @@ class Ledger:
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS quotes (
@@ -272,3 +274,53 @@ class Ledger:
                 )
                 for r in rows
             ]
+
+    def get_realized_loss_today(self, now: datetime) -> Decimal:
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_ms = int(start_of_day.timestamp() * 1000)
+        fills = self.get_fills_since(start_ms)
+        if not fills:
+            return Decimal("0")
+
+        total_realized_pnl = Decimal("0")
+        market_fills: dict[str, list[ShadowFill]] = {}
+        for f in fills:
+            market_fills.setdefault(f.slug, []).append(f)
+
+        for slug, m_fills in market_fills.items():
+            pos_qty = Decimal("0")
+            avg_px = Decimal("0")
+            for f in m_fills:
+                if f.side in ("BUY_LONG", "BUY_SHORT"):
+                    if pos_qty >= Decimal("0"):
+                        new_qty = pos_qty + f.qty
+                        if new_qty > Decimal("0"):
+                            avg_px = (pos_qty * avg_px + f.qty * f.price) / new_qty
+                        pos_qty = new_qty
+                    else:
+                        close_qty = min(f.qty, abs(pos_qty))
+                        pnl = close_qty * (avg_px - f.price)
+                        total_realized_pnl += pnl
+                        pos_qty += f.qty
+                        if pos_qty > Decimal("0"):
+                            avg_px = f.price
+                else:
+                    if pos_qty <= Decimal("0"):
+                        new_qty = abs(pos_qty) + f.qty
+                        if new_qty > Decimal("0"):
+                            avg_px = (abs(pos_qty) * avg_px + f.qty * f.price) / new_qty
+                        pos_qty = -new_qty
+                    else:
+                        close_qty = min(f.qty, pos_qty)
+                        pnl = close_qty * (f.price - avg_px)
+                        total_realized_pnl += pnl
+                        pos_qty -= f.qty
+                        if pos_qty < Decimal("0"):
+                            avg_px = f.price
+
+                total_realized_pnl -= f.fee
+
+        if total_realized_pnl < Decimal("0"):
+            return abs(total_realized_pnl)
+        return Decimal("0")
+

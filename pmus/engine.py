@@ -303,6 +303,26 @@ class LiveEngine:
             now_dt = datetime.now(timezone.utc)
             now_ms = int(time.time() * 1000)
 
+            # Order state sync with exchange ground truth
+            exchange_open = self.auth_client.get_open_orders()
+            exchange_order_ids = {o.order_id for o in exchange_open}
+            local_open = self.ledger.get_open_orders()
+
+            missing_orders = [o for o in local_open if o.order_id not in exchange_order_ids]
+            if missing_orders:
+                recent_fills = self.auth_client.get_fills()
+                fill_order_ids = {f.order_id for f in recent_fills}
+                for f in recent_fills:
+                    self.ledger.record_fill(f)
+
+                for o in missing_orders:
+                    if o.order_id in fill_order_ids:
+                        self.ledger.close_order(o.order_id, status="FILLED", ts_ms=now_ms)
+                        self.logger.info("Order %s marked FILLED from exchange sync", o.order_id)
+                    else:
+                        self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
+                        self.logger.info("Order %s marked CANCELED from exchange sync", o.order_id)
+
             if self.risk_manager.is_kill_switch_active():
                 self.logger.warning("Kill switch active! Canceling orders and pausing.")
                 self.auth_client.cancel_all_scoped(target_slugs)
@@ -310,13 +330,14 @@ class LiveEngine:
                 continue
 
             if self.risk_manager.is_maintenance_active(now_dt):
-                self.logger.warning("Exchange maintenance active! Canceling orders and pausing.")
+                self.logger.warning("Exchange weekly maintenance window active! Canceling orders and pausing.")
                 self.auth_client.cancel_all_scoped(target_slugs)
                 time.sleep(10)
                 continue
 
             buying_power = self.auth_client.get_buying_power()
             live_positions = {p.slug: p for p in self.auth_client.get_positions()}
+            realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
 
             for slug in target_slugs:
                 window = active_windows.get(slug)
@@ -360,23 +381,27 @@ class LiveEngine:
 
                     to_create, to_cancel, to_keep = reconcile_quotes(open_orders, quotes)
 
+                    # Execute to_cancel before to_create to free collateral and buying power
+                    if to_cancel:
+                        self.auth_client.cancel_orders_batch(to_cancel)
+                        for o in to_cancel:
+                            self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
+
+                    # Global portfolio open orders across all markets for pre-trade risk check
+                    global_open_orders = self.ledger.get_open_orders()
+
                     risk_res = self.risk_manager.check_pre_submit(
                         new_quotes=to_create,
-                        open_orders=to_keep,
+                        open_orders=global_open_orders,
                         positions=live_positions,
                         buying_power=buying_power,
-                        realized_loss_today=Decimal("0"),
+                        realized_loss_today=realized_loss_today,
                         now=now_dt,
                     )
                     if not risk_res.allowed:
                         self.logger.warning("Risk gate blocked submission on %s: %s", slug, risk_res.reason)
                         self.market_states[slug] = "PAUSED"
                         continue
-
-                    if to_cancel:
-                        self.auth_client.cancel_orders_batch(to_cancel)
-                        for o in to_cancel:
-                            self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
 
                     if to_create:
                         tick_map = {slug: market.tick}

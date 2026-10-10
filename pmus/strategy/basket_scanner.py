@@ -17,12 +17,23 @@ def scan(
         if len(markets) <= 1:
             continue
 
+        all_me = True
+        for m in markets:
+            is_me = getattr(m, "mutually_exclusive", None)
+            if is_me is None and isinstance(m, dict):
+                is_me = m.get("mutually_exclusive") or m.get("mutuallyExclusive")
+            if not is_me:
+                all_me = False
+                break
+        if not all_me:
+            continue
+
         valid = True
         legs_bids: list[tuple[str, Decimal]] = []
         legs_asks: list[tuple[str, Decimal]] = []
 
         for m in markets:
-            slug = m.get("slug")
+            slug = m.slug if hasattr(m, "slug") else m.get("slug")
             if not slug or slug not in books:
                 valid = False
                 break

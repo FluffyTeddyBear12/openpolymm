@@ -254,4 +254,35 @@ def test_real_fixture_slugs_one_event():
     assert len(res.selected_slugs) == 1
     assert res.selected_slugs[0] in target_slugs
 
+def test_market_selector_max_spread_joint_funding():
+    now = datetime.now(timezone.utc)
+    win = IncentiveWindow(
+        slug="mkt-spread-joint",
+        program_id="p-spread",
+        pool_usd=Decimal("100.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.02"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=1),
+        status="active",
+    )
+    # Empty book depth on both sides
+    book = Book(
+        slug="mkt-spread-joint",
+        bids=(Level(Decimal("0.490"), Decimal("10")),),
+        asks=(Level(Decimal("0.510"), Decimal("10")),),
+        ts_ms=1000,
+    )
+    res = greedy_allocate(
+        windows=[win],
+        books={win.slug: book},
+        total_budget=Decimal("100.00"),
+        now=now,
+    )
+    assert res.selected_slugs == [win.slug]
+    assert (win.slug, "bid") in res.side_budgets
+    assert (win.slug, "ask") in res.side_budgets
+
+
 

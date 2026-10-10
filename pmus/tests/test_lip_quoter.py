@@ -24,7 +24,7 @@ def active_window():
         program_id="prog-1",
         pool_usd=Decimal("20.00"),
         discount=Decimal("0.30"),
-        target_size=Decimal("100"),
+        target_size=Decimal("500"),
         max_spread=Decimal("0.05"),
         start=datetime.now(timezone.utc),
         end=None,
@@ -165,7 +165,7 @@ def test_pre_start_cancel_boundary(base_market):
         program_id="prog-1",
         pool_usd=Decimal("20.00"),
         discount=Decimal("0.30"),
-        target_size=Decimal("100"),
+        target_size=Decimal("500"),
         max_spread=Decimal("0.05"),
         start=now - timedelta(hours=1),
         end=None,
@@ -189,7 +189,7 @@ def test_pre_start_cancel_boundary(base_market):
         program_id="prog-1",
         pool_usd=Decimal("20.00"),
         discount=Decimal("0.30"),
-        target_size=Decimal("100"),
+        target_size=Decimal("500"),
         max_spread=Decimal("0.05"),
         start=now - timedelta(hours=1),
         end=None,
@@ -248,4 +248,48 @@ def test_quoter_completes_target_size_when_budget_permits(base_market):
     )
     bid_q = next(q for q in quotes if q.price == Decimal("0.010"))
     assert bid_q.qty == Decimal("4980")
+
+def test_saturated_book_does_not_quote(base_market, active_window):
+    # Book bids equal target size (500) -> shortfall is 0 -> do not quote bid
+    bids = (Level(Decimal("0.490"), Decimal("500")),)
+    asks = (Level(Decimal("0.510"), Decimal("50")),)
+    book = Book(slug="mkt-test", bids=bids, asks=asks, ts_ms=1000)
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=active_window,
+        position=Position(slug="mkt-test", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("10.00"),
+    )
+    assert not any(q.side == "BUY_LONG" for q in quotes)
+    assert any(q.side == "SELL_SHORT" for q in quotes)
+
+def test_depth_filtering_only_counts_within_max_spread(base_market):
+    now = datetime.now(timezone.utc)
+    win = IncentiveWindow(
+        slug="mkt-spread-filter",
+        program_id="p-1",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.02"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=1),
+        status="active",
+    )
+    # best_bid = 0.490. Level at 0.400 is 0.090 away (> max_spread 0.02)
+    bids = (Level(Decimal("0.490"), Decimal("20")), Level(Decimal("0.400"), Decimal("500")))
+    asks = (Level(Decimal("0.510"), Decimal("20")),)
+    book = Book("mkt-spread-filter", bids, asks, 1000)
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position("mkt-spread-filter", Decimal("0"), Decimal("0")),
+        budget=Decimal("100.00"),
+    )
+    bid_q = next(q for q in quotes if q.side == "BUY_LONG")
+    # Existing bids within max_spread is 20, not 520. Shortfall is 100 - 20 = 80.
+    assert bid_q.qty == Decimal("80")
+
 

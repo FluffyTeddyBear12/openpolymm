@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import time
 from decimal import Decimal
 import pytest
@@ -65,3 +66,17 @@ def test_ledger_lip_snapshots(ledger):
     assert len(snaps) == 1
     assert snaps[0].qualifies is True
     assert snaps[0].reward_usd == Decimal("0.005")
+
+def test_ledger_realized_loss_today(ledger):
+    now = datetime.now(timezone.utc)
+    now_ms = int(now.timestamp() * 1000)
+
+    # Buy 10 @ 0.50, Sell 10 @ 0.40 -> loss of $1.00
+    fill_buy = ShadowFill("f-b", "o-b", "mkt-1", "BUY_LONG", Decimal("0.50"), Decimal("10"), Decimal("0"), True, now_ms)
+    fill_sell = ShadowFill("f-s", "o-s", "mkt-1", "SELL_LONG", Decimal("0.40"), Decimal("10"), Decimal("0"), True, now_ms + 100)
+    ledger.record_fill(fill_buy)
+    ledger.record_fill(fill_sell)
+
+    loss = ledger.get_realized_loss_today(now)
+    assert loss == Decimal("1.00")
+

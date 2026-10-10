@@ -100,73 +100,112 @@ def greedy_allocate(
         event_id = extract_event_id(w.slug, slug_to_event_map)
         now_ms = int(now.timestamp() * 1000)
 
-        # Bid side candidate
+        existing_bids_in_spread = sum(
+            lvl.qty for lvl in book.bids
+            if w.max_spread is None or (best_bid - lvl.price) <= w.max_spread
+        )
+        existing_asks_in_spread = sum(
+            lvl.qty for lvl in book.asks
+            if w.max_spread is None or (lvl.price - best_ask) <= w.max_spread
+        )
+        bids_qualify_existing = existing_bids_in_spread >= w.target_size
+        asks_qualify_existing = existing_asks_in_spread >= w.target_size
+
         existing_bids = sum(lvl.qty for lvl in book.bids)
         needed_bid = max(Decimal("0"), w.target_size - existing_bids)
-        if Decimal("0") < needed_bid <= max_contracts_cap:
-            col_bid = bid_px
-            if col_bid <= Decimal("0"):
-                col_bid = tick
-            cost_bid = needed_bid * col_bid
+        col_bid = bid_px if bid_px > Decimal("0") else tick
+        cost_bid = needed_bid * col_bid
 
-            test_order_bid = [
-                LiveOrder(order_id="test-bid", slug=w.slug, side="BUY_LONG", price=bid_px, qty_open=needed_bid)
-            ]
-            snap_bid = estimate_lip_score(book, w, test_order_bid, tick, ts_ms=now_ms)
-            rew_bid = snap_bid.reward_usd
-
-            if rew_bid > Decimal("0") and cost_bid > Decimal("0"):
-                eff_bid = rew_bid / cost_bid
-                candidates.append(
-                    CandidateSide(
-                        slug=w.slug,
-                        event_id=event_id,
-                        side="bid",
-                        price=bid_px,
-                        existing_qty=existing_bids,
-                        needed_qty=needed_bid,
-                        cost=cost_bid,
-                        expected_reward_sec=rew_bid,
-                        efficiency=eff_bid,
-                        period=period or "early",
-                        pool_usd=w.pool_usd,
-                        duration_seconds=dur_secs,
-                    )
-                )
-
-        # Ask side candidate
         existing_asks = sum(lvl.qty for lvl in book.asks)
         needed_ask = max(Decimal("0"), w.target_size - existing_asks)
-        if Decimal("0") < needed_ask <= max_contracts_cap:
-            col_ask = Decimal("1") - ask_px
-            if col_ask <= Decimal("0"):
-                col_ask = tick
-            cost_ask = needed_ask * col_ask
+        col_ask = (Decimal("1") - ask_px) if (Decimal("1") - ask_px) > Decimal("0") else tick
+        cost_ask = needed_ask * col_ask
 
-            test_order_ask = [
-                LiveOrder(order_id="test-ask", slug=w.slug, side="SELL_SHORT", price=ask_px, qty_open=needed_ask)
-            ]
-            snap_ask = estimate_lip_score(book, w, test_order_ask, tick, ts_ms=now_ms)
-            rew_ask = snap_ask.reward_usd
+        # 1. Single-sided bid candidate
+        if Decimal("0") < needed_bid <= max_contracts_cap:
+            if w.max_spread is None or asks_qualify_existing:
+                test_order_bid = [
+                    LiveOrder(order_id="test-bid", slug=w.slug, side="BUY_LONG", price=bid_px, qty_open=needed_bid)
+                ]
+                snap_bid = estimate_lip_score(book, w, test_order_bid, tick, ts_ms=now_ms)
+                rew_bid = snap_bid.reward_usd
 
-            if rew_ask > Decimal("0") and cost_ask > Decimal("0"):
-                eff_ask = rew_ask / cost_ask
-                candidates.append(
-                    CandidateSide(
-                        slug=w.slug,
-                        event_id=event_id,
-                        side="ask",
-                        price=ask_px,
-                        existing_qty=existing_asks,
-                        needed_qty=needed_ask,
-                        cost=cost_ask,
-                        expected_reward_sec=rew_ask,
-                        efficiency=eff_ask,
-                        period=period or "early",
-                        pool_usd=w.pool_usd,
-                        duration_seconds=dur_secs,
+                if rew_bid > Decimal("0") and cost_bid > Decimal("0"):
+                    eff_bid = rew_bid / cost_bid
+                    candidates.append(
+                        CandidateSide(
+                            slug=w.slug,
+                            event_id=event_id,
+                            side="bid",
+                            price=bid_px,
+                            existing_qty=existing_bids,
+                            needed_qty=needed_bid,
+                            cost=cost_bid,
+                            expected_reward_sec=rew_bid,
+                            efficiency=eff_bid,
+                            period=period or "early",
+                            pool_usd=w.pool_usd,
+                            duration_seconds=dur_secs,
+                        )
                     )
-                )
+
+        # 2. Single-sided ask candidate
+        if Decimal("0") < needed_ask <= max_contracts_cap:
+            if w.max_spread is None or bids_qualify_existing:
+                test_order_ask = [
+                    LiveOrder(order_id="test-ask", slug=w.slug, side="SELL_SHORT", price=ask_px, qty_open=needed_ask)
+                ]
+                snap_ask = estimate_lip_score(book, w, test_order_ask, tick, ts_ms=now_ms)
+                rew_ask = snap_ask.reward_usd
+
+                if rew_ask > Decimal("0") and cost_ask > Decimal("0"):
+                    eff_ask = rew_ask / cost_ask
+                    candidates.append(
+                        CandidateSide(
+                            slug=w.slug,
+                            event_id=event_id,
+                            side="ask",
+                            price=ask_px,
+                            existing_qty=existing_asks,
+                            needed_qty=needed_ask,
+                            cost=cost_ask,
+                            expected_reward_sec=rew_ask,
+                            efficiency=eff_ask,
+                            period=period or "early",
+                            pool_usd=w.pool_usd,
+                            duration_seconds=dur_secs,
+                        )
+                    )
+
+        # 3. Joint candidate when max_spread is active and neither side qualifies alone
+        if w.max_spread is not None and not asks_qualify_existing and not bids_qualify_existing:
+            if Decimal("0") < needed_bid <= max_contracts_cap and Decimal("0") < needed_ask <= max_contracts_cap:
+                joint_cost = cost_bid + cost_ask
+                if joint_cost <= total_budget:
+                    test_orders_both = [
+                        LiveOrder(order_id="test-bid", slug=w.slug, side="BUY_LONG", price=bid_px, qty_open=needed_bid),
+                        LiveOrder(order_id="test-ask", slug=w.slug, side="SELL_SHORT", price=ask_px, qty_open=needed_ask),
+                    ]
+                    snap_both = estimate_lip_score(book, w, test_orders_both, tick, ts_ms=now_ms)
+                    rew_both = snap_both.reward_usd
+                    if rew_both > Decimal("0") and joint_cost > Decimal("0"):
+                        eff_both = rew_both / joint_cost
+                        candidates.append(
+                            CandidateSide(
+                                slug=w.slug,
+                                event_id=event_id,
+                                side="both",
+                                price=bid_px,
+                                existing_qty=existing_bids + existing_asks,
+                                needed_qty=needed_bid + needed_ask,
+                                cost=joint_cost,
+                                expected_reward_sec=rew_both,
+                                efficiency=eff_both,
+                                period=period or "early",
+                                pool_usd=w.pool_usd,
+                                duration_seconds=dur_secs,
+                            )
+                        )
 
         seen_window_keys.add(w.slug)
 
@@ -203,9 +242,27 @@ def greedy_allocate(
             selected_slugs.append(c.slug)
             selected_events.add(c.event_id)
             market_to_sides[c.slug] = set()
-        market_to_sides[c.slug].add(c.side)
-        side_budgets[(c.slug, c.side)] = c.cost
-        side_qtys[(c.slug, c.side)] = c.needed_qty
+
+        if c.side == "both":
+            market_to_sides[c.slug].add("bid")
+            market_to_sides[c.slug].add("ask")
+            book_s = books[c.slug]
+            b_px = (book_s.bids[0].price // tick) * tick
+            a_px = (book_s.asks[0].price // tick) * tick
+            w_match = next((win for win in windows if win.slug == c.slug), None)
+            target = w_match.target_size if w_match else Decimal("100")
+            n_bid = max(Decimal("0"), target - sum(lvl.qty for lvl in book_s.bids))
+            n_ask = max(Decimal("0"), target - sum(lvl.qty for lvl in book_s.asks))
+            c_bid = n_bid * (b_px if b_px > Decimal("0") else tick)
+            c_ask = n_ask * ((Decimal("1") - a_px) if (Decimal("1") - a_px) > Decimal("0") else tick)
+            side_budgets[(c.slug, "bid")] = c_bid
+            side_budgets[(c.slug, "ask")] = c_ask
+            side_qtys[(c.slug, "bid")] = n_bid
+            side_qtys[(c.slug, "ask")] = n_ask
+        else:
+            market_to_sides[c.slug].add(c.side)
+            side_budgets[(c.slug, c.side)] = c.cost
+            side_qtys[(c.slug, c.side)] = c.needed_qty
 
     unfunded_reason = None
     if not selected_candidates:

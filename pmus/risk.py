@@ -28,7 +28,11 @@ class RiskManager:
         return False
 
     def is_kill_switch_active(self) -> bool:
-        return self.stop_file.exists()
+        if self.stop_file and self.stop_file.exists():
+            return True
+        data_stop = self.settings.data_dir / "STOP"
+        parent_stop = self.settings.data_dir.parent / "STOP"
+        return data_stop.exists() or parent_stop.exists()
 
     def check_daily_loss(self, realized_loss_today: Decimal) -> RiskGateResult:
         if realized_loss_today >= self.settings.daily_loss_stop:
@@ -65,25 +69,56 @@ class RiskManager:
             )
 
         total_collateral = Decimal("0")
+        market_collateral: dict[str, Decimal] = {}
+
         for o in open_orders:
             px = o.price
-            col = px if o.side in ("BUY_LONG", "BUY_SHORT") else (Decimal("1") - px)
-            total_collateral += col * o.qty_open
+            if o.side in ("BUY_LONG", "BUY_SHORT"):
+                col = px
+            elif o.side == "SELL_LONG":
+                col = Decimal("0")
+            else:
+                col = Decimal("1") - px
+            order_col = col * o.qty_open
+            total_collateral += order_col
+            market_collateral[o.slug] = market_collateral.get(o.slug, Decimal("0")) + order_col
+
         for q in new_quotes:
             px = q.price
-            col = px if q.side in ("BUY_LONG", "BUY_SHORT") else (Decimal("1") - px)
-            total_collateral += col * q.qty
+            if q.side in ("BUY_LONG", "BUY_SHORT"):
+                col = px
+            elif q.side == "SELL_LONG":
+                col = Decimal("0")
+            else:
+                col = Decimal("1") - px
+            quote_col = col * q.qty
+            total_collateral += quote_col
+            market_collateral[q.slug] = market_collateral.get(q.slug, Decimal("0")) + quote_col
 
         if total_collateral > self.settings.total_budget:
             return RiskGateResult(
                 False,
                 f"Exceeds total budget collateral: ${total_collateral} > ${self.settings.total_budget}",
             )
+        if total_collateral > self.settings.max_collateral:
+            return RiskGateResult(
+                False,
+                f"Exceeds max collateral: ${total_collateral} > ${self.settings.max_collateral}",
+            )
         if total_collateral > buying_power:
             return RiskGateResult(
                 False,
                 f"Exceeds account buying power: ${total_collateral} > ${buying_power}",
             )
+
+        max_market_col = getattr(self.settings, "max_collateral_per_market", None)
+        if max_market_col is not None:
+            for slug, m_col in market_collateral.items():
+                if m_col > max_market_col:
+                    return RiskGateResult(
+                        False,
+                        f"Exceeds max collateral per market for {slug}: ${m_col} > ${max_market_col}",
+                    )
 
         for q in new_quotes:
             pos = positions.get(q.slug, Position(q.slug, Decimal("0"), Decimal("0")))

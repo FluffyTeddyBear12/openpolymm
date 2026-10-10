@@ -6,7 +6,7 @@ from typing import Any
 
 import requests
 
-from pmus.models import Book, IncentiveWindow, Level, LiveOrder, Market, Position, Quote
+from pmus.models import Book, IncentiveWindow, Level, LiveOrder, Market, Position, Quote, ShadowFill
 
 try:
     from polymarket_us import PolymarketUS
@@ -432,3 +432,74 @@ class AuthenticatedClient:
             )
             results.append(Position(slug=slug, net_qty=net_qty, avg_price=avg_price))
         return results
+
+    def get_open_orders(self, slugs: list[str] | None = None) -> list[LiveOrder]:
+        if not self.is_available:
+            return []
+        try:
+            params: dict[str, Any] = {"status": "OPEN"}
+            if slugs:
+                params["slugs"] = slugs
+            resp = self._sdk.orders.list(params)
+            orders_raw = resp.get("orders", []) if isinstance(resp, dict) else (resp if isinstance(resp, list) else [])
+            result: list[LiveOrder] = []
+            for o in orders_raw:
+                order_id = str(o.get("id") or o.get("orderId") or "")
+                slug = str(o.get("marketSlug") or o.get("slug") or "")
+                intent = str(o.get("intent") or "")
+                side = intent.replace("ORDER_INTENT_", "") if intent.startswith("ORDER_INTENT_") else intent
+                px_data = o.get("price") or {}
+                price = Decimal(str(px_data.get("value") if isinstance(px_data, dict) else o.get("price", "0")))
+                qty = Decimal(str(o.get("openQuantity") or o.get("quantity") or o.get("qty", "0")))
+                if order_id and slug and side:
+                    result.append(LiveOrder(order_id=order_id, slug=slug, side=side, price=price, qty_open=qty))
+            return result
+        except Exception:
+            return []
+
+    def get_fills(self, since: datetime | None = None) -> list[ShadowFill]:
+        if not self.is_available:
+            return []
+        try:
+            params: dict[str, Any] = {}
+            if since is not None:
+                params["after"] = since.isoformat()
+            if hasattr(self._sdk.orders, "fills"):
+                resp = self._sdk.orders.fills(params)
+            elif hasattr(self._sdk, "fills"):
+                resp = self._sdk.fills.list(params)
+            else:
+                return []
+            fills_raw = resp.get("fills", []) if isinstance(resp, dict) else (resp if isinstance(resp, list) else [])
+            result: list[ShadowFill] = []
+            for f in fills_raw:
+                fill_id = str(f.get("id") or f.get("fillId") or "")
+                order_id = str(f.get("orderId") or "")
+                slug = str(f.get("marketSlug") or f.get("slug") or "")
+                intent = str(f.get("intent") or f.get("side") or "")
+                side = intent.replace("ORDER_INTENT_", "") if intent.startswith("ORDER_INTENT_") else intent
+                px = Decimal(str((f.get("price") or {}).get("value") if isinstance(f.get("price"), dict) else f.get("price", "0")))
+                qty = Decimal(str(f.get("quantity") or f.get("qty", "0")))
+                fee = Decimal(str(f.get("fee", "0")))
+                ts_ms = int(f.get("timestampMs") or f.get("ts_ms") or (time.time() * 1000))
+                if fill_id and slug:
+                    result.append(
+                        ShadowFill(
+                            fill_id=fill_id,
+                            order_id=order_id,
+                            slug=slug,
+                            side=side,
+                            price=px,
+                            qty=qty,
+                            fee=fee,
+                            is_maker=bool(f.get("isMaker", True)),
+                            ts_ms=ts_ms,
+                        )
+                    )
+            return result
+        except Exception:
+            return []
+
+VenueClient = AuthenticatedClient
+Fill = ShadowFill
+
