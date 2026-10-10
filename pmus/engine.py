@@ -8,6 +8,7 @@ from typing import Literal
 from pmus.config import Settings
 from pmus.ledger import Ledger
 from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quote
+from pmus.notify import Notifier
 from pmus.risk import RiskManager
 from pmus.shadow import check_paper_fills, estimate_lip_score
 from pmus.strategy.lip_quoter import desired_quotes
@@ -242,6 +243,10 @@ class LiveEngine:
         self.risk_manager = risk_manager
         self.logger = logger
         self.market_states: dict[str, MarketState] = {}
+        self.notifier = Notifier(settings)
+        self.kill_switch_active: bool = False
+        self.daily_loss_stop_tripped: bool = False
+        self.recorded_fill_ids: set[str] = set()
 
     def run(self, duration_seconds: int = 600) -> None:
         if not self.auth_client.is_available:
@@ -314,6 +319,9 @@ class LiveEngine:
                 fill_order_ids = {f.order_id for f in recent_fills}
                 for f in recent_fills:
                     self.ledger.record_fill(f)
+                    if f.fill_id not in self.recorded_fill_ids:
+                        self.recorded_fill_ids.add(f.fill_id)
+                        self.notifier.notify_fill(f)
 
                 for o in missing_orders:
                     if o.order_id in fill_order_ids:
@@ -323,7 +331,12 @@ class LiveEngine:
                         self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
                         self.logger.info("Order %s marked CANCELED from exchange sync", o.order_id)
 
-            if self.risk_manager.is_kill_switch_active():
+            is_kill = self.risk_manager.is_kill_switch_active()
+            if is_kill != self.kill_switch_active:
+                self.kill_switch_active = is_kill
+                self.notifier.notify_kill_switch(is_kill)
+
+            if is_kill:
                 self.logger.warning("Kill switch active! Canceling orders and pausing.")
                 self.auth_client.cancel_all_scoped(target_slugs)
                 time.sleep(5)
@@ -338,6 +351,21 @@ class LiveEngine:
             buying_power = self.auth_client.get_buying_power()
             live_positions = {p.slug: p for p in self.auth_client.get_positions()}
             realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
+
+            if realized_loss_today >= self.settings.daily_loss_stop:
+                if not self.daily_loss_stop_tripped:
+                    self.daily_loss_stop_tripped = True
+                    self.notifier.notify_daily_loss_stop(realized_loss_today, self.settings.daily_loss_stop)
+                self.logger.warning(
+                    "Daily loss stop tripped ($%s >= $%s)! Canceling all orders and pausing.",
+                    realized_loss_today,
+                    self.settings.daily_loss_stop,
+                )
+                self.auth_client.cancel_all_scoped(target_slugs)
+                time.sleep(10)
+                continue
+            else:
+                self.daily_loss_stop_tripped = False
 
             for slug in target_slugs:
                 window = active_windows.get(slug)

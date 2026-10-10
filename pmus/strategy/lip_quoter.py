@@ -68,7 +68,8 @@ def desired_quotes(
 
     if ask_budget is not None:
         side_budget_ask = ask_budget
-        quote_ask = quote_ask and (side_budget_ask > Decimal("0"))
+        if net <= Decimal("0"):
+            quote_ask = quote_ask and (side_budget_ask > Decimal("0"))
     else:
         side_budget_ask = (budget / Decimal("2")) if (quote_bid and quote_ask) else budget
 
@@ -105,7 +106,9 @@ def desired_quotes(
         )
         shortfall_ask = max(Decimal("0"), window.target_size - existing_ask_raw)
 
-        if shortfall_ask <= Decimal("0"):
+        if net > Decimal("0"):
+            ask_qty = min(net, max_ask_contracts) // market.min_qty * market.min_qty
+        elif shortfall_ask <= Decimal("0"):
             ask_qty = Decimal("0")
         elif collateral == Decimal("0") or (shortfall_ask * collateral) <= side_budget_ask:
             ask_qty = min(shortfall_ask, max_ask_contracts) // market.min_qty * market.min_qty

@@ -130,7 +130,7 @@ def greedy_allocate(
                 snap_bid = estimate_lip_score(book, w, test_order_bid, tick, ts_ms=now_ms)
                 rew_bid = snap_bid.reward_usd
 
-                if rew_bid > Decimal("0") and cost_bid > Decimal("0"):
+                if rew_bid > Decimal("0") and cost_bid > Decimal("0") and (rew_bid * dur_secs) >= Decimal("1.00"):
                     eff_bid = rew_bid / cost_bid
                     candidates.append(
                         CandidateSide(
@@ -158,7 +158,7 @@ def greedy_allocate(
                 snap_ask = estimate_lip_score(book, w, test_order_ask, tick, ts_ms=now_ms)
                 rew_ask = snap_ask.reward_usd
 
-                if rew_ask > Decimal("0") and cost_ask > Decimal("0"):
+                if rew_ask > Decimal("0") and cost_ask > Decimal("0") and (rew_ask * dur_secs) >= Decimal("1.00"):
                     eff_ask = rew_ask / cost_ask
                     candidates.append(
                         CandidateSide(
@@ -188,7 +188,7 @@ def greedy_allocate(
                     ]
                     snap_both = estimate_lip_score(book, w, test_orders_both, tick, ts_ms=now_ms)
                     rew_both = snap_both.reward_usd
-                    if rew_both > Decimal("0") and joint_cost > Decimal("0"):
+                    if rew_both > Decimal("0") and joint_cost > Decimal("0") and (rew_both * dur_secs) >= Decimal("1.00"):
                         eff_both = rew_both / joint_cost
                         candidates.append(
                             CandidateSide(
@@ -220,6 +220,8 @@ def greedy_allocate(
     side_qtys: dict[tuple[str, str], Decimal] = {}
 
     for c in candidates:
+        if (c.expected_reward_sec * c.duration_seconds) < Decimal("1.00"):
+            continue
         if c.expected_reward_sec <= Decimal("0"):
             continue
         if c.cost <= Decimal("0"):

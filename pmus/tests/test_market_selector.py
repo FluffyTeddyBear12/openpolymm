@@ -284,5 +284,51 @@ def test_market_selector_max_spread_joint_funding():
     assert (win.slug, "bid") in res.side_budgets
     assert (win.slug, "ask") in res.side_budgets
 
+def test_greedy_allocate_filters_sub_dollar_lip_payout_floor():
+    now = datetime.now(timezone.utc)
+    w_sub = IncentiveWindow(
+        slug="mkt-sub-dollar",
+        program_id="p-sub",
+        pool_usd=Decimal("1.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=None,
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=1),
+        status="active",
+    )
+    w_valid = IncentiveWindow(
+        slug="mkt-valid-payout",
+        program_id="p-valid",
+        pool_usd=Decimal("100.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=None,
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=1),
+        status="active",
+    )
+    book = Book(
+        slug="any",
+        bids=(Level(Decimal("0.100"), Decimal("20")),),
+        asks=(Level(Decimal("0.200"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    books = {
+        w_sub.slug: Book(w_sub.slug, book.bids, book.asks, 1000),
+        w_valid.slug: Book(w_valid.slug, book.bids, book.asks, 1000),
+    }
+
+    res = greedy_allocate(
+        windows=[w_sub, w_valid],
+        books=books,
+        total_budget=Decimal("100.00"),
+        now=now,
+    )
+
+    assert "mkt-sub-dollar" not in res.selected_slugs
+    assert "mkt-valid-payout" in res.selected_slugs
+    assert not any(c.slug == "mkt-sub-dollar" for c in res.candidates)
+
 
 

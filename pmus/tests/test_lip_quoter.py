@@ -292,4 +292,42 @@ def test_depth_filtering_only_counts_within_max_spread(base_market):
     # Existing bids within max_spread is 20, not 520. Shortfall is 100 - 20 = 80.
     assert bid_q.qty == Decimal("80")
 
+def test_long_inventory_actively_unwinds_even_when_ask_shortfall_zero(base_market, active_window):
+    # Book asks saturated (500 >= target_size 500) -> shortfall is 0
+    bids = (Level(Decimal("0.490"), Decimal("10")),)
+    asks = (Level(Decimal("0.510"), Decimal("500")),)
+    book = Book(slug="mkt-test", bids=bids, asks=asks, ts_ms=1000)
+
+    pos = Position(slug="mkt-test", net_qty=Decimal("50"), avg_price=Decimal("0.480"))
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=active_window,
+        position=pos,
+        budget=Decimal("10.00"),
+        ask_budget=Decimal("0.00"),  # Even with $0 ask budget, selling long doesn't need cash collateral
+    )
+
+    ask_q = next((q for q in quotes if q.side == "SELL_LONG"), None)
+    assert ask_q is not None
+    assert ask_q.price == Decimal("0.510")
+    assert ask_q.qty == Decimal("50")
+
+def test_flat_account_does_not_quote_ask_when_shortfall_zero(base_market, active_window):
+    # Book asks saturated (500 >= target_size 500) -> shortfall is 0
+    bids = (Level(Decimal("0.490"), Decimal("10")),)
+    asks = (Level(Decimal("0.510"), Decimal("500")),)
+    book = Book(slug="mkt-test", bids=bids, asks=asks, ts_ms=1000)
+
+    pos = Position(slug="mkt-test", net_qty=Decimal("0"), avg_price=Decimal("0"))
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=active_window,
+        position=pos,
+        budget=Decimal("10.00"),
+    )
+
+    assert not any(q.side in ("SELL_LONG", "SELL_SHORT") for q in quotes)
+
 

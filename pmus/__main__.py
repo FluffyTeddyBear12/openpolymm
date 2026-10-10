@@ -97,17 +97,41 @@ def main() -> None:
         if not settings.key_id or not settings.secret_key:
             sys.exit("Error: PMUS_KEY_ID and PMUS_SECRET_KEY are required to flatten live positions.")
         auth_client = AuthenticatedClient(key_id=settings.key_id, secret_key=settings.secret_key)
+        public_client = PublicGatewayClient(base_url=settings.gateway_url)
+
+        positions = auth_client.get_positions()
+        pos_by_slug = {p.slug: p for p in positions}
+
         if args.slug:
             auth_client.cancel_all_scoped([args.slug])
-            auth_client.close_position(args.slug)
-            print(f"Flattened market {args.slug}")
+            pos = pos_by_slug.get(args.slug)
+            if pos and pos.net_qty != Decimal("0"):
+                try:
+                    bbo = public_client.fetch_bbo(args.slug)
+                except Exception:
+                    bbo = None
+                order = auth_client.close_position_safe(args.slug, pos, bbo=bbo)
+                if order:
+                    print(f"Placed passive limit order {order.order_id} ({order.side} {order.qty_open} @ {order.price}) to safely flatten {args.slug}")
+                else:
+                    print(f"Closed position for {args.slug}")
+            else:
+                auth_client.close_position(args.slug)
+                print(f"Flattened market {args.slug}")
         else:
-            positions = auth_client.get_positions()
-            slugs = [p.slug for p in positions]
+            slugs = [p.slug for p in positions if p.net_qty != Decimal("0")]
             if slugs:
                 auth_client.cancel_all_scoped(slugs)
-                for s in slugs:
-                    auth_client.close_position(s)
+                for pos in [pos_by_slug[s] for s in slugs]:
+                    try:
+                        bbo = public_client.fetch_bbo(pos.slug)
+                    except Exception:
+                        bbo = None
+                    order = auth_client.close_position_safe(pos.slug, pos, bbo=bbo)
+                    if order:
+                        print(f"Placed passive limit order {order.order_id} ({order.side} {order.qty_open} @ {order.price}) to safely flatten {pos.slug}")
+                    else:
+                        print(f"Closed position for {pos.slug}")
             print(f"Flattened all {len(slugs)} active markets")
 
 if __name__ == "__main__":

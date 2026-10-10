@@ -403,6 +403,45 @@ class AuthenticatedClient:
             }
         )
 
+    def close_position_safe(
+        self,
+        slug: str,
+        position: Position,
+        bbo: tuple[Any, Any] | None = None,
+        max_loss_cents: Decimal = Decimal("0.02"),
+    ) -> LiveOrder | None:
+        if not self.is_available:
+            raise RuntimeError("Polymarket US authenticated SDK not configured")
+
+        bbo_bid = None
+        bbo_ask = None
+        if bbo is not None:
+            bid_raw, ask_raw = bbo[0], bbo[1]
+            if bid_raw is not None:
+                bbo_bid = bid_raw.price if hasattr(bid_raw, "price") else Decimal(str(bid_raw))
+            if ask_raw is not None:
+                bbo_ask = ask_raw.price if hasattr(ask_raw, "price") else Decimal(str(ask_raw))
+
+        if position.net_qty > Decimal("0"):
+            if bbo_bid is not None and bbo_bid >= (position.avg_price - max_loss_cents):
+                self.close_position(slug)
+                return None
+            else:
+                created = self.create_orders_batch([
+                    Quote(slug=slug, side="SELL_LONG", price=position.avg_price, qty=position.net_qty)
+                ])
+                return created[0] if created else None
+        elif position.net_qty < Decimal("0"):
+            if bbo_ask is not None and bbo_ask <= (position.avg_price + max_loss_cents):
+                self.close_position(slug)
+                return None
+            else:
+                created = self.create_orders_batch([
+                    Quote(slug=slug, side="BUY_SHORT", price=position.avg_price, qty=abs(position.net_qty))
+                ])
+                return created[0] if created else None
+        return None
+
     def get_buying_power(self) -> Decimal:
         if not self.is_available:
             raise RuntimeError("Polymarket US authenticated SDK not configured")
