@@ -71,10 +71,19 @@ class Ledger:
                     trader_ask_score TEXT NOT NULL,
                     total_ask_score TEXT NOT NULL,
                     qualifies INTEGER NOT NULL,
-                    reward_usd TEXT NOT NULL
+                    reward_usd TEXT NOT NULL,
+                    bid_qualifies INTEGER DEFAULT 0,
+                    ask_qualifies INTEGER DEFAULT 0
                 )
                 """
             )
+            cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
+            cols = [row["name"] for row in cursor.fetchall()]
+            if cols and "bid_qualifies" not in cols:
+                conn.execute("ALTER TABLE lip_snapshots ADD COLUMN bid_qualifies INTEGER DEFAULT 0")
+            if cols and "ask_qualifies" not in cols:
+                conn.execute("ALTER TABLE lip_snapshots ADD COLUMN ask_qualifies INTEGER DEFAULT 0")
+
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS positions (
@@ -157,8 +166,9 @@ class Ledger:
                 """
                 INSERT INTO lip_snapshots (
                     ts_ms, slug, program_id, trader_bid_score, total_bid_score,
-                    trader_ask_score, total_ask_score, qualifies, reward_usd
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    trader_ask_score, total_ask_score, qualifies, reward_usd,
+                    bid_qualifies, ask_qualifies
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     snap.ts_ms,
@@ -170,6 +180,8 @@ class Ledger:
                     str(snap.total_ask_score),
                     1 if snap.qualifies else 0,
                     str(snap.reward_usd),
+                    1 if snap.bid_qualifies else 0,
+                    1 if snap.ask_qualifies else 0,
                 ),
             )
 
@@ -225,14 +237,25 @@ class Ledger:
 
     def get_lip_snapshots_since(self, since_ms: int) -> list[LipSnapshot]:
         with self._get_connection() as conn:
-            rows = conn.execute(
+            cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
+            cols = [row["name"] for row in cursor.fetchall()]
+            has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
+
+            if has_side_cols:
+                query = """
+                    SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
+                           trader_ask_score, total_ask_score, qualifies, reward_usd,
+                           bid_qualifies, ask_qualifies
+                    FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
                 """
-                SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
-                       trader_ask_score, total_ask_score, qualifies, reward_usd
-                FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
-                """,
-                (since_ms,),
-            ).fetchall()
+            else:
+                query = """
+                    SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
+                           trader_ask_score, total_ask_score, qualifies, reward_usd
+                    FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
+                """
+
+            rows = conn.execute(query, (since_ms,)).fetchall()
             return [
                 LipSnapshot(
                     ts_ms=r["ts_ms"],
@@ -244,6 +267,8 @@ class Ledger:
                     total_ask_score=Decimal(r["total_ask_score"]),
                     qualifies=bool(r["qualifies"]),
                     reward_usd=Decimal(r["reward_usd"]),
+                    bid_qualifies=bool(r["bid_qualifies"]) if has_side_cols else bool(r["qualifies"]),
+                    ask_qualifies=bool(r["ask_qualifies"]) if has_side_cols else bool(r["qualifies"]),
                 )
                 for r in rows
             ]

@@ -41,10 +41,67 @@ def generate_report(
 
     lip_reward_total = Decimal("0")
     qualifying_seconds = 0
+    qualifying_bid_seconds = 0
+    qualifying_ask_seconds = 0
+    market_snaps: dict[str, list] = {}
+
     for s in lip_snaps:
+        market_snaps.setdefault(s.slug, []).append(s)
         if s.qualifies:
             qualifying_seconds += 1
-            lip_reward_total += s.reward_usd
+        if s.bid_qualifies:
+            qualifying_bid_seconds += 1
+        if s.ask_qualifies:
+            qualifying_ask_seconds += 1
+        lip_reward_total += s.reward_usd
+
+    windows_map = {}
+    if client is not None:
+        try:
+            for w in client.fetch_incentives(status="active", page_size=200):
+                windows_map[w.slug] = w
+        except Exception:
+            pass
+
+    market_breakdown_lines = []
+    if market_snaps:
+        for slug, snaps in market_snaps.items():
+            bid_secs = sum(1 for s in snaps if s.bid_qualifies)
+            ask_secs = sum(1 for s in snaps if s.ask_qualifies)
+            mkt_est = sum(s.reward_usd for s in snaps)
+
+            shares = []
+            for s in snaps:
+                b_sh = (s.trader_bid_score / s.total_bid_score) if s.total_bid_score > 0 else Decimal("0")
+                a_sh = (s.trader_ask_score / s.total_ask_score) if s.total_ask_score > 0 else Decimal("0")
+                if s.total_bid_score > 0 and s.total_ask_score > 0:
+                    sh = (b_sh + a_sh) / Decimal("2")
+                elif s.total_bid_score > 0:
+                    sh = b_sh
+                elif s.total_ask_score > 0:
+                    sh = a_sh
+                else:
+                    sh = Decimal("0")
+                shares.append(sh)
+            avg_share = (sum(shares) / Decimal(str(len(shares)))) * 100 if shares else Decimal("0")
+
+            win = windows_map.get(slug)
+            if win:
+                pool_str = f"${win.pool_usd:.2f}"
+                if win.end is not None:
+                    dur_secs = int((win.end - win.start).total_seconds())
+                    dur_str = f"{dur_secs}s"
+                else:
+                    dur_str = "ongoing"
+            else:
+                pool_str = "N/A"
+                dur_str = "N/A"
+
+            market_breakdown_lines.append(
+                f"  - Market {slug}: Pool={pool_str}, Dur={dur_str}, Share={avg_share:.1f}%, Est=${mkt_est:.4f} (Qual Secs: Bid={bid_secs}, Ask={ask_secs})"
+            )
+    else:
+        market_breakdown_lines.append("  - (No LIP activity recorded)")
 
     open_positions_count = 0
     total_inventory_cost = Decimal("0")
@@ -87,8 +144,11 @@ def generate_report(
         f"  Realized P&L:            ${realized_pnl:.4f}",
         "------------------------------------------------------------",
         f"  LIP Snapshots Recorded:  {len(lip_snaps)}",
-        f"  LIP Qualifying Seconds:  {qualifying_seconds}",
+        f"  LIP Qualifying Seconds:  {qualifying_seconds} (Bid: {qualifying_bid_seconds}, Ask: {qualifying_ask_seconds})",
         f"  Estimated LIP Accrued:   ${lip_reward_total:.4f} (estimate)",
+        "------------------------------------------------------------",
+        "  LIP MARKET BREAKDOWN:",
+        *market_breakdown_lines,
         "------------------------------------------------------------",
         f"  Active Positions:        {open_positions_count}",
         f"  Inventory Net Cost:      ${total_inventory_cost:.2f}",
@@ -96,6 +156,8 @@ def generate_report(
         f"  Unrealized MTM P&L:      ${unrealized_mtm:.4f}",
         "------------------------------------------------------------",
         f"  ESTIMATED NET EARNINGS:  ${net_pnl:.4f}",
+        "============================================================",
+        "  * Minimum Payout Caveat: Polymarket US enforces a $1.00 minimum payout per market-period total; periods earning <$1.00 pay $0.00.",
         "============================================================",
     ]
     return "\n".join(lines)

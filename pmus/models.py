@@ -39,6 +39,8 @@ class IncentiveWindow:
     start: datetime
     end: datetime | None
     status: str
+    period: str = "early"
+    event_start_time: datetime | None = None
 
 @dataclass(frozen=True)
 class Quote:
@@ -93,3 +95,5 @@ class LipSnapshot:
     total_ask_score: Decimal
     qualifies: bool
     reward_usd: Decimal
+    bid_qualifies: bool = False
+    ask_qualifies: bool = False

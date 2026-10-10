@@ -6,38 +6,68 @@ from decimal import Decimal
 from pmus.fees import maker_rebate
 from pmus.models import Book, IncentiveWindow, Level, LipSnapshot, LiveOrder, ShadowFill
 
-def _walk_side_score(
-    levels: tuple[Level, ...],
-    best_price: Decimal,
+def _evaluate_side_with_orders(
+    book_levels: tuple[Level, ...],
+    resting_orders: list[LiveOrder],
+    is_bid: bool,
     target_size: Decimal,
     discount: Decimal,
     tick: Decimal,
-    is_bid: bool,
-) -> tuple[Decimal | None, Decimal]:
-    cum_qty = Decimal("0")
+    slug: str,
+) -> tuple[Decimal | None, Decimal, Decimal, bool]:
+    valid_sides = ("BUY_LONG", "BUY_SHORT") if is_bid else ("SELL_LONG", "SELL_SHORT")
+    our_orders = [o for o in resting_orders if o.slug == slug and o.side in valid_sides and o.qty_open > Decimal("0")]
+
+    price_existing: dict[Decimal, Decimal] = {}
+    for lvl in book_levels:
+        price_existing[lvl.price] = price_existing.get(lvl.price, Decimal("0")) + lvl.qty
+
+    price_ours: dict[Decimal, Decimal] = {}
+    for o in our_orders:
+        price_ours[o.price] = price_ours.get(o.price, Decimal("0")) + o.qty_open
+
+    all_prices = sorted(set(price_existing.keys()) | set(price_ours.keys()), reverse=is_bid)
+    if not all_prices:
+        return None, Decimal("0"), Decimal("0"), False
+
+    best_price = all_prices[0]
+
+    cum_raw = Decimal("0")
     total_score = Decimal("0")
+    our_score = Decimal("0")
     sap: Decimal | None = None
 
-    for lvl in levels:
-        needed = target_size - cum_qty
-        if needed <= Decimal("0"):
-            break
+    for px in all_prices:
+        ex_qty = price_existing.get(px, Decimal("0"))
+        our_qty = price_ours.get(px, Decimal("0"))
 
-        take_qty = min(lvl.qty, needed)
-        ticks = (best_price - lvl.price) / tick if is_bid else (lvl.price - best_price) / tick
-        ticks_int = max(0, int(ticks))
-        weight = discount ** ticks_int
-        total_score += weight * take_qty
-        cum_qty += take_qty
+        ticks = max(0, int((best_price - px) / tick)) if is_bid else max(0, int((px - best_price) / tick))
+        weight = discount ** ticks
 
-        if cum_qty >= target_size:
-            sap = lvl.price
-            break
+        for owner, qty in (("existing", ex_qty), ("us", our_qty)):
+            if qty <= Decimal("0"):
+                continue
 
-    if sap is None and levels:
-        sap = levels[-1].price
+            if cum_raw >= target_size:
+                cum_raw += qty
+                continue
 
-    return sap, total_score
+            needed = target_size - cum_raw
+            take_qty = min(qty, needed)
+            score = weight * take_qty
+            total_score += score
+            if owner == "us":
+                our_score += score
+
+            cum_raw += qty
+            if cum_raw >= target_size and sap is None:
+                sap = px
+
+    qualifies = (cum_raw >= target_size) and (sap is not None)
+    if not qualifies:
+        return None, Decimal("0"), Decimal("0"), False
+
+    return sap, total_score, our_score, True
 
 def estimate_lip_score(
     book: Book,
@@ -49,7 +79,7 @@ def estimate_lip_score(
     now_ms = ts_ms if ts_ms is not None else int(time.time() * 1000)
     now_dt = datetime.fromtimestamp(now_ms / 1000.0, tz=timezone.utc)
 
-    if window is None or window.status.lower() != "active" or not book.bids or not book.asks:
+    if window is None or window.status.lower() != "active":
         return LipSnapshot(
             ts_ms=now_ms,
             slug=book.slug,
@@ -60,21 +90,8 @@ def estimate_lip_score(
             total_ask_score=Decimal("0"),
             qualifies=False,
             reward_usd=Decimal("0"),
-        )
-
-    best_bid = book.bids[0].price
-    best_ask = book.asks[0].price
-    if best_bid >= best_ask:
-        return LipSnapshot(
-            ts_ms=now_ms,
-            slug=book.slug,
-            program_id=window.program_id,
-            trader_bid_score=Decimal("0"),
-            total_bid_score=Decimal("0"),
-            trader_ask_score=Decimal("0"),
-            total_ask_score=Decimal("0"),
-            qualifies=False,
-            reward_usd=Decimal("0"),
+            bid_qualifies=False,
+            ask_qualifies=False,
         )
 
     if window.end is not None:
@@ -84,58 +101,51 @@ def estimate_lip_score(
         duration_seconds = Decimal("86400")
         in_time_window = now_dt >= window.start
 
-    bid_sap, total_bid_score = _walk_side_score(book.bids, best_bid, window.target_size, window.discount, tick, is_bid=True)
-    ask_sap, total_ask_score = _walk_side_score(book.asks, best_ask, window.target_size, window.discount, tick, is_bid=False)
+    bid_sap, total_bid_score, our_bid_score, bid_qualifies = _evaluate_side_with_orders(
+        book.bids, resting_orders, is_bid=True, target_size=window.target_size, discount=window.discount, tick=tick, slug=book.slug
+    )
+    ask_sap, total_ask_score, our_ask_score, ask_qualifies = _evaluate_side_with_orders(
+        book.asks, resting_orders, is_bid=False, target_size=window.target_size, discount=window.discount, tick=tick, slug=book.slug
+    )
 
-    qualifies = in_time_window
-    if qualifies:
+    qualifies = False
+    if in_time_window:
         if window.max_spread is not None:
-            if bid_sap is None or ask_sap is None:
-                qualifies = False
-            else:
+            if bid_qualifies and ask_qualifies and bid_sap is not None and ask_sap is not None:
                 midpoint = (bid_sap + ask_sap) / Decimal("2")
-                if (midpoint - bid_sap) > window.max_spread or (ask_sap - midpoint) > window.max_spread:
-                    qualifies = False
+                if (midpoint - bid_sap) <= window.max_spread and (ask_sap - midpoint) <= window.max_spread:
+                    qualifies = True
+            if not qualifies:
+                bid_qualifies = False
+                ask_qualifies = False
         else:
-            if total_bid_score <= 0 and total_ask_score <= 0:
-                qualifies = False
+            qualifies = bid_qualifies or ask_qualifies
 
-    trader_bid_score = Decimal("0")
-    trader_ask_score = Decimal("0")
-
-    for order in resting_orders:
-        if order.slug != book.slug or order.qty_open <= Decimal("0"):
-            continue
-        if order.side in ("BUY_LONG", "BUY_SHORT"):
-            if bid_sap is not None and order.price >= bid_sap:
-                ticks = max(0, int((best_bid - order.price) / tick))
-                trader_bid_score += (window.discount ** ticks) * order.qty_open
-        elif order.side in ("SELL_LONG", "SELL_SHORT"):
-            if ask_sap is not None and order.price <= ask_sap:
-                ticks = max(0, int((order.price - best_ask) / tick))
-                trader_ask_score += (window.discount ** ticks) * order.qty_open
-
-    combined_bid_score = total_bid_score + trader_bid_score
-    combined_ask_score = total_ask_score + trader_ask_score
-
-    pool_per_second = window.pool_usd / duration_seconds
     reward = Decimal("0")
+    if in_time_window and qualifies:
+        pool_per_second = window.pool_usd / duration_seconds
+        side_pool_per_second = pool_per_second * Decimal("0.5")
 
-    if qualifies:
-        bid_share = (trader_bid_score / combined_bid_score) if combined_bid_score > 0 else Decimal("0")
-        ask_share = (trader_ask_score / combined_ask_score) if combined_ask_score > 0 else Decimal("0")
-        reward = pool_per_second * (bid_share * Decimal("0.5") + ask_share * Decimal("0.5"))
+        if bid_qualifies and total_bid_score > Decimal("0"):
+            bid_share = our_bid_score / total_bid_score
+            reward += side_pool_per_second * bid_share
+
+        if ask_qualifies and total_ask_score > Decimal("0"):
+            ask_share = our_ask_score / total_ask_score
+            reward += side_pool_per_second * ask_share
 
     return LipSnapshot(
         ts_ms=now_ms,
         slug=book.slug,
         program_id=window.program_id,
-        trader_bid_score=trader_bid_score,
-        total_bid_score=combined_bid_score,
-        trader_ask_score=trader_ask_score,
-        total_ask_score=combined_ask_score,
+        trader_bid_score=our_bid_score,
+        total_bid_score=total_bid_score,
+        trader_ask_score=our_ask_score,
+        total_ask_score=total_ask_score,
         qualifies=qualifies,
         reward_usd=reward,
+        bid_qualifies=bid_qualifies,
+        ask_qualifies=ask_qualifies,
     )
 
 def check_paper_fills(book: Book, open_orders: list[LiveOrder]) -> tuple[list[ShadowFill], list[LiveOrder]]:

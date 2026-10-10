@@ -1,18 +1,28 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pmus.models import Book, IncentiveWindow
-from pmus.shadow import _walk_side_score
+from pmus.models import Book, IncentiveWindow, LiveOrder, Market
+from pmus.shadow import estimate_lip_score
+from pmus.strategy.lip_quoter import desired_quotes
+
+def extract_event_id(slug: str) -> str:
+    for sep in ("-neg-", "-pos-", "-spread-", "-total-"):
+        if sep in slug:
+            return slug.split(sep)[0]
+    parts = slug.split("-")
+    return "-".join(parts[:-1]) if len(parts) > 2 else slug
 
 def rank_markets(
     windows: list[IncentiveWindow],
     books: dict[str, Book],
     now: datetime,
     max_n: int = 4,
-    test_size: Decimal = Decimal("50"),
+    budget_per_market: Decimal = Decimal("15.00"),
     tick: Decimal = Decimal("0.001"),
+    pre_start_cancel_seconds: int = 300,
+    quote_live_periods: bool = False,
 ) -> list[str]:
-    scored_markets: list[tuple[str, Decimal]] = []
+    scored_markets: list[tuple[str, Decimal, Decimal]] = []
     seen_slugs: set[str] = set()
 
     for w in windows:
@@ -20,6 +30,15 @@ def rank_markets(
             continue
         if w.slug not in books:
             continue
+
+        period = getattr(w, "period", "").lower()
+        if not quote_live_periods and period == "live":
+            continue
+
+        event_start = getattr(w, "event_start_time", None)
+        if event_start is not None:
+            if now.timestamp() >= (event_start.timestamp() - pre_start_cancel_seconds):
+                continue
 
         book = books[w.slug]
         if not book.bids or not book.asks:
@@ -33,45 +52,74 @@ def rank_markets(
         if w.end is not None:
             if not (w.start <= now < w.end):
                 continue
-            duration = Decimal(str(max(1, int((w.end - w.start).total_seconds()))))
         else:
             if now < w.start:
                 continue
-            duration = Decimal("86400")
 
-        bid_sap, total_bid_score = _walk_side_score(book.bids, best_bid, w.target_size, w.discount, tick, is_bid=True)
-        ask_sap, total_ask_score = _walk_side_score(book.asks, best_ask, w.target_size, w.discount, tick, is_bid=False)
+        dummy_market = Market(
+            slug=w.slug,
+            event_id=None,
+            category="sports",
+            tick=tick,
+            min_qty=Decimal("1"),
+            active=True,
+            mutually_exclusive=False,
+        )
 
-        if w.max_spread is not None:
-            if bid_sap is None or ask_sap is None:
-                continue
-            midpoint = (bid_sap + ask_sap) / Decimal("2")
-            if (midpoint - bid_sap) > w.max_spread or (ask_sap - midpoint) > w.max_spread:
-                continue
-        else:
-            if total_bid_score <= 0 and total_ask_score <= 0:
-                continue
+        test_quotes = desired_quotes(
+            market=dummy_market,
+            book=book,
+            window=w,
+            position=None,
+            budget=budget_per_market,
+            max_contracts_cap=Decimal("6000"),
+            now=now,
+            pre_start_cancel_seconds=pre_start_cancel_seconds,
+            quote_live_periods=quote_live_periods,
+        )
 
-        pool_rate = w.pool_usd / duration
-
-        our_bid_score = test_size
-        our_ask_score = test_size
-        our_bid_collateral = best_bid * test_size
-        our_ask_collateral = (Decimal("1") - best_ask) * test_size
-        total_collateral = our_bid_collateral + our_ask_collateral
-        if total_collateral <= Decimal("0"):
+        if not test_quotes:
             continue
 
-        combined_bid = total_bid_score + our_bid_score
-        combined_ask = total_ask_score + our_ask_score
-        bid_share = (our_bid_score / combined_bid) if combined_bid > 0 else Decimal("0")
-        ask_share = (our_ask_score / combined_ask) if combined_ask > 0 else Decimal("0")
+        test_orders = [
+            LiveOrder(order_id="test", slug=q.slug, side=q.side, price=q.price, qty_open=q.qty)
+            for q in test_quotes
+        ]
 
-        reward_sec = pool_rate * (bid_share * Decimal("0.5") + ask_share * Decimal("0.5"))
-        efficiency = reward_sec / total_collateral
+        now_ms = int(now.timestamp() * 1000)
+        snap = estimate_lip_score(book, w, test_orders, tick, ts_ms=now_ms)
+        reward_sec = snap.reward_usd
 
-        scored_markets.append((w.slug, efficiency))
+        total_col = Decimal("0")
+        for q in test_quotes:
+            px = q.price
+            col = px if q.side in ("BUY_LONG", "BUY_SHORT") else (Decimal("1") - px)
+            total_col += col * q.qty
+
+        efficiency = (reward_sec / max(Decimal("0.01"), total_col)) if reward_sec > Decimal("0") else Decimal("0")
+
+        scored_markets.append((w.slug, efficiency, reward_sec))
         seen_slugs.add(w.slug)
 
-    scored_markets.sort(key=lambda item: item[1], reverse=True)
-    return [slug for slug, _ in scored_markets[:max_n]]
+    scored_markets.sort(key=lambda item: (item[1], item[2]), reverse=True)
+
+    selected_slugs: list[str] = []
+    seen_events: set[str] = set()
+
+    for slug, _, _ in scored_markets:
+        event_id = extract_event_id(slug)
+        if event_id in seen_events:
+            continue
+        seen_events.add(event_id)
+        selected_slugs.append(slug)
+        if len(selected_slugs) >= max_n:
+            break
+
+    if len(selected_slugs) < max_n:
+        for slug, _, _ in scored_markets:
+            if slug not in selected_slugs:
+                selected_slugs.append(slug)
+                if len(selected_slugs) >= max_n:
+                    break
+
+    return selected_slugs

@@ -188,6 +188,14 @@ class PublicGatewayClient:
         results: list[IncentiveWindow] = []
         for program in data.get("programs", []):
             slug = program.get("marketSlug", "")
+            event_start_str = program.get("eventStartTime")
+            event_start_time = None
+            if event_start_str:
+                try:
+                    event_start_time = datetime.fromisoformat(event_start_str.replace("Z", "+00:00"))
+                except Exception:
+                    pass
+
             for tp in program.get("timePeriods", []):
                 program_id = tp.get("programId", "")
                 pool_usd = Decimal(str(tp.get("rewardPool", "0")))
@@ -205,6 +213,7 @@ class PublicGatewayClient:
                 end_str = tp.get("end")
                 end = datetime.fromisoformat(end_str.replace("Z", "+00:00")) if end_str else None
                 status = tp.get("status", "active")
+                period = tp.get("period", "early")
 
                 results.append(
                     IncentiveWindow(
@@ -217,6 +226,8 @@ class PublicGatewayClient:
                         start=start,
                         end=end,
                         status=status,
+                        period=period,
+                        event_start_time=event_start_time,
                     )
                 )
         return results

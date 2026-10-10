@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import pytest
 
@@ -124,3 +124,128 @@ def test_inventory_skew_at_caps(base_market, active_window):
     quotes_short = desired_quotes(base_market, book, active_window, pos_short, Decimal("10.00"), max_contracts_cap=Decimal("200"))
     assert len(quotes_short) == 1
     assert quotes_short[0].side == "BUY_SHORT"
+
+def test_pre_start_cancel_boundary(base_market):
+    now = datetime.now(timezone.utc)
+    book = Book(
+        slug="mkt-test",
+        bids=(Level(Decimal("0.490"), Decimal("200")),),
+        asks=(Level(Decimal("0.510"), Decimal("200")),),
+        ts_ms=1000,
+    )
+    pos = Position(slug="mkt-test", net_qty=Decimal("0"), avg_price=Decimal("0"))
+
+    # Event starts in 299s -> within 300s cancel window -> should refuse to quote
+    win_close = IncentiveWindow(
+        slug="mkt-test",
+        program_id="prog-1",
+        pool_usd=Decimal("20.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=None,
+        status="active",
+        event_start_time=now + timedelta(seconds=299),
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win_close,
+        position=pos,
+        budget=Decimal("10.00"),
+        now=now,
+        pre_start_cancel_seconds=300,
+    )
+    assert len(quotes) == 0
+
+    # Event starts in 305s -> outside 300s cancel window -> allowed to quote
+    win_safe = IncentiveWindow(
+        slug="mkt-test",
+        program_id="prog-1",
+        pool_usd=Decimal("20.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=None,
+        status="active",
+        event_start_time=now + timedelta(seconds=305),
+    )
+    quotes_safe = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win_safe,
+        position=pos,
+        budget=Decimal("10.00"),
+        now=now,
+        pre_start_cancel_seconds=300,
+    )
+    assert len(quotes_safe) == 2
+
+    # Live period refusal unless explicitly allowed
+    win_live = IncentiveWindow(
+        slug="mkt-test",
+        program_id="prog-1",
+        pool_usd=Decimal("20.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=None,
+        status="active",
+        period="live",
+    )
+    quotes_live = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win_live,
+        position=pos,
+        budget=Decimal("10.00"),
+        quote_live_periods=False,
+    )
+    assert len(quotes_live) == 0
+
+    quotes_live_allowed = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win_live,
+        position=pos,
+        budget=Decimal("10.00"),
+        quote_live_periods=True,
+    )
+    assert len(quotes_live_allowed) == 2
+
+def test_quoter_completes_target_size_when_budget_permits(base_market):
+    win = IncentiveWindow(
+        slug="mkt-test",
+        program_id="prog-1",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("5000"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug="mkt-test",
+        bids=(Level(Decimal("0.010"), Decimal("20")),),
+        asks=(Level(Decimal("0.020"), Decimal("5000")),),
+        ts_ms=1000,
+    )
+    pos = Position(slug="mkt-test", net_qty=Decimal("0"), avg_price=Decimal("0"))
+
+    # Side budget is $50. Shortfall is 5000 - 20 = 4980 contracts.
+    # Collateral needed is 4980 * 0.01 = $49.80 <= $50.00.
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=pos,
+        budget=Decimal("100.00"),
+        max_contracts_cap=Decimal("6000"),
+    )
+    bid_q = next(q for q in quotes if q.price == Decimal("0.010"))
+    assert bid_q.qty == Decimal("4980")
+

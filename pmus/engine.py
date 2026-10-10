@@ -100,11 +100,20 @@ class ShadowEngine:
             except Exception as e:
                 self.logger.debug("Failed to fetch candidate book %s: %s", slug, e)
 
+        market_budget = min(
+            self.settings.max_per_market,
+            self.settings.total_budget / Decimal(str(max(1, len(active_windows)))),
+        )
+
         target_slugs = rank_markets(
             windows=list(active_windows.values()),
             books=candidate_books,
             now=now_dt,
             max_n=self.settings.max_markets,
+            budget_per_market=market_budget,
+            tick=Decimal("0.001"),
+            pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
+            quote_live_periods=self.settings.quote_live_periods,
         )
 
         if not target_slugs:
@@ -124,6 +133,7 @@ class ShadowEngine:
         tick_count = 0
         while time.time() < end_time:
             tick_start = time.time()
+            now_dt = datetime.now(timezone.utc)
             now_ms = int(time.time() * 1000)
 
             for slug in target_slugs:
@@ -164,6 +174,9 @@ class ShadowEngine:
                         position=pos,
                         budget=market_budget,
                         max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
+                        now=now_dt,
+                        pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
+                        quote_live_periods=self.settings.quote_live_periods,
                     )
                     for q in quotes:
                         self.ledger.record_quote(q, ts_ms=now_ms)
@@ -236,11 +249,20 @@ class LiveEngine:
             except Exception:
                 pass
 
+        market_budget = min(
+            self.settings.max_per_market,
+            self.settings.total_budget / Decimal(str(max(1, len(active_windows)))),
+        )
+
         target_slugs = rank_markets(
             windows=list(active_windows.values()),
             books=candidate_books,
             now=datetime.now(timezone.utc),
             max_n=self.settings.max_markets,
+            budget_per_market=market_budget,
+            tick=Decimal("0.001"),
+            pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
+            quote_live_periods=self.settings.quote_live_periods,
         )
         if not target_slugs:
             target_slugs = list(active_windows.keys())[: self.settings.max_markets]
@@ -294,6 +316,10 @@ class LiveEngine:
                         )
                     market = market_metadata[slug]
                     pos = live_positions.get(slug, self.ledger.get_position(slug))
+                    if abs(pos.net_qty) >= self.settings.max_contracts_per_market:
+                        self.market_states[slug] = "FLATTENING"
+                    else:
+                        self.market_states[slug] = "QUOTING"
 
                     open_orders = self.ledger.get_open_orders(slug)
 
@@ -304,6 +330,9 @@ class LiveEngine:
                         position=pos,
                         budget=market_budget,
                         max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
+                        now=now_dt,
+                        pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
+                        quote_live_periods=self.settings.quote_live_periods,
                     )
 
                     to_create, to_cancel, to_keep = reconcile_quotes(open_orders, quotes)
