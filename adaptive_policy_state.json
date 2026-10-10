@@ -1,15 +1,15 @@
 {
-  "min_edge_pct": 0.0015,
+  "min_edge_pct": 0.015,
   "max_positions_per_market": 2,
   "hold_period_seconds": 1.0,
   "reserve_cash_pct": 0.25,
   "max_exposure_pct": 0.8,
   "sizing_multiplier": 1.0,
-  "maker_timeout_seconds": 4.0,
-  "total_adaptations": 112,
-  "recovered_pnl": 251.9805,
-  "primary_bottleneck": "SUB_THRESHOLD_EDGE",
+  "maker_timeout_seconds": 4.5,
+  "total_adaptations": 122,
+  "recovered_pnl": 271.9805,
+  "primary_bottleneck": "MAKER_TIMEOUT",
   "model_version": "Model v2.0",
   "status": "ONLINE ACTIVE LEARNING: ACTIVE (Model v2.0)",
-  "updated_at": 1791591345.1605427
+  "updated_at": 1791598394.2197404
 }

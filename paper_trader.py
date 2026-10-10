@@ -2983,33 +2983,28 @@ class PaperSimulator:
     def on_book_tick(self, market_id: str) -> Optional[dict]:
         """
         Dual-mode arbitrage evaluation hook.
-        If execution_style == 'maker_taker', actively evaluates maker-taker parity opportunities.
-        Otherwise evaluates taker-taker arbitrage first and maker-taker as a secondary pass.
-        If opportunity is discovered, dispatches directly to execute_arbitrage.
+        Strictly prioritizes simultaneous dual-taker execution.
+        Maker-taker execution is only evaluated if execution_style is explicitly set to
+        'maker_taker' AND total capital is >= $100.
         """
         with self.trade_lock:
+            # 1. Primary: Evaluate simultaneous dual-taker parity
             taker_opp = self.check_market_parity(market_id)
             if taker_opp and taker_opp.get("execution_type") == "simultaneous_dual_taker":
                 if self.execute_arbitrage(taker_opp):
                     return taker_opp
 
-            exec_style = getattr(self.dash_state, "state", {}).get("execution_style", "") if self.dash_state else ""
-            if exec_style == "maker_taker":
-                opp = self.check_maker_taker_parity(market_id)
-                if opp:
-                    if self.execute_arbitrage(opp):
-                        return opp
-                if taker_opp:
-                    if self.execute_arbitrage(taker_opp):
-                        return taker_opp
-            else:
-                if taker_opp:
-                    if self.execute_arbitrage(taker_opp):
-                        return taker_opp
-                opp_mt = self.check_maker_taker_parity(market_id)
-                if opp_mt:
-                    if self.execute_arbitrage(opp_mt):
-                        return opp_mt
+            exec_style = getattr(self.dash_state, "state", {}).get("execution_style", "simultaneous_dual_taker") if self.dash_state else "simultaneous_dual_taker"
+            
+            # If execution_style is simultaneous_dual_taker or capital is low (< $100), do NOT attempt maker-taker
+            total_cap = getattr(getattr(self, "risk", None), "capital", 1000.0) or 1000.0
+            if exec_style != "maker_taker" or total_cap < 100.0:
+                return None
+
+            # Only reached if explicitly in maker_taker mode with large capital (> $100)
+            opp = self.check_maker_taker_parity(market_id)
+            if opp and self.execute_arbitrage(opp):
+                return opp
         return None
 
     def execute_negrisk_basket(self, opp: dict) -> bool:
@@ -4171,6 +4166,12 @@ class LiveExecutor(PaperSimulator):
         self.last_unwind_time = 0.0
         self.last_redemption_time = 0.0
         self._swept_cooldowns: Dict[str, float] = {}
+        self._orphan_first_seen: Dict[str, float] = {}
+
+        # ZERO-SELL PROTECTION INVARIANT:
+        # Automated selling/unwinding of held positions is strictly forbidden.
+        # Positions must ONLY be unwound upon explicit manual user command from the dashboard.
+        self.auto_unwind_enabled: bool = False
 
         # Initialize official py_builder_relayer_client RelayClient
         self.relayer_client = None
@@ -4641,6 +4642,13 @@ class LiveExecutor(PaperSimulator):
         if self.client is None:
             return 0
 
+        # ZERO-SELL PROTECTION INVARIANT:
+        # If automated unwinding is disabled and this call was not explicitly forced
+        # by a direct user interaction from the dashboard, abort immediately.
+        if not getattr(self, "auto_unwind_enabled", False) and not force_now:
+            logger.debug("sweep_orphan_positions aborted: auto_unwind_enabled is False and force_now is False.")
+            return 0
+
         if active_positions is None:
             if not self.address:
                 return 0
@@ -4853,10 +4861,9 @@ class LiveExecutor(PaperSimulator):
                 if isinstance(p, dict) and float(p.get('size', 0) or 0) > 0 and not p.get('redeemable')
             ]
             
-            try:
-                self.sweep_orphan_positions(active_positions)
-            except Exception as e:
-                logger.warning(f"Error in sweep_orphan_positions: {e}")
+            # ZERO-SELL PROTECTION: Automated sweep_orphan_positions call removed.
+            # Position liquidation/unwinding must NEVER run in background polling loops.
+            # It may ONLY be initiated manually by the user clicking "Unwind Orphans" in the UI.
             
             positions_market_val = sum(float(p.get('currentValue', 0.0) or 0.0) for p in active_positions)
             

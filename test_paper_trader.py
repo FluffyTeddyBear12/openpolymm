@@ -3595,6 +3595,7 @@ class TestLiveExecutorConstraints(unittest.TestCase):
         dash_state = MagicMock(spec=DashboardState)
 
         executor = LiveExecutor(risk_engine=risk_engine, dash_state=dash_state)
+        executor.auto_unwind_enabled = True
         mock_client = MagicMock()
         executor.client = mock_client
 
@@ -3699,6 +3700,31 @@ class TestLiveExecutorConstraints(unittest.TestCase):
             self.assertEqual(swept_again, 0)
             mock_safe_unwind.assert_not_called()
             mock_notify.assert_not_called()
+
+    def test_zero_sell_protection_blocks_automated_sweep(self):
+        """Verify that when auto_unwind_enabled is False, automated sweeps are blocked unless force_now=True."""
+        risk_engine = MagicMock(spec=RiskSizingEngine)
+        dash_state = MagicMock(spec=DashboardState)
+        executor = LiveExecutor(risk_engine=risk_engine, dash_state=dash_state)
+        mock_client = MagicMock()
+        executor.client = mock_client
+
+        active_positions = [
+            {
+                "conditionId": "0xcond_orphan",
+                "asset": "0xtoken_orphan",
+                "title": "Unhedged Market",
+                "outcome": "YES",
+                "size": 10.0,
+                "curPrice": 0.45,
+                "currentValue": 4.50,
+                "avgPrice": 0.40,
+            }
+        ]
+
+        self.assertFalse(executor.auto_unwind_enabled)
+        # Without force_now, zero-sell shield aborts immediately
+        self.assertEqual(executor.sweep_orphan_positions(active_positions, force_now=False), 0)
 
 
 def test_live_executor_orphan_sweeper_liquidates_unhedged_position():
