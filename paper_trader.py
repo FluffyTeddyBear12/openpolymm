@@ -1555,10 +1555,17 @@ class RiskSizingEngine:
 
         if locked_collateral is not None:
             self.locked_collateral = float(locked_collateral)
+            self._explicit_locked_override = True
         elif dash_state and "locked_collateral" in dash_state.state:
-            self.locked_collateral = float(dash_state.state["locked_collateral"])
+            raw_ops = dash_state.state.get("open_positions")
+            if isinstance(raw_ops, dict) and len(raw_ops) > 0:
+                self.locked_collateral = float(dash_state.state["locked_collateral"])
+            else:
+                self.locked_collateral = 0.0
+            self._explicit_locked_override = False
         else:
             self.locked_collateral = 0.0
+            self._explicit_locked_override = False
 
         if open_positions is not None:
             self.open_positions = OpenPositionsDict(open_positions)
@@ -1645,6 +1652,12 @@ class RiskSizingEngine:
         target_state = self.dash_state
         if target_state:
             with self.lock:
+                if not getattr(self, "_explicit_locked_override", False):
+                    actual_locked = sum(float(p.get("size", 0.0) or 0.0) for p in self.open_positions.values())
+                    if not self.open_positions or actual_locked == 0.0:
+                        self.locked_collateral = 0.0
+                    else:
+                        self.locked_collateral = round(actual_locked, 4)
                 cap = self.available_cash + self.locked_collateral + sum(p.get("expected_profit", 0.0) for p in self.open_positions.values())
                 cash = self.available_cash
                 locked = self.locked_collateral
@@ -4516,7 +4529,12 @@ class LiveExecutor(PaperSimulator):
                 if self.risk:
                     with self.risk.lock:
                         self.risk.available_cash = bal_usd
-                        calc_cap = bal_usd + getattr(self.risk, "locked_collateral", 0.0)
+                        if getattr(self.risk, "_explicit_locked_override", False):
+                            calc_cap = bal_usd + getattr(self.risk, "locked_collateral", 0.0)
+                        else:
+                            actual_locked = sum(float(p.get("size", 0.0) or 0.0) for p in getattr(self.risk, "open_positions", {}).values())
+                            self.risk.locked_collateral = round(actual_locked, 4)
+                            calc_cap = bal_usd + self.risk.locked_collateral
                     self.risk.capital = calc_cap
                 else:
                     calc_cap = bal_usd
@@ -4525,6 +4543,7 @@ class LiveExecutor(PaperSimulator):
                     with getattr(self.dash_state, "lock", threading.RLock()):
                         self.dash_state.state["capital"] = calc_cap
                         self.dash_state.state["available_cash"] = bal_usd
+                        self.dash_state.state["locked_collateral"] = getattr(self.risk, "locked_collateral", 0.0) if self.risk else 0.0
                         self.dash_state.dirty = True
                 self.last_balance_sync_time = time.time()
                 try:
