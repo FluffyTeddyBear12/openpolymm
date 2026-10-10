@@ -2692,16 +2692,20 @@ class PaperSimulator:
             taker_depth_a = depth_no if (depth_no is not None and not math.isinf(depth_no)) else 50.0
             spread_yes = ask_yes - bid_yes
             cost_pair_a = maker_price_yes + ask_no
-            desired_shares_a = (desired_trade_size / cost_pair_a) if cost_pair_a > 0 else 5.0
+            min_required_cash_a = 5.0 * cost_pair_a
+            if current_capital < min_required_cash_a:
+                branch_a = None
+            desired_shares_a = max(5.0, (desired_trade_size / cost_pair_a)) if cost_pair_a > 0 else 5.0
             required_size_a = max(5.0, min(desired_shares_a, taker_depth_a / 3.0)) if taker_depth_a > 0 else 5.0
 
-            if (taker_depth_a >= 15.0 and
+            if (current_capital >= min_required_cash_a and
+                taker_depth_a >= 15.0 and
                 taker_depth_a >= required_size_a * 3.0 and
                 spread_yes <= max_spread + 1e-7 and
                 edge_a >= effective_min_edge):
 
-                trade_size_a = max(5.0, min(desired_trade_size, (taker_depth_a / 3.0) * cost_pair_a))
-                trade_size_a = max(5.0, trade_size_a)
+                trade_size_a = max(min_required_cash_a, min(desired_trade_size, (taker_depth_a / 3.0) * cost_pair_a))
+                trade_size_a = max(min_required_cash_a, trade_size_a)
                 expected_profit_a = trade_size_a * edge_a
                 if self.reward_harvester:
                     priority_score_a = self.reward_harvester.calculate_reward_priority(
@@ -2761,16 +2765,20 @@ class PaperSimulator:
             taker_depth_b = depth_yes if (depth_yes is not None and not math.isinf(depth_yes)) else 50.0
             spread_no = ask_no - bid_no
             cost_pair_b = ask_yes + maker_price_no
-            desired_shares_b = (desired_trade_size / cost_pair_b) if cost_pair_b > 0 else 5.0
+            min_required_cash_b = 5.0 * cost_pair_b
+            if current_capital < min_required_cash_b:
+                branch_b = None
+            desired_shares_b = max(5.0, (desired_trade_size / cost_pair_b)) if cost_pair_b > 0 else 5.0
             required_size_b = max(5.0, min(desired_shares_b, taker_depth_b / 3.0)) if taker_depth_b > 0 else 5.0
 
-            if (taker_depth_b >= 15.0 and
+            if (current_capital >= min_required_cash_b and
+                taker_depth_b >= 15.0 and
                 taker_depth_b >= required_size_b * 3.0 and
                 spread_no <= max_spread + 1e-7 and
                 edge_b >= effective_min_edge):
 
-                trade_size_b = max(5.0, min(desired_trade_size, (taker_depth_b / 3.0) * cost_pair_b))
-                trade_size_b = max(5.0, trade_size_b)
+                trade_size_b = max(min_required_cash_b, min(desired_trade_size, (taker_depth_b / 3.0) * cost_pair_b))
+                trade_size_b = max(min_required_cash_b, trade_size_b)
                 expected_profit_b = trade_size_b * edge_b
                 if self.reward_harvester:
                     priority_score_b = self.reward_harvester.calculate_reward_priority(
@@ -5242,12 +5250,12 @@ class LiveExecutor(PaperSimulator):
                 if spendable >= five_share_cost and (not self.risk or self.risk.can_trade(five_share_cost, market_id=market_id)):
                     max_shares = 5
                 else:
+                    logger.info(f"Insufficient cash for 5-share minimum order (${five_share_cost:.2f} > ${spendable:.2f}). Gating trade.")
                     if hasattr(self, "shadow_tracker") and self.shadow_tracker:
-                        opp_copy = dict(opp)
-                        self.shadow_tracker.record_missed(opp_copy, MissedReason.INSUFFICIENT_CASH)
+                        self.shadow_tracker.record_missed(dict(opp), MissedReason.INSUFFICIENT_CASH)
                     return False
 
-            shares = float(max_shares)
+            shares = max(5.0, float(max_shares))
             trade_size = round(shares * cost_per_pair, 2)
             expected_profit = round((shares * 1.0) - trade_size, 4)
 

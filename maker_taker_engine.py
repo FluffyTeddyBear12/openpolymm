@@ -322,6 +322,10 @@ class MakerTakerExecutor:
         taker_price = round(taker_price, 4)
         size = float(size)
 
+        if float(size) < 5.0:
+            logger.warning(f"Order size {size} is below Polymarket CLOB minimum (5.0 shares). Aborting entry.")
+            return False, "BELOW_MINIMUM_ORDER_SIZE", {"size": size, "min_required": 5.0}
+
         # Pre-Flight Depth Shield: Ensure Leg 2 has sufficient depth buffer to absorb sweeps
         min_taker_depth_buffer = float(size) * 3.0
         if initial_taker_depth is not None and initial_taker_depth < min_taker_depth_buffer:
@@ -510,17 +514,8 @@ class MakerTakerExecutor:
         # -------------------------------------------------------------
         actual_taker_tick, actual_taker_neg = _resolve_token_metadata(self.client, token_taker, default_tick=tick_size)
 
-        if DynamicHedgeRouter is not None:
-            elastic_taker_ceiling = DynamicHedgeRouter.calculate_elastic_taker_price(
-                maker_price=maker_price,
-                fee_rate=taker_fee_rate,
-                breakeven_buffer=0.0005,
-                tick_size=actual_taker_tick,
-            )
-        else:
-            elastic_taker_ceiling = round(1.0 - maker_price - min_edge, 4)
-
-        max_viable_taker_price = min(round(1.0 - maker_price - min_edge, 4), elastic_taker_ceiling)
+        max_hedge_tolerance = max(0.0030, 2.0 * float(actual_taker_tick))
+        elastic_taker_ceiling = round((1.0000 + max_hedge_tolerance - maker_price) / (1.0 + taker_fee_rate), 4)
         fresh_taker_price = taker_price
 
         books_source = market_books
@@ -617,6 +612,32 @@ class MakerTakerExecutor:
                     pass
 
         taker_filled = (taker_taking > 0) or (leg_taker.get("status") == "matched" and not taker_err)
+
+        if not taker_filled:
+            try:
+                from rollback_protector import RollbackProtector
+                live_b = RollbackProtector.fetch_order_book(self.client, token_taker)
+                live_ask = RollbackProtector.extract_best_ask(live_b)
+                if 0 < live_ask <= elastic_taker_ceiling:
+                    retry_p = _ceil_to_tick_size(live_ask, actual_taker_tick)
+                    self._log_activity(f"⚡ [MICRO-HEDGE RETRY] Top ask swept. Re-sweeping Leg 2 ask @ ${retry_p:.4f}...")
+                    order_opts = PartialCreateOrderOptions(tick_size=str(actual_taker_tick), neg_risk=actual_taker_neg)
+                    try:
+                        order_retry = self.client.create_order(
+                            OrderArgsV2(price=retry_p, size=matched_size, side="BUY", token_id=token_taker),
+                            options=order_opts,
+                        )
+                    except TypeError:
+                        order_retry = self.client.create_order(
+                            OrderArgsV2(price=retry_p, size=matched_size, side="BUY", token_id=token_taker)
+                        )
+                    resp_retry = self.client.post_orders([PostOrdersV2Args(order=order_retry, orderType=OrderType.FOK)])
+                    leg_retry = resp_retry[0] if isinstance(resp_retry, list) and len(resp_retry) > 0 and isinstance(resp_retry[0], dict) else (resp_retry if isinstance(resp_retry, dict) else {})
+                    if (leg_retry.get("status") == "matched" or float(leg_retry.get("takingAmount") or 0.0) > 0) and not leg_retry.get("errorMsg"):
+                        taker_filled = True
+                        target_taker_price = retry_p
+            except Exception as e:
+                logger.debug(f"Micro-hedge retry encountered error: {e}")
 
         if taker_filled:
             success_msg = (

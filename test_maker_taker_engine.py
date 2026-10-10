@@ -390,6 +390,84 @@ class TestMakerTakerEngine(unittest.TestCase):
         order_args = taker_call_args[0][0]
         self.assertAlmostEqual(order_args.price, 0.50, places=4)
 
+    def test_below_minimum_order_size_aborts(self):
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=self.maker_price,
+            token_taker=self.token_taker,
+            taker_price=self.taker_price,
+            size=4.9,
+            timeout_seconds=2.0,
+        )
+        self.assertFalse(success)
+        self.assertEqual(reason, "BELOW_MINIMUM_ORDER_SIZE")
+        self.assertEqual(meta["size"], 4.9)
+        self.assertEqual(meta["min_required"], 5.0)
+        self.mock_client.post_orders.assert_not_called()
+
+    def test_hedge_completion_tolerance_allows_one_tick_drift(self):
+        order_maker_obj = MagicMock()
+        order_taker_obj = MagicMock()
+        self.mock_client.create_order.side_effect = [order_maker_obj, order_taker_obj]
+        self.mock_client.post_orders.side_effect = [
+            [{"orderID": "maker_order_001"}],
+            [{"orderID": "taker_order_drift", "takingAmount": "10.0", "status": "matched"}],
+        ]
+        self.mock_client.get_order.return_value = {
+            "status": "MATCHED",
+            "size_matched": "10.0",
+        }
+        # maker_price = 0.48, taker_price = 0.520 (1-tick under tolerance ceiling 0.5230)
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=0.48,
+            token_taker=self.token_taker,
+            taker_price=0.520,
+            size=10.0,
+            timeout_seconds=2.0,
+        )
+        self.assertTrue(success)
+        self.assertEqual(reason, "SUCCESS")
+        self.assertEqual(meta["hedged_size"], 10.0)
+        self.assertEqual(meta["taker_price"], 0.520)
+
+    def test_micro_hedge_retry_success(self):
+        order_maker_obj = MagicMock()
+        order_taker_fail_obj = MagicMock()
+        order_retry_obj = MagicMock()
+        self.mock_client.create_order.side_effect = [
+            order_maker_obj,
+            order_taker_fail_obj,
+            order_retry_obj,
+        ]
+        self.mock_client.post_orders.side_effect = [
+            [{"orderID": "maker_order_001"}],
+            [{"errorMsg": "Order killed by book: Insufficient liquidity", "orderID": "taker_fail_001"}],
+            [{"orderID": "taker_retry_002", "takingAmount": "10.0", "status": "matched"}],
+        ]
+        self.mock_client.get_order.return_value = {
+            "status": "MATCHED",
+            "size_matched": "10.0",
+        }
+        self.mock_client.get_order_book.return_value = {
+            "asks": [{"price": 0.492, "size": 25.0}]
+        }
+
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=0.48,
+            token_taker=self.token_taker,
+            taker_price=0.49,
+            size=10.0,
+            timeout_seconds=2.0,
+        )
+        self.assertTrue(success)
+        self.assertEqual(reason, "SUCCESS")
+        self.assertEqual(meta["hedged_size"], 10.0)
+        self.assertEqual(meta["taker_price"], 0.492)
+        self.assertEqual(meta["maker_price"], 0.48)
+        self.assertEqual(self.mock_client.post_orders.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()
