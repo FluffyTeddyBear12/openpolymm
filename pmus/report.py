@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
+from decimal import Decimal
 import re
 import time
-from decimal import Decimal
 
 from pmus.ledger import Ledger
 from pmus.venue import PublicGatewayClient
@@ -65,6 +66,7 @@ def generate_report(
 
     market_breakdown_lines = []
     if market_snaps:
+        now_dt = datetime.now(timezone.utc)
         for slug, snaps in market_snaps.items():
             bid_secs = sum(1 for s in snaps if s.bid_qualifies)
             ask_secs = sum(1 for s in snaps if s.ask_qualifies)
@@ -87,18 +89,53 @@ def generate_report(
 
             win = windows_map.get(slug)
             if win:
+                period_str = getattr(win, "period", "early")
                 pool_str = f"${win.pool_usd:.2f}"
                 if win.end is not None:
                     dur_secs = int((win.end - win.start).total_seconds())
-                    dur_str = f"{dur_secs}s"
+                    dur_str = f"{dur_secs}s ({dur_secs / 3600:.1f}h)"
                 else:
-                    dur_str = "ongoing"
+                    dur_secs = 86400
+                    dur_str = "86400s (24.0h)"
             else:
+                period_str = "early"
                 pool_str = "N/A"
+                dur_secs = 86400
                 dur_str = "N/A"
 
+            # Compute completion cost
+            cost = Decimal("0")
+            if client is not None:
+                try:
+                    bk = client.fetch_book(slug)
+                    tgt = win.target_size if win else Decimal("5000")
+                    ex_b = sum(lvl.qty for lvl in bk.bids)
+                    need_b = max(Decimal("0"), tgt - ex_b)
+                    b_px = bk.bids[0].price if bk.bids else Decimal("0.01")
+                    cost_b = need_b * b_px
+
+                    ex_a = sum(lvl.qty for lvl in bk.asks)
+                    need_a = max(Decimal("0"), tgt - ex_a)
+                    a_px = bk.asks[0].price if bk.asks else Decimal("0.02")
+                    cost_a = need_a * (Decimal("1") - a_px)
+
+                    valid_costs = [c for c in (cost_b, cost_a) if c > Decimal("0")]
+                    cost = min(valid_costs) if valid_costs else Decimal("0")
+                except Exception:
+                    pass
+
+            rem_est = Decimal("0")
+            if win and win.end and win.end > now_dt:
+                rem_secs = Decimal(str(max(0, int((win.end - now_dt).total_seconds()))))
+                share_dec = avg_share / Decimal("100")
+                rate_sec = (win.pool_usd / Decimal(str(max(1, dur_secs)))) * Decimal("0.5") * share_dec
+                rem_est = rate_sec * rem_secs
+
+            proj_total = mkt_est + rem_est
+            floor_flag = "[< $1.00 PAYOUT FLOOR]" if proj_total < Decimal("1.00") else "[ELIGIBLE FOR PAYOUT]"
+
             market_breakdown_lines.append(
-                f"  - Market {slug}: Pool={pool_str}, Dur={dur_str}, Share={avg_share:.1f}%, Est=${mkt_est:.4f} (Qual Secs: Bid={bid_secs}, Ask={ask_secs})"
+                f"  - Market {slug} ({period_str}): Pool={pool_str}, Dur={dur_str}, Share={avg_share:.1f}%, Est=${mkt_est:.4f} (Qual Secs: Bid={bid_secs}, Ask={ask_secs}) | Completion Cost=${cost:.2f}, Remainder Est=${rem_est:.4f}, Projected Total=${proj_total:.4f} {floor_flag}"
             )
     else:
         market_breakdown_lines.append("  - (No LIP activity recorded)")

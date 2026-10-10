@@ -1,6 +1,6 @@
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -129,6 +129,20 @@ class PublicGatewayClient:
 
         return best_bid, best_ask
 
+    def fetch_slug_to_event_map(self) -> dict[str, str]:
+        slug_to_event: dict[str, str] = {}
+        try:
+            events = self.fetch_events(active=True, closed=False, limit=200)
+            for ev in events:
+                ev_id = ev.get("slug") or str(ev.get("id", ""))
+                for m in ev.get("markets", []):
+                    m_slug = m.get("slug")
+                    if m_slug and ev_id:
+                        slug_to_event[m_slug] = ev_id
+        except Exception:
+            pass
+        return slug_to_event
+
     def fetch_incentives(self, status: str = "active", page_size: int = 100) -> list[IncentiveWindow]:
         params = {"pageSize": page_size, "statuses": status}
         data = self._request("GET", "/v1/incentives", params=params)
@@ -206,14 +220,35 @@ class PublicGatewayClient:
 
                 start_str = tp.get("start")
                 if start_str:
-                    start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    try:
+                        start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    except Exception:
+                        start = datetime.now(timezone.utc)
                 else:
                     start = datetime.now(timezone.utc)
 
                 end_str = tp.get("end")
-                end = datetime.fromisoformat(end_str.replace("Z", "+00:00")) if end_str else None
+                if end_str:
+                    try:
+                        end = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                    except Exception:
+                        end = None
+                else:
+                    end = None
+
+                period = tp.get("period", "early").lower()
+
+                if end is None:
+                    if event_start_time is not None and period in ("early", "day_of"):
+                        end = event_start_time
+                    elif event_start_time is not None and period == "live":
+                        end = event_start_time + timedelta(hours=3)
+                    elif period == "daily":
+                        end = start + timedelta(days=1)
+                    else:
+                        end = start + timedelta(days=1)
+
                 status = tp.get("status", "active")
-                period = tp.get("period", "early")
 
                 results.append(
                     IncentiveWindow(

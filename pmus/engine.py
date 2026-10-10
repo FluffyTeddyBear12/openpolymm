@@ -11,7 +11,7 @@ from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quot
 from pmus.risk import RiskManager
 from pmus.shadow import check_paper_fills, estimate_lip_score
 from pmus.strategy.lip_quoter import desired_quotes
-from pmus.strategy.market_selector import rank_markets
+from pmus.strategy.market_selector import greedy_allocate, rank_markets
 from pmus.venue import AuthenticatedClient, PublicGatewayClient
 
 MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
@@ -100,35 +100,41 @@ class ShadowEngine:
             except Exception as e:
                 self.logger.debug("Failed to fetch candidate book %s: %s", slug, e)
 
-        market_budget = min(
-            self.settings.max_per_market,
-            self.settings.total_budget / Decimal(str(max(1, len(active_windows)))),
-        )
-
-        target_slugs = rank_markets(
+        slug_to_event = self.client.fetch_slug_to_event_map()
+        alloc_res = greedy_allocate(
             windows=list(active_windows.values()),
             books=candidate_books,
+            total_budget=self.settings.total_budget,
             now=now_dt,
-            max_n=self.settings.max_markets,
-            budget_per_market=market_budget,
+            max_markets=self.settings.max_markets,
+            max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
             tick=Decimal("0.001"),
             pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
             quote_live_periods=self.settings.quote_live_periods,
+            slug_to_event_map=slug_to_event,
         )
 
+        target_slugs = alloc_res.selected_slugs
         if not target_slugs:
-            target_slugs = list(active_windows.keys())[: self.settings.max_markets]
-
-        market_budget = min(
-            self.settings.max_per_market,
-            self.settings.total_budget / Decimal(str(max(1, len(target_slugs)))),
-        )
+            self.logger.warning("No fundable markets selected: %s", alloc_res.unfunded_reason)
+        else:
+            for cand in alloc_res.selected_candidates:
+                hr_reward = cand.expected_reward_sec * Decimal("3600")
+                self.logger.info(
+                    "Selected candidate market=%s, event=%s, side=%s, cost=$%.2f, expected=$%.4f/hr ($%.6f/s)",
+                    cand.slug,
+                    cand.event_id,
+                    cand.side,
+                    cand.cost,
+                    hr_reward,
+                    cand.expected_reward_sec,
+                )
 
         market_metadata: dict[str, Market] = {}
         for slug in target_slugs:
             self.market_states[slug] = "IDLE"
 
-        self.logger.info("Selected %s markets with budget $%s each: %s", len(target_slugs), market_budget, target_slugs)
+        self.logger.info("Allocated %s markets with greedy selection: %s", len(target_slugs), target_slugs)
 
         tick_count = 0
         while time.time() < end_time:
@@ -167,16 +173,21 @@ class ShadowEngine:
                         self.ledger.update_position(pos, ts_ms=now_ms)
                         self.logger.info("Fill recorded: %s %s %s @ %s", fill.slug, fill.side, fill.qty, fill.price)
 
+                    b_budget = alloc_res.side_budgets.get((slug, "bid"), Decimal("0"))
+                    a_budget = alloc_res.side_budgets.get((slug, "ask"), Decimal("0"))
+
                     quotes = desired_quotes(
                         market=market,
                         book=book,
                         window=window,
                         position=pos,
-                        budget=market_budget,
+                        budget=self.settings.max_per_market,
                         max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
                         now=now_dt,
                         pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
                         quote_live_periods=self.settings.quote_live_periods,
+                        bid_budget=b_budget,
+                        ask_budget=a_budget,
                     )
                     for q in quotes:
                         self.ledger.record_quote(q, ts_ms=now_ms)
@@ -249,31 +260,38 @@ class LiveEngine:
             except Exception:
                 pass
 
-        market_budget = min(
-            self.settings.max_per_market,
-            self.settings.total_budget / Decimal(str(max(1, len(active_windows)))),
-        )
-
-        target_slugs = rank_markets(
+        slug_to_event = self.public_client.fetch_slug_to_event_map()
+        alloc_res = greedy_allocate(
             windows=list(active_windows.values()),
             books=candidate_books,
+            total_budget=self.settings.total_budget,
             now=datetime.now(timezone.utc),
-            max_n=self.settings.max_markets,
-            budget_per_market=market_budget,
+            max_markets=self.settings.max_markets,
+            max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
             tick=Decimal("0.001"),
             pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
             quote_live_periods=self.settings.quote_live_periods,
+            slug_to_event_map=slug_to_event,
         )
+
+        target_slugs = alloc_res.selected_slugs
         if not target_slugs:
-            target_slugs = list(active_windows.keys())[: self.settings.max_markets]
+            self.logger.warning("No fundable markets selected: %s", alloc_res.unfunded_reason)
+        else:
+            for cand in alloc_res.selected_candidates:
+                hr_reward = cand.expected_reward_sec * Decimal("3600")
+                self.logger.info(
+                    "Selected candidate market=%s, event=%s, side=%s, cost=$%.2f, expected=$%.4f/hr ($%.6f/s)",
+                    cand.slug,
+                    cand.event_id,
+                    cand.side,
+                    cand.cost,
+                    hr_reward,
+                    cand.expected_reward_sec,
+                )
 
         self.logger.info("Scoped startup cancel for target slugs: %s", target_slugs)
         self.auth_client.cancel_all_scoped(target_slugs)
-
-        market_budget = min(
-            self.settings.max_per_market,
-            self.settings.total_budget / Decimal(str(max(1, len(target_slugs)))),
-        )
 
         market_metadata: dict[str, Market] = {}
         for slug in target_slugs:
@@ -323,16 +341,21 @@ class LiveEngine:
 
                     open_orders = self.ledger.get_open_orders(slug)
 
+                    b_budget = alloc_res.side_budgets.get((slug, "bid"), Decimal("0"))
+                    a_budget = alloc_res.side_budgets.get((slug, "ask"), Decimal("0"))
+
                     quotes = desired_quotes(
                         market=market,
                         book=book,
                         window=window,
                         position=pos,
-                        budget=market_budget,
+                        budget=self.settings.max_per_market,
                         max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
                         now=now_dt,
                         pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
                         quote_live_periods=self.settings.quote_live_periods,
+                        bid_budget=b_budget,
+                        ask_budget=a_budget,
                     )
 
                     to_create, to_cancel, to_keep = reconcile_quotes(open_orders, quotes)
