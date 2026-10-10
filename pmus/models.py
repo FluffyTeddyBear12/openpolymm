@@ -14,7 +14,8 @@ class Market:
     tick: Decimal
     min_qty: Decimal
     active: bool
-    mutually_exclusive: bool
+    mutually_exclusive: bool = False
+    question: str = ""
 
 @dataclass(frozen=True)
 class Level:

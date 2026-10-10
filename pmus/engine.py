@@ -3,7 +3,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pmus.config import Settings
 from pmus.ledger import Ledger
@@ -73,7 +73,7 @@ class ShadowEngine:
         self,
         settings: Settings,
         ledger: Ledger,
-        client: PublicGatewayClient,
+        client: PublicGatewayClient | Any,
         logger: logging.Logger,
     ):
         self.settings = settings
@@ -148,15 +148,18 @@ class ShadowEngine:
                 try:
                     book = self.client.fetch_book(slug)
                     if slug not in market_metadata:
-                        market_metadata[slug] = Market(
-                            slug=slug,
-                            event_id=None,
-                            category="sports",
-                            tick=Decimal("0.001"),
-                            min_qty=Decimal("1"),
-                            active=True,
-                            mutually_exclusive=False,
-                        )
+                        if hasattr(self.client, "get_market") and self.client.get_market(slug) is not None:
+                            market_metadata[slug] = self.client.get_market(slug)
+                        else:
+                            market_metadata[slug] = Market(
+                                slug=slug,
+                                event_id=None,
+                                category="sports",
+                                tick=Decimal("0.001"),
+                                min_qty=Decimal("1"),
+                                active=True,
+                                mutually_exclusive=False,
+                            )
                     market = market_metadata[slug]
 
                     pos = self.ledger.get_position(slug)
@@ -231,8 +234,8 @@ class LiveEngine:
         self,
         settings: Settings,
         ledger: Ledger,
-        public_client: PublicGatewayClient,
-        auth_client: AuthenticatedClient,
+        public_client: PublicGatewayClient | Any,
+        auth_client: AuthenticatedClient | Any,
         risk_manager: RiskManager,
         logger: logging.Logger,
     ):
@@ -372,15 +375,18 @@ class LiveEngine:
                 try:
                     book = self.public_client.fetch_book(slug)
                     if slug not in market_metadata:
-                        market_metadata[slug] = Market(
-                            slug=slug,
-                            event_id=None,
-                            category="sports",
-                            tick=Decimal("0.001"),
-                            min_qty=Decimal("1"),
-                            active=True,
-                            mutually_exclusive=False,
-                        )
+                        if hasattr(self.public_client, "get_market") and self.public_client.get_market(slug) is not None:
+                            market_metadata[slug] = self.public_client.get_market(slug)
+                        else:
+                            market_metadata[slug] = Market(
+                                slug=slug,
+                                event_id=None,
+                                category="sports",
+                                tick=Decimal("0.001"),
+                                min_qty=Decimal("1"),
+                                active=True,
+                                mutually_exclusive=False,
+                            )
                     market = market_metadata[slug]
                     pos = live_positions.get(slug, self.ledger.get_position(slug))
                     if abs(pos.net_qty) >= self.settings.max_contracts_per_market:

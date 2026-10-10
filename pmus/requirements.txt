@@ -1,4 +1,6 @@
 polymarket-us>=2.4.1
+py-clob-client>=0.18.0
+python-dotenv>=1.0.0
 requests>=2.31.0
 pytest>=8.0.0
 tzdata>=2024.1

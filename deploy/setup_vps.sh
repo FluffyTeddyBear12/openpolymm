@@ -55,12 +55,19 @@ sudo -u "$APP_USER" "$APP_DIR/venv/bin/pip" install -r "$APP_DIR/pmus/requiremen
 
 # 4. /etc/pmus.env Environment File Template
 echo "[4/6] Configuring /etc/pmus.env template..."
-if [ ! -f /etc/pmus.env ]; then
+if [ -f "$APP_DIR/.env" ]; then
+    echo "Found .env in repository root, copying to /etc/pmus.env..."
+    cp "$APP_DIR/.env" /etc/pmus.env
+    chmod 600 /etc/pmus.env
+    chown "$APP_USER:$APP_USER" /etc/pmus.env
+    echo "/etc/pmus.env installed from repository root .env."
+elif [ ! -f /etc/pmus.env ]; then
     cat << 'EOF' > /etc/pmus.env
-# Polymarket US Environment Configuration
+# Polymarket Environment Configuration
 PMUS_KEY_ID=""
 PMUS_SECRET_KEY=""
 PMUS_MODE="shadow"
+PMUS_VENUE="global"
 PMUS_GATEWAY_URL="https://gateway.polymarket.us"
 PMUS_TOTAL_BUDGET="60.00"
 PMUS_MAX_PER_MARKET="25.00"
@@ -71,6 +78,15 @@ PMUS_MAX_CONTRACTS_PER_MARKET="6000"
 PMUS_DAILY_LOSS_LIMIT="5.00"
 PMUS_DAILY_LOSS_STOP="10.00"
 PMUS_WEBHOOK_URL=""
+# Polymarket Global (CLOB)
+POLYGON_PRIVATE_KEY=""
+POLYMARKET_PROXY_ADDRESS=""
+POLYMARKET_SIGNATURE_TYPE="2"
+CLOB_API_KEY=""
+CLOB_SECRET=""
+CLOB_PASSPHRASE=""
+CLOB_HOST="https://clob.polymarket.com"
+POLYMARKET_CHAIN_ID="137"
 EOF
     chmod 600 /etc/pmus.env
     chown "$APP_USER:$APP_USER" /etc/pmus.env
