@@ -1,6 +1,5 @@
 import random
 import time
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -252,38 +251,72 @@ class AuthenticatedClient:
 
         for chunk in chunk_list(quotes, 20):
             payload_orders = []
-            order_refs = []
+            order_refs: list[tuple[str, str, Decimal, Decimal]] = []
             for q in chunk:
                 tick = tick_map.get(q.slug, Decimal("0.001"))
                 min_qty = min_qty_map.get(q.slug, Decimal("1"))
                 rounded_px = (q.price // tick) * tick
                 rounded_qty = (q.qty // min_qty) * min_qty
 
-                order_id = str(uuid.uuid4())
-                order_refs.append((order_id, q.slug, q.side, rounded_px, rounded_qty))
+                qty_val: int | float = (
+                    int(rounded_qty) if rounded_qty == rounded_qty.to_integral_value() else float(rounded_qty)
+                )
+                intent_val = f"ORDER_INTENT_{q.side}"
+                order_refs.append((q.slug, q.side, rounded_px, rounded_qty))
 
                 param = {
                     "marketSlug": q.slug,
-                    "intent": q.side,
+                    "intent": intent_val,
                     "type": "ORDER_TYPE_LIMIT",
-                    "price": float(rounded_px),
-                    "quantity": float(rounded_qty),
-                    "tif": "GTC",
+                    "price": {"value": str(rounded_px), "currency": "USD"},
+                    "quantity": qty_val,
+                    "tif": "TIME_IN_FORCE_GOOD_TILL_CANCEL",
                     "participateDontInitiate": True,
                     "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_AUTOMATIC",
                 }
                 payload_orders.append(param)
 
             resp = self._sdk.orders.create_many({"orders": payload_orders})
-            assigned_ids = getattr(resp, "createdOrderIds", None) or getattr(resp, "created_order_ids", None)
-            if isinstance(resp, dict):
-                assigned_ids = resp.get("createdOrderIds") or resp.get("created_order_ids")
+            assigned_ids = resp.get("createdOrderIds", []) if isinstance(resp, dict) else []
 
-            for idx, (fallback_id, slug, side, px, qty) in enumerate(order_refs):
-                actual_id = assigned_ids[idx] if (assigned_ids and idx < len(assigned_ids)) else fallback_id
+            if len(assigned_ids) < len(order_refs):
+                slugs_in_batch = list({slug for slug, _, _, _ in order_refs})
+                try:
+                    open_resp = self._sdk.orders.list({"slugs": slugs_in_batch})
+                    open_orders = open_resp.get("orders", []) if isinstance(open_resp, dict) else []
+                    matched_ids: list[str] = []
+                    unmatched_refs = list(order_refs)
+                    for oo in open_orders:
+                        for idx, ref in enumerate(unmatched_refs):
+                            r_slug, r_side, r_px, _ = ref
+                            o_intent = f"ORDER_INTENT_{r_side}"
+                            oo_px = (oo.get("price") or {}).get("value")
+                            try:
+                                oo_px_match = (Decimal(str(oo_px)) == r_px) if oo_px is not None else False
+                            except Exception:
+                                oo_px_match = (oo_px == str(r_px))
+                            if (
+                                oo.get("marketSlug") == r_slug
+                                and oo.get("intent") == o_intent
+                                and oo_px_match
+                            ):
+                                matched_ids.append(oo["id"])
+                                unmatched_refs.pop(idx)
+                                break
+                    if len(matched_ids) == len(order_refs):
+                        assigned_ids = matched_ids
+                except Exception:
+                    pass
+
+            if len(assigned_ids) < len(order_refs):
+                raise RuntimeError(
+                    f"create_many returned incomplete order IDs ({len(assigned_ids)} IDs for {len(order_refs)} orders)"
+                )
+
+            for idx, (slug, side, px, qty) in enumerate(order_refs):
                 created_live_orders.append(
                     LiveOrder(
-                        order_id=str(actual_id),
+                        order_id=str(assigned_ids[idx]),
                         slug=slug,
                         side=side,
                         price=px,
@@ -300,14 +333,19 @@ class AuthenticatedClient:
         canceled_ids: list[str] = []
         for chunk in chunk_list(orders, 20):
             payload = [{"marketSlug": o.slug, "orderId": o.order_id} for o in chunk]
-            self._sdk.orders.cancel_many({"orders": payload})
-            canceled_ids.extend([o.order_id for o in chunk])
+            resp = self._sdk.orders.cancel_many({"orders": payload})
+            c_ids = resp.get("canceledOrderIds") if isinstance(resp, dict) else None
+            if c_ids is not None:
+                canceled_ids.extend([str(cid) for cid in c_ids])
+            else:
+                canceled_ids.extend([o.order_id for o in chunk])
         return canceled_ids
 
-    def cancel_all_scoped(self, slugs: list[str]) -> None:
+    def cancel_all_scoped(self, slugs: list[str]) -> list[str]:
         if not self.is_available:
             raise RuntimeError("Polymarket US authenticated SDK not configured")
-        self._sdk.orders.cancel_all({"slugs": slugs})
+        resp = self._sdk.orders.cancel_all({"slugs": slugs})
+        return resp.get("canceledOrderIds", []) if isinstance(resp, dict) else []
 
     def close_position(self, slug: str) -> None:
         if not self.is_available:
@@ -323,28 +361,28 @@ class AuthenticatedClient:
         if not self.is_available:
             raise RuntimeError("Polymarket US authenticated SDK not configured")
         resp = self._sdk.account.balances()
-        bp = getattr(resp, "buying_power", None) or getattr(resp, "buyingPower", None)
-        if isinstance(resp, dict):
-            bp = resp.get("buyingPower") or resp.get("buying_power")
-        if bp is not None:
-            return Decimal(str(bp))
+        balances = resp.get("balances", []) if isinstance(resp, dict) else []
+        for b in balances:
+            if "buyingPower" in b:
+                return Decimal(str(b["buyingPower"]))
         return Decimal("0")
 
     def get_positions(self) -> list[Position]:
         if not self.is_available:
             raise RuntimeError("Polymarket US authenticated SDK not configured")
         resp = self._sdk.portfolio.positions()
-        pos_list = getattr(resp, "positions", [])
-        if isinstance(resp, dict):
-            pos_list = resp.get("positions", [])
+        pos_map = resp.get("positions", {}) if isinstance(resp, dict) else {}
         results: list[Position] = []
-        for p in pos_list:
-            slug = getattr(p, "market_slug", "") or getattr(p, "marketSlug", "")
-            net_qty = Decimal(str(getattr(p, "net_qty", getattr(p, "netQty", "0"))))
-            avg_price = Decimal(str(getattr(p, "avg_price", getattr(p, "avgPrice", "0"))))
-            if isinstance(p, dict):
-                slug = p.get("marketSlug", "")
-                net_qty = Decimal(str(p.get("netQty", "0")))
-                avg_price = Decimal(str(p.get("avgPrice", "0")))
+        for key, p in pos_map.items():
+            market_meta = p.get("marketMetadata") or {}
+            slug = market_meta.get("slug") or key
+            net_str = p.get("netPositionDecimal") or p.get("netPosition") or "0"
+            net_qty = Decimal(str(net_str))
+            avg_px_dict = p.get("avgPx")
+            avg_price = (
+                Decimal(str(avg_px_dict["value"]))
+                if (avg_px_dict and "value" in avg_px_dict)
+                else Decimal("0")
+            )
             results.append(Position(slug=slug, net_qty=net_qty, avg_price=avg_price))
         return results

@@ -342,3 +342,43 @@ class LiveEngine:
             elapsed = time.time() - tick_start
             sleep_time = max(0.1, 1.0 - elapsed)
             time.sleep(sleep_time)
+
+    def handle_order_update(self, event: dict) -> None:
+        now_ms = int(time.time() * 1000)
+        update_body = event.get("orderSubscriptionUpdate") or event.get("orderUpdate") or event
+        execution = update_body.get("execution") or {}
+        order = execution.get("order") or {}
+        order_id = str(order.get("id") or execution.get("id") or "")
+        if not order_id:
+            return
+
+        exec_type = execution.get("type", "")
+        order_state = order.get("state", "")
+
+        if exec_type in ("EXECUTION_TYPE_FILL", "EXECUTION_TYPE_PARTIAL_FILL") or order_state in ("ORDER_STATE_FILLED", "ORDER_STATE_PARTIALLY_FILLED"):
+            self.ledger.close_order(order_id, status="FILLED", ts_ms=now_ms)
+            self.logger.info("Order %s filled via websocket update", order_id)
+        elif exec_type == "EXECUTION_TYPE_CANCELED" or order_state == "ORDER_STATE_CANCELED":
+            self.ledger.close_order(order_id, status="CANCELED", ts_ms=now_ms)
+            self.logger.info("Order %s canceled via websocket update", order_id)
+
+    def handle_position_update(self, event: dict) -> None:
+        now_ms = int(time.time() * 1000)
+        pos_sub = event.get("positionSubscription") or event.get("positionSubscriptionUpdate") or event.get("positionUpdate") or event
+        after_pos = pos_sub.get("afterPosition") or {}
+        if not after_pos:
+            return
+
+        meta = after_pos.get("marketMetadata") or {}
+        slug = str(meta.get("slug") or after_pos.get("positionId") or "")
+        if not slug:
+            return
+
+        net_str = after_pos.get("netPositionDecimal") or after_pos.get("netPosition") or "0"
+        net_qty = Decimal(str(net_str))
+        avg_px_dict = after_pos.get("avgPx") or {}
+        avg_price = Decimal(str(avg_px_dict.get("value", "0")))
+
+        pos = Position(slug=slug, net_qty=net_qty, avg_price=avg_price)
+        self.ledger.update_position(pos, ts_ms=now_ms)
+        self.logger.info("Position for %s updated to net=%s avg_px=%s via websocket", slug, net_qty, avg_price)
