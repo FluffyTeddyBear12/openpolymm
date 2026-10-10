@@ -1,0 +1,3205 @@
+{
+  "programs": [
+    {
+      "marketSlug": "asc-eurolg-asv-czv-2026-10-13-neg-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-asv-czv-2026-10-13-neg-1pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-asv-czv-2026-10-13-neg-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-asv-czv-2026-10-13-neg-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-asv-czv-2026-10-13-pos-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-asv-czv-2026-10-13-pos-1pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-asv-czv-2026-10-13-pos-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-asv-czv-2026-10-13-pos-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bjk-bay-2026-10-16-neg-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 17:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bjk-bay-2026-10-16-neg-1pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 17:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bjk-bay-2026-10-16-neg-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 17:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bjk-bay-2026-10-16-neg-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 17:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bjk-bay-2026-10-16-pos-11pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 17:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bjk-bay-2026-10-16-pos-2pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 17:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bjk-bay-2026-10-16-pos-5pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 17:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bjk-bay-2026-10-16-pos-8pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 17:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bvg-dub-2026-10-13-neg-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bvg-dub-2026-10-13-neg-13pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bvg-dub-2026-10-13-neg-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bvg-dub-2026-10-13-neg-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bvg-dub-2026-10-13-pos-12pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bvg-dub-2026-10-13-pos-3pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bvg-dub-2026-10-13-pos-6pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-bvg-dub-2026-10-13-pos-9pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-czv-prs-2026-10-16-neg-11pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-czv-prs-2026-10-16-neg-14pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-czv-prs-2026-10-16-neg-5pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-czv-prs-2026-10-16-neg-8pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-czv-prs-2026-10-16-pos-12pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-czv-prs-2026-10-16-pos-15pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-czv-prs-2026-10-16-pos-6pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-czv-prs-2026-10-16-pos-9pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-efs-bay-2026-10-14-neg-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 17:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-efs-bay-2026-10-14-neg-13pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 17:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-efs-bay-2026-10-14-neg-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 17:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-efs-bay-2026-10-14-neg-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 17:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-efs-bay-2026-10-14-pos-11pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 17:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-efs-bay-2026-10-14-pos-14pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 17:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-efs-bay-2026-10-14-pos-5pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 17:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-efs-bay-2026-10-14-pos-8pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 17:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-mta-2026-10-13-neg-11pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-mta-2026-10-13-neg-14pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-mta-2026-10-13-neg-5pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-mta-2026-10-13-neg-8pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-mta-2026-10-13-pos-12pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-mta-2026-10-13-pos-15pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-mta-2026-10-13-pos-6pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-mta-2026-10-13-pos-9pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-opi-2026-10-16-neg-11pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-opi-2026-10-16-neg-2pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-opi-2026-10-16-neg-5pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-opi-2026-10-16-neg-8pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-opi-2026-10-16-pos-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-opi-2026-10-16-pos-1pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-opi-2026-10-16-pos-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fcb-opi-2026-10-16-pos-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fen-zal-2026-10-13-neg-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 17:45:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fen-zal-2026-10-13-neg-13pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 17:45:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fen-zal-2026-10-13-neg-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 17:45:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fen-zal-2026-10-13-neg-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 17:45:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fen-zal-2026-10-13-pos-11pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 17:45:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fen-zal-2026-10-13-pos-14pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 17:45:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fen-zal-2026-10-13-pos-5pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 17:45:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-fen-zal-2026-10-13-pos-8pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 17:45:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-hta-bjk-2026-10-14-neg-12pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 16:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-hta-bjk-2026-10-14-neg-3pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 16:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-hta-bjk-2026-10-14-neg-6pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 16:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-hta-bjk-2026-10-14-neg-9pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 16:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-hta-bjk-2026-10-14-pos-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 16:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-hta-bjk-2026-10-14-pos-13pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 16:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-hta-bjk-2026-10-14-pos-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 16:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-hta-bjk-2026-10-14-pos-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-14 16:00:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-dub-2026-10-15-neg-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-15 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-dub-2026-10-15-neg-1pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-15 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-dub-2026-10-15-neg-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-15 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-dub-2026-10-15-neg-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-15 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-dub-2026-10-15-pos-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-15 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-dub-2026-10-15-pos-1pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-15 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-dub-2026-10-15-pos-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-15 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-dub-2026-10-15-pos-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-15 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-rma-2026-10-13-neg-12pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-rma-2026-10-13-neg-3pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-rma-2026-10-13-neg-6pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-rma-2026-10-13-neg-9pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-rma-2026-10-13-pos-11pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-rma-2026-10-13-pos-2pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-rma-2026-10-13-pos-5pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-olm-rma-2026-10-13-pos-8pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-pan-hta-2026-10-16-neg-12pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:15:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-pan-hta-2026-10-16-neg-3pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:15:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-pan-hta-2026-10-16-neg-6pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:15:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-pan-hta-2026-10-16-neg-9pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:15:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-pan-hta-2026-10-16-pos-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:15:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-pan-hta-2026-10-16-pos-13pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:15:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-pan-hta-2026-10-16-pos-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:15:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-pan-hta-2026-10-16-pos-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-16 18:15:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-par-pan-2026-10-13-neg-10pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-par-pan-2026-10-13-neg-1pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-par-pan-2026-10-13-neg-4pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    },
+    {
+      "marketSlug": "asc-eurolg-par-pan-2026-10-13-neg-7pt5",
+      "timePeriods": [
+        {
+          "programId": "eurolg_spreads_totals_day_of_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 5,
+          "status": "active",
+          "discountFactor": 0.35,
+          "targetSize": 5000,
+          "period": "day_of",
+          "createdAt": "2026-10-09T18:41:23Z"
+        },
+        {
+          "programId": "eurolg_spreads_totals_live_20261009",
+          "programType": "liquidityProgram",
+          "start": "2026-10-10T00:00:00Z",
+          "rewardPool": 20,
+          "status": "active",
+          "discountFactor": 0.25,
+          "targetSize": 5000,
+          "period": "live",
+          "createdAt": "2026-10-09T18:41:11Z"
+        }
+      ],
+      "instrumentState": "INSTRUMENT_STATE_OPEN",
+      "category": "SPR",
+      "subcategory": "BASKETBALL",
+      "eventStartTime": "2026-10-13 18:30:00+00",
+      "instrumentProduct": "asc"
+    }
+  ],
+  "nextPageToken": "eyJ0IjoxNzkxNjY3Njk5NDAxMjQxOTc5LCJzIjoiYXNjLWV1cm9sZy1wYXItcGFuLTIwMjYtMTAtMTMtbmVnLTdwdDUiLCJzdCI6MTc5MTU5MDQwMDAwMDAwMDAwMCwiciI6MjAsIm9iIjoiY3JlYXRlZF9hdCIsIm9kIjoiZGVzYyJ9"
+}

@@ -1,0 +1,769 @@
+{
+  "markets": [
+    {
+      "id": "7909",
+      "question": "National League Champion",
+      "slug": "tec-mlb-nlchamp-2026-09-27-lad",
+      "endDate": "2026-11-06T21:20:09Z",
+      "category": "sports",
+      "startDate": "2026-03-19T14:32:23Z",
+      "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/us-logos/mlb/Polymarket_LAD.png",
+      "description": "Will Los Angeles Dodgers win the 2026 National League pennant, scheduled for October 23, 2026? If the event is postponed, delayed, or rescheduled, the expiration date will be amended to align with the new event date. If the event is not rescheduled within two weeks of the originally scheduled date, the instrument may settle at last fair market prices. If the event is canceled, the instrument may settle at last fair market prices. If the team is eliminated from contention, the instrument will settle to $0.00.",
+      "active": true,
+      "marketType": "futures",
+      "closed": false,
+      "createdAt": "2026-03-19T14:41:53Z",
+      "updatedAt": "2026-10-10T21:27:12Z",
+      "archived": false,
+      "orderPriceMinTickSize": 0.001,
+      "gameStartTime": "2026-09-07T00:00:00Z",
+      "manualActivation": false,
+      "sportsMarketType": "futures",
+      "marketSides": [
+        {
+          "id": "15817",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-nlchamp-2026-09-27-lad",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "Yes",
+          "price": "0.5960",
+          "marketId": 7909,
+          "long": true,
+          "teamId": 3014,
+          "team": {
+            "id": 3014,
+            "name": "Los Angeles Dodgers",
+            "abbreviation": "lad",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "alias": "Los Angeles Dodgers",
+            "safeName": "Dodgers",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#005A9C",
+            "providerId": 1,
+            "ordering": "away",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "displayAbbreviation": "LAD",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "ef64da7f-cfaf-4300-87b0-9313386b977c"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "1"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "color": {
+              "light": "#005A9C",
+              "dark": "#005A9C"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.5960",
+            "currency": "USD"
+          },
+          "tradable": true
+        },
+        {
+          "id": "15818",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-nlchamp-2026-09-27-lad",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "No",
+          "price": "0.405",
+          "marketId": 7909,
+          "long": false,
+          "teamId": 3014,
+          "team": {
+            "id": 3014,
+            "name": "Los Angeles Dodgers",
+            "abbreviation": "lad",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "alias": "Los Angeles Dodgers",
+            "safeName": "Dodgers",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#005A9C",
+            "providerId": 1,
+            "ordering": "home",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "displayAbbreviation": "LAD",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "ef64da7f-cfaf-4300-87b0-9313386b977c"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "1"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/los-angeles-dodgers-light-c8267be279.png",
+            "color": {
+              "light": "#005A9C",
+              "dark": "#005A9C"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.405",
+            "currency": "USD"
+          },
+          "tradable": true
+        }
+      ],
+      "outcomes": "[\"No\",\"Yes\"]",
+      "outcomePrices": "[\"0.5960\",\"0.405\"]",
+      "ep3Status": "OPEN",
+      "status": "MARKET_STATUS_OPEN",
+      "assetPriceTerms": null,
+      "sportsMarketTypeV2": "SPORTS_MARKET_TYPE_FUTURE",
+      "hidden": false,
+      "tags": [],
+      "title": "Los Angeles Dodgers",
+      "subtitle": "",
+      "color": "#005A9C",
+      "feeCoefficient": 0.0695,
+      "bestBidQuote": {
+        "value": "0.5950",
+        "currency": "USD"
+      },
+      "bestAskQuote": {
+        "value": "0.5960",
+        "currency": "USD"
+      },
+      "titleShort": "Los Angeles Dodgers",
+      "ep3SyncedAt": "2026-10-08T11:43:04Z",
+      "minimumTradeQty": 1,
+      "comboEnabled": false,
+      "politics": null
+    },
+    {
+      "id": "7910",
+      "question": "World Series Champion",
+      "slug": "tec-mlb-champ-2026-09-27-cws",
+      "endDate": "2026-11-06T21:20:09Z",
+      "category": "sports",
+      "startDate": "2026-03-19T14:32:24Z",
+      "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/us-logos/mlb/Polymarket_CWS.png",
+      "description": "Will Chicago White Sox win the 2026 MLB World Series, scheduled for October 23-November 1, 2026? If the event is postponed, delayed, or rescheduled, the expiration date will be amended to align with the new event date. If the event is not rescheduled within two weeks of the originally scheduled date, the instrument may settle at last fair market prices. If the event is canceled, the instrument may settle at last fair market prices. If the team is eliminated from contention, the instrument will settle to $0.00.",
+      "active": true,
+      "marketType": "futures",
+      "closed": false,
+      "createdAt": "2026-03-19T14:41:53Z",
+      "updatedAt": "2026-10-10T21:27:12Z",
+      "archived": false,
+      "orderPriceMinTickSize": 0.001,
+      "gameStartTime": "2026-09-07T00:00:00Z",
+      "manualActivation": false,
+      "sportsMarketType": "futures",
+      "marketSides": [
+        {
+          "id": "15819",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-champ-2026-09-27-cws",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "Yes",
+          "price": "0.0500",
+          "marketId": 7910,
+          "long": true,
+          "teamId": 3009,
+          "team": {
+            "id": 3009,
+            "name": "Chicago White Sox",
+            "abbreviation": "cws",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-white-sox-light-5e3f37a802.png",
+            "alias": "Chicago White Sox",
+            "safeName": "White Sox",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#868FA8",
+            "providerId": 16,
+            "ordering": "away",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-white-sox-light-5e3f37a802.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-white-sox-light-5e3f37a802.png",
+            "displayAbbreviation": "CWS",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "47f490cd-2f58-4ef7-9dfd-2ad6ba6c1ae8"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "16"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-dark-1e116d22e1.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-dark-1e116d22e1.png",
+            "color": {
+              "light": "#868FA8",
+              "dark": "#868FA8"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.0500",
+            "currency": "USD"
+          },
+          "tradable": true
+        },
+        {
+          "id": "15820",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-champ-2026-09-27-cws",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "No",
+          "price": "0.952",
+          "marketId": 7910,
+          "long": false,
+          "teamId": 3009,
+          "team": {
+            "id": 3009,
+            "name": "Chicago White Sox",
+            "abbreviation": "cws",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-white-sox-light-5e3f37a802.png",
+            "alias": "Chicago White Sox",
+            "safeName": "White Sox",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#868FA8",
+            "providerId": 16,
+            "ordering": "home",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-white-sox-light-5e3f37a802.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-white-sox-light-5e3f37a802.png",
+            "displayAbbreviation": "CWS",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "47f490cd-2f58-4ef7-9dfd-2ad6ba6c1ae8"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "16"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-dark-1e116d22e1.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/chicago-dark-1e116d22e1.png",
+            "color": {
+              "light": "#868FA8",
+              "dark": "#868FA8"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.952",
+            "currency": "USD"
+          },
+          "tradable": true
+        }
+      ],
+      "outcomes": "[\"Yes\",\"No\"]",
+      "outcomePrices": "[\"0.0500\",\"0.952\"]",
+      "ep3Status": "OPEN",
+      "status": "MARKET_STATUS_OPEN",
+      "assetPriceTerms": null,
+      "sportsMarketTypeV2": "SPORTS_MARKET_TYPE_FUTURE",
+      "hidden": false,
+      "tags": [],
+      "title": "Chicago White Sox",
+      "subtitle": "",
+      "color": "#868FA8",
+      "feeCoefficient": 0.0695,
+      "bestBidQuote": {
+        "value": "0.0480",
+        "currency": "USD"
+      },
+      "bestAskQuote": {
+        "value": "0.0500",
+        "currency": "USD"
+      },
+      "titleShort": "Chicago White Sox",
+      "ep3SyncedAt": "2026-10-08T11:43:04Z",
+      "minimumTradeQty": 1,
+      "comboEnabled": false,
+      "politics": null
+    },
+    {
+      "id": "7913",
+      "question": "National League Champion",
+      "slug": "tec-mlb-nlchamp-2026-09-27-mil",
+      "endDate": "2026-11-06T21:20:09Z",
+      "category": "sports",
+      "startDate": "2026-03-19T14:32:23Z",
+      "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/us-logos/mlb/Polymarket_MIL.png",
+      "description": "Will Milwaukee Brewers win the 2026 National League pennant, scheduled for October 23, 2026? If the event is postponed, delayed, or rescheduled, the expiration date will be amended to align with the new event date. If the event is not rescheduled within two weeks of the originally scheduled date, the instrument may settle at last fair market prices. If the event is canceled, the instrument may settle at last fair market prices. If the team is eliminated from contention, the instrument will settle to $0.00.",
+      "active": true,
+      "marketType": "futures",
+      "closed": false,
+      "createdAt": "2026-03-19T14:41:53Z",
+      "updatedAt": "2026-10-10T21:27:12Z",
+      "archived": false,
+      "orderPriceMinTickSize": 0.001,
+      "gameStartTime": "2026-09-07T00:00:00Z",
+      "manualActivation": false,
+      "sportsMarketType": "futures",
+      "marketSides": [
+        {
+          "id": "15825",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-nlchamp-2026-09-27-mil",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "Yes",
+          "price": "0.4050",
+          "marketId": 7913,
+          "long": true,
+          "teamId": 3016,
+          "team": {
+            "id": 3016,
+            "name": "Milwaukee Brewers",
+            "abbreviation": "mil",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "alias": "Milwaukee Brewers",
+            "safeName": "Brewers",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#BD9000",
+            "providerId": 32,
+            "ordering": "away",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "displayAbbreviation": "MIL",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "dcfd5266-00ce-442c-bc09-264cd20cf455"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "32"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-dark-df69cd6a2a.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-dark-df69cd6a2a.png",
+            "color": {
+              "light": "#BD9000",
+              "dark": "#BD9000"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.4050",
+            "currency": "USD"
+          },
+          "tradable": true
+        },
+        {
+          "id": "15826",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-nlchamp-2026-09-27-mil",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "No",
+          "price": "0.601",
+          "marketId": 7913,
+          "long": false,
+          "teamId": 3016,
+          "team": {
+            "id": 3016,
+            "name": "Milwaukee Brewers",
+            "abbreviation": "mil",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "alias": "Milwaukee Brewers",
+            "safeName": "Brewers",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#BD9000",
+            "providerId": 32,
+            "ordering": "home",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "displayAbbreviation": "MIL",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "dcfd5266-00ce-442c-bc09-264cd20cf455"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "32"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-dark-df69cd6a2a.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-dark-df69cd6a2a.png",
+            "color": {
+              "light": "#BD9000",
+              "dark": "#BD9000"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.601",
+            "currency": "USD"
+          },
+          "tradable": true
+        }
+      ],
+      "outcomes": "[\"No\",\"Yes\"]",
+      "outcomePrices": "[\"0.4050\",\"0.601\"]",
+      "ep3Status": "OPEN",
+      "status": "MARKET_STATUS_OPEN",
+      "assetPriceTerms": null,
+      "sportsMarketTypeV2": "SPORTS_MARKET_TYPE_FUTURE",
+      "hidden": false,
+      "tags": [],
+      "title": "Milwaukee Brewers",
+      "subtitle": "",
+      "color": "#BD9000",
+      "feeCoefficient": 0.0695,
+      "bestBidQuote": {
+        "value": "0.3990",
+        "currency": "USD"
+      },
+      "bestAskQuote": {
+        "value": "0.4050",
+        "currency": "USD"
+      },
+      "titleShort": "Milwaukee Brewers",
+      "ep3SyncedAt": "2026-10-08T11:43:04Z",
+      "minimumTradeQty": 1,
+      "comboEnabled": false,
+      "politics": null
+    },
+    {
+      "id": "7927",
+      "question": "World Series Champion",
+      "slug": "tec-mlb-champ-2026-09-27-cle",
+      "endDate": "2026-11-06T21:20:09Z",
+      "category": "sports",
+      "startDate": "2026-03-19T14:32:24Z",
+      "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/us-logos/mlb/Polymarket_CLE.png",
+      "description": "Will Cleveland Guardians win the 2026 MLB World Series, scheduled for October 23-November 1, 2026? If the event is postponed, delayed, or rescheduled, the expiration date will be amended to align with the new event date. If the event is not rescheduled within two weeks of the originally scheduled date, the instrument may settle at last fair market prices. If the event is canceled, the instrument may settle at last fair market prices. If the team is eliminated from contention, the instrument will settle to $0.00.",
+      "active": true,
+      "marketType": "futures",
+      "closed": false,
+      "createdAt": "2026-03-19T14:41:53Z",
+      "updatedAt": "2026-10-10T21:11:19Z",
+      "archived": false,
+      "orderPriceMinTickSize": 0.001,
+      "gameStartTime": "2026-09-07T00:00:00Z",
+      "manualActivation": false,
+      "sportsMarketType": "futures",
+      "marketSides": [
+        {
+          "id": "15853",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-champ-2026-09-27-cle",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "Yes",
+          "price": "0.0630",
+          "marketId": 7927,
+          "long": true,
+          "teamId": 3007,
+          "team": {
+            "id": 3007,
+            "name": "Cleveland Guardians",
+            "abbreviation": "cle",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-light-41e442f801.png",
+            "alias": "Cleveland Guardians",
+            "safeName": "Guardians",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#F60017",
+            "providerId": 10,
+            "ordering": "away",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-light-41e442f801.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-light-41e442f801.png",
+            "displayAbbreviation": "CLE",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "80715d0d-0d2a-450f-a970-1b9a3b18c7e7"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "10"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-dark-1f6e8ef04a.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-dark-1f6e8ef04a.png",
+            "color": {
+              "light": "#F60017",
+              "dark": "#F60017"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.0630",
+            "currency": "USD"
+          },
+          "tradable": true
+        },
+        {
+          "id": "15854",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-champ-2026-09-27-cle",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "No",
+          "price": "0.938",
+          "marketId": 7927,
+          "long": false,
+          "teamId": 3007,
+          "team": {
+            "id": 3007,
+            "name": "Cleveland Guardians",
+            "abbreviation": "cle",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-light-41e442f801.png",
+            "alias": "Cleveland Guardians",
+            "safeName": "Guardians",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#F60017",
+            "providerId": 10,
+            "ordering": "home",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-light-41e442f801.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-light-41e442f801.png",
+            "displayAbbreviation": "CLE",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "80715d0d-0d2a-450f-a970-1b9a3b18c7e7"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "10"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-dark-1f6e8ef04a.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/cleveland-dark-1f6e8ef04a.png",
+            "color": {
+              "light": "#F60017",
+              "dark": "#F60017"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.938",
+            "currency": "USD"
+          },
+          "tradable": true
+        }
+      ],
+      "outcomes": "[\"No\",\"Yes\"]",
+      "outcomePrices": "[\"0.0630\",\"0.938\"]",
+      "ep3Status": "OPEN",
+      "status": "MARKET_STATUS_OPEN",
+      "assetPriceTerms": null,
+      "sportsMarketTypeV2": "SPORTS_MARKET_TYPE_FUTURE",
+      "hidden": false,
+      "tags": [],
+      "title": "Cleveland Guardians",
+      "subtitle": "",
+      "color": "#F60017",
+      "feeCoefficient": 0.0695,
+      "bestBidQuote": {
+        "value": "0.0620",
+        "currency": "USD"
+      },
+      "bestAskQuote": {
+        "value": "0.0630",
+        "currency": "USD"
+      },
+      "titleShort": "Cleveland Guardians",
+      "ep3SyncedAt": "2026-10-08T11:43:04Z",
+      "minimumTradeQty": 1,
+      "comboEnabled": false,
+      "politics": null
+    },
+    {
+      "id": "7930",
+      "question": "World Series Champion",
+      "slug": "tec-mlb-champ-2026-09-27-mil",
+      "endDate": "2026-11-06T21:20:09Z",
+      "category": "sports",
+      "startDate": "2026-03-19T14:32:24Z",
+      "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/us-logos/mlb/Polymarket_MIL.png",
+      "description": "Will Milwaukee Brewers win the 2026 MLB World Series, scheduled for October 23-November 1, 2026? If the event is postponed, delayed, or rescheduled, the expiration date will be amended to align with the new event date. If the event is not rescheduled within two weeks of the originally scheduled date, the instrument may settle at last fair market prices. If the event is canceled, the instrument may settle at last fair market prices. If the team is eliminated from contention, the instrument will settle to $0.00.",
+      "active": true,
+      "marketType": "futures",
+      "closed": false,
+      "createdAt": "2026-03-19T14:41:53Z",
+      "updatedAt": "2026-10-10T21:27:12Z",
+      "archived": false,
+      "orderPriceMinTickSize": 0.001,
+      "gameStartTime": "2026-09-07T00:00:00Z",
+      "manualActivation": false,
+      "sportsMarketType": "futures",
+      "marketSides": [
+        {
+          "id": "15859",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-champ-2026-09-27-mil",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "Yes",
+          "price": "0.2420",
+          "marketId": 7930,
+          "long": true,
+          "teamId": 3016,
+          "team": {
+            "id": 3016,
+            "name": "Milwaukee Brewers",
+            "abbreviation": "mil",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "alias": "Milwaukee Brewers",
+            "safeName": "Brewers",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#BD9000",
+            "providerId": 32,
+            "ordering": "away",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "displayAbbreviation": "MIL",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "dcfd5266-00ce-442c-bc09-264cd20cf455"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "32"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-dark-df69cd6a2a.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-dark-df69cd6a2a.png",
+            "color": {
+              "light": "#BD9000",
+              "dark": "#BD9000"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.2420",
+            "currency": "USD"
+          },
+          "tradable": true
+        },
+        {
+          "id": "15860",
+          "marketSideType": "MARKET_SIDE_TYPE_INSTRUMENT",
+          "identifier": "tec-mlb-champ-2026-09-27-mil",
+          "createdAt": "2026-03-19T14:41:53Z",
+          "updatedAt": "2026-03-19T14:41:53Z",
+          "description": "No",
+          "price": "0.759",
+          "marketId": 7930,
+          "long": false,
+          "teamId": 3016,
+          "team": {
+            "id": 3016,
+            "name": "Milwaukee Brewers",
+            "abbreviation": "mil",
+            "league": "mlb",
+            "record": "",
+            "logo": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "alias": "Milwaukee Brewers",
+            "safeName": "Brewers",
+            "homeIcon": "",
+            "awayIcon": "",
+            "colorPrimary": "#BD9000",
+            "providerId": 32,
+            "ordering": "home",
+            "longIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "shortIcon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-light-95f2b5f4a8.png",
+            "displayAbbreviation": "MIL",
+            "conference": "",
+            "providerIds": [
+              {
+                "provider": "PROVIDER_SPORTRADAR",
+                "providerId": "dcfd5266-00ce-442c-bc09-264cd20cf455"
+              },
+              {
+                "provider": "PROVIDER_SPORTSDATAIO",
+                "providerId": "32"
+              }
+            ],
+            "longIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-dark-df69cd6a2a.png",
+            "shortIconDark": "https://polymarket-upload.s3.us-east-2.amazonaws.com/milwaukee-dark-df69cd6a2a.png",
+            "color": {
+              "light": "#BD9000",
+              "dark": "#BD9000"
+            },
+            "imageDisplayType": "IMAGE_DISPLAY_TYPE_LOGO"
+          },
+          "quote": {
+            "value": "0.759",
+            "currency": "USD"
+          },
+          "tradable": true
+        }
+      ],
+      "outcomes": "[\"Yes\",\"No\"]",
+      "outcomePrices": "[\"0.2420\",\"0.759\"]",
+      "ep3Status": "OPEN",
+      "status": "MARKET_STATUS_OPEN",
+      "assetPriceTerms": null,
+      "sportsMarketTypeV2": "SPORTS_MARKET_TYPE_FUTURE",
+      "hidden": false,
+      "tags": [],
+      "title": "Milwaukee Brewers",
+      "subtitle": "",
+      "color": "#BD9000",
+      "feeCoefficient": 0.0695,
+      "bestBidQuote": {
+        "value": "0.2410",
+        "currency": "USD"
+      },
+      "bestAskQuote": {
+        "value": "0.2420",
+        "currency": "USD"
+      },
+      "titleShort": "Milwaukee Brewers",
+      "ep3SyncedAt": "2026-10-08T11:43:04Z",
+      "minimumTradeQty": 1,
+      "comboEnabled": false,
+      "politics": null
+    }
+  ]
+}

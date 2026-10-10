@@ -1,0 +1,201 @@
+{
+  "marketData": {
+    "marketSlug": "tec-mlb-nlchamp-2026-09-27-lad",
+    "bids": [
+      {
+        "px": {
+          "value": "0.5950",
+          "currency": "USD"
+        },
+        "qty": "12492.0000"
+      },
+      {
+        "px": {
+          "value": "0.5910",
+          "currency": "USD"
+        },
+        "qty": "81.0000"
+      },
+      {
+        "px": {
+          "value": "0.5900",
+          "currency": "USD"
+        },
+        "qty": "10075.0000"
+      },
+      {
+        "px": {
+          "value": "0.4580",
+          "currency": "USD"
+        },
+        "qty": "157.0000"
+      },
+      {
+        "px": {
+          "value": "0.4570",
+          "currency": "USD"
+        },
+        "qty": "4982.0000"
+      },
+      {
+        "px": {
+          "value": "0.2790",
+          "currency": "USD"
+        },
+        "qty": "733.0000"
+      },
+      {
+        "px": {
+          "value": "0.0010",
+          "currency": "USD"
+        },
+        "qty": "250000.0000"
+      }
+    ],
+    "offers": [
+      {
+        "px": {
+          "value": "0.5960",
+          "currency": "USD"
+        },
+        "qty": "742.0000"
+      },
+      {
+        "px": {
+          "value": "0.5990",
+          "currency": "USD"
+        },
+        "qty": "297.0000"
+      },
+      {
+        "px": {
+          "value": "0.6000",
+          "currency": "USD"
+        },
+        "qty": "1523.0000"
+      },
+      {
+        "px": {
+          "value": "0.6010",
+          "currency": "USD"
+        },
+        "qty": "2663.0000"
+      },
+      {
+        "px": {
+          "value": "0.6020",
+          "currency": "USD"
+        },
+        "qty": "4186.0000"
+      },
+      {
+        "px": {
+          "value": "0.6050",
+          "currency": "USD"
+        },
+        "qty": "50.0000"
+      },
+      {
+        "px": {
+          "value": "0.6070",
+          "currency": "USD"
+        },
+        "qty": "172.0000"
+      },
+      {
+        "px": {
+          "value": "0.6100",
+          "currency": "USD"
+        },
+        "qty": "1000.0000"
+      },
+      {
+        "px": {
+          "value": "0.6140",
+          "currency": "USD"
+        },
+        "qty": "40.0000"
+      },
+      {
+        "px": {
+          "value": "0.6150",
+          "currency": "USD"
+        },
+        "qty": "9138.0000"
+      },
+      {
+        "px": {
+          "value": "0.9900",
+          "currency": "USD"
+        },
+        "qty": "25007.0000"
+      },
+      {
+        "px": {
+          "value": "0.9990",
+          "currency": "USD"
+        },
+        "qty": "249999.0000"
+      }
+    ],
+    "state": "MARKET_STATE_OPEN",
+    "stats": {
+      "openPx": {
+        "value": "0.3990",
+        "currency": "USD"
+      },
+      "closePx": {
+        "value": "0.4000",
+        "currency": "USD"
+      },
+      "lowPx": {
+        "value": "0.0520",
+        "currency": "USD"
+      },
+      "highPx": {
+        "value": "0.7790",
+        "currency": "USD"
+      },
+      "lastTradePx": {
+        "value": "0.5960",
+        "currency": "USD"
+      },
+      "settlementPx": {
+        "value": "0.4000",
+        "currency": "USD"
+      },
+      "sharesTraded": "1252229.0000",
+      "notionalTraded": {
+        "value": "530042.5700",
+        "currency": "USD"
+      },
+      "lastTradeQty": "3.0000",
+      "openInterest": "113631.0000",
+      "openSetTime": "2026-09-12T21:15:35.566995740Z",
+      "closeSetTime": "2026-09-12T21:00:37.911012437Z",
+      "highSetTime": "2026-10-08T02:24:47.703222076Z",
+      "lowSetTime": "2026-09-30T03:02:11.572964651Z",
+      "lastTradeSetTime": "2026-10-10T20:17:05.973581444Z",
+      "settlementSetTime": "2026-09-12T21:00:37.911157581Z",
+      "openInterestSetTime": "2026-10-10T20:17:06.013230132Z",
+      "notionalSetTime": "2026-10-10T20:17:05.973581444Z",
+      "settlementPriceCalculationMethod": "SETTLEMENT_PRICE_CALCULATION_METHOD_EVENT_TIER_2",
+      "currentPx": {
+        "value": "0.5955",
+        "currency": "USD"
+      },
+      "lastPriceSample": {
+        "longPx": {
+          "value": "0.5960",
+          "currency": "USD"
+        },
+        "shortPx": {
+          "value": "0.404",
+          "currency": "USD"
+        },
+        "ts": "2026-10-10T21:27:52.110115848Z"
+      }
+    },
+    "transactTime": "2026-10-10T21:27:52.110115848Z"
+  }
+}
