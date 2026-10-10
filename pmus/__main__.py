@@ -3,6 +3,10 @@ import sys
 from decimal import Decimal
 
 from pmus.config import Settings
+from pmus.engine import ShadowEngine
+from pmus.ledger import Ledger
+from pmus.logging_setup import setup_logging
+from pmus.report import generate_report
 from pmus.venue import PublicGatewayClient
 
 def probe_command(settings: Settings) -> None:
@@ -42,6 +46,7 @@ def main() -> None:
     run_parser = subparsers.add_parser("run", help="Run bot engine")
     run_parser.add_argument("--mode", choices=["shadow", "live"], default="shadow", help="Run mode")
     run_parser.add_argument("--minutes", type=int, default=10, help="Run duration in minutes")
+    run_parser.add_argument("--seconds", type=int, default=None, help="Run duration in seconds")
 
     report_parser = subparsers.add_parser("report", help="Generate performance report")
     report_parser.add_argument("--since", default="1h", help="Time window (e.g. 1h, 24h)")
@@ -53,10 +58,16 @@ def main() -> None:
         probe_command(settings)
     elif args.command == "run":
         if args.mode == "live":
-            sys.exit("Error: Live trading is not implemented in this phase.")
-        sys.exit("Error: Engine run will be wired in Phase 3.")
+            sys.exit("Error: Live order placement is not implemented in this phase.")
+        logger = setup_logging(logs_dir=settings.logs_dir)
+        ledger = Ledger(settings.data_dir / "ledger.db")
+        client = PublicGatewayClient(base_url=settings.gateway_url)
+        engine = ShadowEngine(settings=settings, ledger=ledger, client=client, logger=logger)
+        duration = args.seconds if args.seconds is not None else (args.minutes * 60)
+        engine.run(duration_seconds=duration)
     elif args.command == "report":
-        sys.exit("Error: Reporting will be wired in Phase 3.")
+        ledger = Ledger(settings.data_dir / "ledger.db")
+        print(generate_report(ledger, since_str=args.since))
 
 if __name__ == "__main__":
     main()
