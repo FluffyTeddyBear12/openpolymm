@@ -1,3 +1,4 @@
 polymarket-us>=2.4.1
 requests>=2.31.0
 pytest>=8.0.0
+tzdata>=2024.1

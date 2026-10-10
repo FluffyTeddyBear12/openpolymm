@@ -1,17 +1,36 @@
 import random
 import time
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
 import requests
 
-from pmus.models import Book, IncentiveWindow, Level, Market
+from pmus.models import Book, IncentiveWindow, Level, LiveOrder, Market, Position, Quote
 
 try:
     from polymarket_us import PolymarketUS
+    from polymarket_us.types.orders import (
+        CancelAllOrdersParams,
+        CancelOrderListItem,
+        CancelOrderListParams,
+        ClosePositionParams,
+        CreateOrderListParams,
+        CreateOrderParams,
+    )
 except ImportError:
     PolymarketUS = None
+    CancelAllOrdersParams = None
+    CancelOrderListItem = None
+    CancelOrderListParams = None
+    ClosePositionParams = None
+    CreateOrderListParams = None
+    CreateOrderParams = None
+
+def chunk_list(items: list[Any], chunk_size: int = 20):
+    for i in range(0, len(items), chunk_size):
+        yield items[i : i + chunk_size]
 
 class PublicGatewayClient:
     def __init__(
@@ -204,13 +223,128 @@ class PublicGatewayClient:
         return results
 
 class AuthenticatedClient:
-    def __init__(self, key_id: str = "", secret_key: str = ""):
+    def __init__(self, key_id: str = "", secret_key: str = "", sdk: Any = None):
         self.key_id = key_id
         self.secret_key = secret_key
-        self._sdk = None
-        if key_id and secret_key and PolymarketUS is not None:
+        if sdk is not None:
+            self._sdk = sdk
+        elif key_id and secret_key and PolymarketUS is not None:
             self._sdk = PolymarketUS(key_id=key_id, secret_key=secret_key)
+        else:
+            self._sdk = None
 
     @property
     def is_available(self) -> bool:
         return self._sdk is not None
+
+    def create_orders_batch(
+        self,
+        quotes: list[Quote],
+        tick_map: dict[str, Decimal] | None = None,
+        min_qty_map: dict[str, Decimal] | None = None,
+    ) -> list[LiveOrder]:
+        if not self.is_available:
+            raise RuntimeError("Polymarket US authenticated SDK not configured")
+
+        tick_map = tick_map or {}
+        min_qty_map = min_qty_map or {}
+        created_live_orders: list[LiveOrder] = []
+
+        for chunk in chunk_list(quotes, 20):
+            payload_orders = []
+            order_refs = []
+            for q in chunk:
+                tick = tick_map.get(q.slug, Decimal("0.001"))
+                min_qty = min_qty_map.get(q.slug, Decimal("1"))
+                rounded_px = (q.price // tick) * tick
+                rounded_qty = (q.qty // min_qty) * min_qty
+
+                order_id = str(uuid.uuid4())
+                order_refs.append((order_id, q.slug, q.side, rounded_px, rounded_qty))
+
+                param = {
+                    "marketSlug": q.slug,
+                    "intent": q.side,
+                    "type": "ORDER_TYPE_LIMIT",
+                    "price": float(rounded_px),
+                    "quantity": float(rounded_qty),
+                    "tif": "GTC",
+                    "participateDontInitiate": True,
+                    "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_AUTOMATIC",
+                }
+                payload_orders.append(param)
+
+            resp = self._sdk.orders.create_many({"orders": payload_orders})
+            assigned_ids = getattr(resp, "createdOrderIds", None) or getattr(resp, "created_order_ids", None)
+            if isinstance(resp, dict):
+                assigned_ids = resp.get("createdOrderIds") or resp.get("created_order_ids")
+
+            for idx, (fallback_id, slug, side, px, qty) in enumerate(order_refs):
+                actual_id = assigned_ids[idx] if (assigned_ids and idx < len(assigned_ids)) else fallback_id
+                created_live_orders.append(
+                    LiveOrder(
+                        order_id=str(actual_id),
+                        slug=slug,
+                        side=side,
+                        price=px,
+                        qty_open=qty,
+                    )
+                )
+
+        return created_live_orders
+
+    def cancel_orders_batch(self, orders: list[LiveOrder]) -> list[str]:
+        if not self.is_available:
+            raise RuntimeError("Polymarket US authenticated SDK not configured")
+
+        canceled_ids: list[str] = []
+        for chunk in chunk_list(orders, 20):
+            payload = [{"marketSlug": o.slug, "orderId": o.order_id} for o in chunk]
+            self._sdk.orders.cancel_many({"orders": payload})
+            canceled_ids.extend([o.order_id for o in chunk])
+        return canceled_ids
+
+    def cancel_all_scoped(self, slugs: list[str]) -> None:
+        if not self.is_available:
+            raise RuntimeError("Polymarket US authenticated SDK not configured")
+        self._sdk.orders.cancel_all({"slugs": slugs})
+
+    def close_position(self, slug: str) -> None:
+        if not self.is_available:
+            raise RuntimeError("Polymarket US authenticated SDK not configured")
+        self._sdk.orders.close_position(
+            {
+                "marketSlug": slug,
+                "manualOrderIndicator": "MANUAL_ORDER_INDICATOR_AUTOMATIC",
+            }
+        )
+
+    def get_buying_power(self) -> Decimal:
+        if not self.is_available:
+            raise RuntimeError("Polymarket US authenticated SDK not configured")
+        resp = self._sdk.account.balances()
+        bp = getattr(resp, "buying_power", None) or getattr(resp, "buyingPower", None)
+        if isinstance(resp, dict):
+            bp = resp.get("buyingPower") or resp.get("buying_power")
+        if bp is not None:
+            return Decimal(str(bp))
+        return Decimal("0")
+
+    def get_positions(self) -> list[Position]:
+        if not self.is_available:
+            raise RuntimeError("Polymarket US authenticated SDK not configured")
+        resp = self._sdk.portfolio.positions()
+        pos_list = getattr(resp, "positions", [])
+        if isinstance(resp, dict):
+            pos_list = resp.get("positions", [])
+        results: list[Position] = []
+        for p in pos_list:
+            slug = getattr(p, "market_slug", "") or getattr(p, "marketSlug", "")
+            net_qty = Decimal(str(getattr(p, "net_qty", getattr(p, "netQty", "0"))))
+            avg_price = Decimal(str(getattr(p, "avg_price", getattr(p, "avgPrice", "0"))))
+            if isinstance(p, dict):
+                slug = p.get("marketSlug", "")
+                net_qty = Decimal(str(p.get("netQty", "0")))
+                avg_price = Decimal(str(p.get("avgPrice", "0")))
+            results.append(Position(slug=slug, net_qty=net_qty, avg_price=avg_price))
+        return results

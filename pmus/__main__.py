@@ -3,11 +3,12 @@ import sys
 from decimal import Decimal
 
 from pmus.config import Settings
-from pmus.engine import ShadowEngine
+from pmus.engine import LiveEngine, ShadowEngine
 from pmus.ledger import Ledger
 from pmus.logging_setup import setup_logging
 from pmus.report import generate_report
-from pmus.venue import PublicGatewayClient
+from pmus.risk import RiskManager
+from pmus.venue import AuthenticatedClient, PublicGatewayClient
 
 def probe_command(settings: Settings) -> None:
     client = PublicGatewayClient(base_url=settings.gateway_url)
@@ -45,11 +46,15 @@ def main() -> None:
 
     run_parser = subparsers.add_parser("run", help="Run bot engine")
     run_parser.add_argument("--mode", choices=["shadow", "live"], default="shadow", help="Run mode")
+    run_parser.add_argument("--confirm-live", action="store_true", help="Explicit confirmation required to run live")
     run_parser.add_argument("--minutes", type=int, default=10, help="Run duration in minutes")
     run_parser.add_argument("--seconds", type=int, default=None, help="Run duration in seconds")
 
     report_parser = subparsers.add_parser("report", help="Generate performance report")
     report_parser.add_argument("--since", default="1h", help="Time window (e.g. 1h, 24h)")
+
+    flatten_parser = subparsers.add_parser("flatten", help="Cancel open orders and close positions")
+    flatten_parser.add_argument("--slug", help="Optional specific market slug to flatten")
 
     args = parser.parse_args()
     settings = Settings.from_env()
@@ -57,18 +62,53 @@ def main() -> None:
     if args.command == "probe":
         probe_command(settings)
     elif args.command == "run":
-        if args.mode == "live":
-            sys.exit("Error: Live order placement is not implemented in this phase.")
         logger = setup_logging(logs_dir=settings.logs_dir)
         ledger = Ledger(settings.data_dir / "ledger.db")
-        client = PublicGatewayClient(base_url=settings.gateway_url)
-        engine = ShadowEngine(settings=settings, ledger=ledger, client=client, logger=logger)
+        public_client = PublicGatewayClient(base_url=settings.gateway_url)
         duration = args.seconds if args.seconds is not None else (args.minutes * 60)
-        engine.run(duration_seconds=duration)
+
+        if args.mode == "live":
+            if settings.mode != "live" or not args.confirm_live:
+                sys.exit("Error: Live mode requires both PMUS_MODE=live environment variable and --confirm-live flag.")
+            if not settings.key_id or not settings.secret_key:
+                sys.exit("Error: PMUS_KEY_ID and PMUS_SECRET_KEY are required for live mode.")
+
+            auth_client = AuthenticatedClient(key_id=settings.key_id, secret_key=settings.secret_key)
+            risk_manager = RiskManager(settings)
+            engine = LiveEngine(
+                settings=settings,
+                ledger=ledger,
+                public_client=public_client,
+                auth_client=auth_client,
+                risk_manager=risk_manager,
+                logger=logger,
+            )
+            engine.run(duration_seconds=duration)
+        else:
+            engine = ShadowEngine(settings=settings, ledger=ledger, client=public_client, logger=logger)
+            engine.run(duration_seconds=duration)
+
     elif args.command == "report":
         ledger = Ledger(settings.data_dir / "ledger.db")
         client = PublicGatewayClient(base_url=settings.gateway_url)
         print(generate_report(ledger, since_str=args.since, client=client))
+
+    elif args.command == "flatten":
+        if not settings.key_id or not settings.secret_key:
+            sys.exit("Error: PMUS_KEY_ID and PMUS_SECRET_KEY are required to flatten live positions.")
+        auth_client = AuthenticatedClient(key_id=settings.key_id, secret_key=settings.secret_key)
+        if args.slug:
+            auth_client.cancel_all_scoped([args.slug])
+            auth_client.close_position(args.slug)
+            print(f"Flattened market {args.slug}")
+        else:
+            positions = auth_client.get_positions()
+            slugs = [p.slug for p in positions]
+            if slugs:
+                auth_client.cancel_all_scoped(slugs)
+                for s in slugs:
+                    auth_client.close_position(s)
+            print(f"Flattened all {len(slugs)} active markets")
 
 if __name__ == "__main__":
     main()
