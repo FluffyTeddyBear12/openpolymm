@@ -5188,6 +5188,67 @@ class LiveExecutor(PaperSimulator):
         except Exception as e:
             logger.warning(f"Error in post-trade collateral securing: {e}")
 
+    def execute_negrisk_basket(self, opp: dict) -> bool:
+        """
+        Executes multi-outcome Neg-Risk basket parity arbitrage via ConcurrentLegExecutor.
+        Wired directly to simultaneous batch execution engine with collateral sync and risk management.
+        """
+        exec_mode = self.dash_state.state.get("execution_mode", "Paper Trading") if self.dash_state else "Paper Trading"
+        if self.client is None or exec_mode != "Live Trading":
+            return super().execute_negrisk_basket(opp)
+
+        basket_id = opp["neg_risk_market_id"]
+        outcomes = opp.get("outcomes", [])
+        num_outcomes = opp.get("num_outcomes", len(outcomes))
+        shares = float(opp.get("max_shares", 5.0))
+        min_edge = float(opp.get("edge", self.min_edge))
+
+        logger.info(f"⚡ [NEG-RISK BATCH DISPATCH] Firing simultaneous batch across {num_outcomes} legs for basket {basket_id[:8]}... ({shares:.1f} shares)")
+        if self.dash_state and hasattr(self.dash_state, "add_activity_log"):
+            self.dash_state.add_activity_log(
+                f"⚡ [NEG-RISK DISPATCH] Batch FOK dispatched for {basket_id[:8]} ({num_outcomes} outcomes, {shares:.1f} shares)"
+            )
+
+        if not getattr(self, "concurrent_leg_executor", None):
+            logger.warning("ConcurrentLegExecutor not initialized. Falling back to paper simulation.")
+            return super().execute_negrisk_basket(opp)
+
+        avail_cash = getattr(self.risk, "available_cash", None) if self.risk else None
+        ok, action, details = self.concurrent_leg_executor.execute_negrisk_batch(
+            outcomes=outcomes,
+            shares=shares,
+            neg_risk_market_id=basket_id,
+            min_edge=min_edge,
+            available_cash=avail_cash,
+        )
+
+        if ok:
+            total_cost = float(details.get("total_cost", 0.0))
+            profit = float(details.get("profit", 0.0))
+            if self.risk:
+                self.risk.open_position(basket_id, total_cost, profit)
+            time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if self.dash_state and hasattr(self.dash_state, "add_trade"):
+                self.dash_state.add_trade(basket_id, round(total_cost, 2), round(profit, 4), time_str)
+            self.on_trade_executed(basket_id, total_cost, profit)
+            if hasattr(self, "sync_live_balance"):
+                self.sync_live_balance()
+            return True
+        else:
+            if action == "BASKET_KILLED_ZERO_LOSS":
+                logger.info(f"Neg-risk basket {basket_id} cleanly killed with zero loss.")
+                if not hasattr(self, "market_cooldowns"):
+                    self.market_cooldowns = {}
+                self.market_cooldowns[basket_id] = time.time() + 5.0
+            elif action == "ROLLBACK_UNWOUND":
+                logger.warning(f"Neg-risk basket {basket_id} asymmetric fill unwound: {details}")
+                if not hasattr(self, "market_cooldowns"):
+                    self.market_cooldowns = {}
+                self.market_cooldowns[basket_id] = time.time() + 30.0
+            if hasattr(self, "sync_live_balance"):
+                self.sync_live_balance()
+            return False
+
     def execute_arbitrage(self, opp: dict) -> bool:
         exec_mode = self.dash_state.state.get("execution_mode", "Paper Trading") if self.dash_state else "Paper Trading"
         if self.client is None or exec_mode != "Live Trading":

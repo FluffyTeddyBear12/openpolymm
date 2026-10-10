@@ -172,7 +172,8 @@ class NegRiskBasketScanner:
             return None
 
         outcomes = self.baskets[neg_risk_market_id]
-        if not outcomes or len(outcomes) < 2:
+        # Enforce optimal cardinality filter (2 to 8 outcomes)
+        if not outcomes or not (2 <= len(outcomes) <= 8):
             return None
 
         sum_ask = 0.0
@@ -265,6 +266,13 @@ class NegRiskBasketScanner:
         if edge < min_edge:
             return None
 
+        # Calibrate minimum shares with $4.00 floor and 5.0 CLOB shares floor
+        calibrated_min_shares = max(5.0, float(math.ceil(4.00 / max(0.01, sum_ask))))
+
+        # Pre-flight depth bottleneck check
+        if min_depth < calibrated_min_shares:
+            return None
+
         max_shares = min_depth
         trade_size = max_shares * sum_ask
         expected_profit = edge * max_shares
@@ -276,6 +284,7 @@ class NegRiskBasketScanner:
             "sum_ask": round(sum_ask, 4),
             "total_cost": round(total_cost, 4),
             "edge": round(edge, 4),
+            "calibrated_min_shares": calibrated_min_shares,
             "max_shares": max_shares,
             "trade_size": round(trade_size, 2),
             "expected_profit": round(expected_profit, 4),
@@ -293,8 +302,65 @@ class NegRiskAdapter:
     NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
     COLLATERAL_TOKEN = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 
-    def __init__(self, ctf_address: Optional[str] = None):
+    def __init__(self, ctf_address: Optional[str] = None, neg_risk_adapter_address: Optional[str] = None):
         self.ctf_address = ctf_address or self.CTF_EXCHANGE_ADDRESS
+        self.neg_risk_adapter_address = neg_risk_adapter_address or self.NEG_RISK_ADAPTER_ADDRESS
+
+    def format_convert_yes_transaction(
+        self,
+        market_id: str,
+        num_outcomes: int,
+        amount_shares: float,
+        index_set: Optional[int] = None,
+    ) -> dict:
+        """
+        Prepares contract call dictionary for Polymarket NegRiskAdapter:
+            convertYESPositions(bytes32 marketId, uint256 indexSet, uint256 amount)
+        Target contract: 0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296
+        indexSet = (1 << num_outcomes) - 1 (bitmask for all N outcomes)
+        amount in 6-decimal raw units (USDC standard)
+        """
+        mid_hex = market_id.lower()
+        if mid_hex.startswith("0x"):
+            mid_hex = mid_hex[2:]
+        mid_bytes32 = "0x" + mid_hex.rjust(64, "0")
+
+        if index_set is None:
+            index_set = (1 << num_outcomes) - 1
+
+        amount_raw = int(round(amount_shares * 1_000_000))
+
+        # Selector for convertYESPositions(bytes32,uint256,uint256) is 0x327ddd2b
+        selector = "0x327ddd2b"
+        calldata = None
+        try:
+            from web3 import Web3
+            comp_sel = Web3.keccak(text="convertYESPositions(bytes32,uint256,uint256)")[:4].hex()
+            if not comp_sel.startswith("0x"):
+                comp_sel = "0x" + comp_sel
+            selector = comp_sel
+            from eth_abi import encode
+            mid_b = bytes.fromhex(mid_hex.rjust(64, "0"))
+            encoded = encode(["bytes32", "uint256", "uint256"], [mid_b, index_set, amount_raw]).hex()
+            calldata = selector + encoded
+        except Exception:
+            arg1 = mid_hex.rjust(64, "0")
+            arg2 = hex(index_set)[2:].rjust(64, "0")
+            arg3 = hex(amount_raw)[2:].rjust(64, "0")
+            calldata = selector + arg1 + arg2 + arg3
+
+        return {
+            "to": self.neg_risk_adapter_address,
+            "function": "convertYESPositions",
+            "market_id": mid_bytes32,
+            "index_set": index_set,
+            "amount_shares": amount_shares,
+            "amount_raw": amount_raw,
+            "calldata": calldata,
+            "data": calldata,
+            "value": 0,
+            "gas_limit": 300000,
+        }
 
     def format_merge_transaction(self, condition_id: str, amount_shares: float) -> dict:
         """
