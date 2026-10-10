@@ -1,0 +1,19 @@
+[Unit]
+Description=Polymarket US Trading Engine (pmus)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/polymarket_bot
+EnvironmentFile=-/etc/pmus.env
+ExecStart=/home/ubuntu/polymarket_bot/venv/bin/python -m pmus run --mode shadow
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
