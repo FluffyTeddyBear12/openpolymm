@@ -3,6 +3,7 @@ import time
 from decimal import Decimal
 
 from pmus.ledger import Ledger
+from pmus.venue import PublicGatewayClient
 
 def parse_duration_ms(since_str: str) -> int:
     match = re.match(r"^(\d+)([smhd])$", since_str.strip().lower())
@@ -12,7 +13,11 @@ def parse_duration_ms(since_str: str) -> int:
     multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400}
     return val * multipliers[unit] * 1000
 
-def generate_report(ledger: Ledger, since_str: str = "1h") -> str:
+def generate_report(
+    ledger: Ledger,
+    since_str: str = "1h",
+    client: PublicGatewayClient | None = None,
+) -> str:
     window_ms = parse_duration_ms(since_str)
     now_ms = int(time.time() * 1000)
     since_ms = now_ms - window_ms
@@ -43,12 +48,33 @@ def generate_report(ledger: Ledger, since_str: str = "1h") -> str:
 
     open_positions_count = 0
     total_inventory_cost = Decimal("0")
-    for p in positions:
-        if p.net_qty != 0:
-            open_positions_count += 1
-            total_inventory_cost += p.net_qty * p.avg_price
+    total_inventory_market_val = Decimal("0")
+    unrealized_mtm = Decimal("0")
 
-    net_pnl = realized_pnl + maker_rebates + lip_reward_total - taker_fees
+    for p in positions:
+        if p.net_qty != Decimal("0"):
+            open_positions_count += 1
+            cost = p.net_qty * p.avg_price
+            total_inventory_cost += cost
+
+            mid = p.avg_price
+            if client is not None:
+                try:
+                    bid, ask = client.fetch_bbo(p.slug)
+                    if bid and ask:
+                        mid = (bid.price + ask.price) / Decimal("2")
+                    elif bid:
+                        mid = bid.price
+                    elif ask:
+                        mid = ask.price
+                except Exception:
+                    pass
+
+            market_val = p.net_qty * mid
+            total_inventory_market_val += market_val
+            unrealized_mtm += (market_val - cost)
+
+    net_pnl = realized_pnl + maker_rebates + lip_reward_total - taker_fees + unrealized_mtm
 
     lines = [
         "============================================================",
@@ -62,10 +88,12 @@ def generate_report(ledger: Ledger, since_str: str = "1h") -> str:
         "------------------------------------------------------------",
         f"  LIP Snapshots Recorded:  {len(lip_snaps)}",
         f"  LIP Qualifying Seconds:  {qualifying_seconds}",
-        f"  Estimated LIP Accrued:   ${lip_reward_total:.4f}",
+        f"  Estimated LIP Accrued:   ${lip_reward_total:.4f} (estimate)",
         "------------------------------------------------------------",
         f"  Active Positions:        {open_positions_count}",
         f"  Inventory Net Cost:      ${total_inventory_cost:.2f}",
+        f"  Inventory Mark-to-Market:${total_inventory_market_val:.2f}",
+        f"  Unrealized MTM P&L:      ${unrealized_mtm:.4f}",
         "------------------------------------------------------------",
         f"  ESTIMATED NET EARNINGS:  ${net_pnl:.4f}",
         "============================================================",

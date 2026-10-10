@@ -67,7 +67,8 @@ def main() -> None:
         engine.run(duration_seconds=duration)
     elif args.command == "report":
         ledger = Ledger(settings.data_dir / "ledger.db")
-        print(generate_report(ledger, since_str=args.since))
+        client = PublicGatewayClient(base_url=settings.gateway_url)
+        print(generate_report(ledger, since_str=args.since, client=client))
 
 if __name__ == "__main__":
     main()

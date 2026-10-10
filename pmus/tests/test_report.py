@@ -2,7 +2,7 @@ from decimal import Decimal
 import pytest
 
 from pmus.ledger import Ledger
-from pmus.models import LipSnapshot, ShadowFill
+from pmus.models import LipSnapshot, Position, ShadowFill
 from pmus.report import generate_report, parse_duration_ms
 
 def test_parse_duration_ms():
@@ -42,7 +42,10 @@ def test_generate_report(tmp_path):
     )
     ledger.record_lip_snapshot(snap)
 
+    ledger.update_position(Position(slug="mkt-1", net_qty=Decimal("10"), avg_price=Decimal("0.50")))
+
     report_text = generate_report(ledger, since_str="1h")
     assert "Total Fills:             1" in report_text
     assert "Maker Rebates Earned:    $0.0312" in report_text
-    assert "Estimated LIP Accrued:   $0.0500" in report_text
+    assert "Estimated LIP Accrued:   $0.0500 (estimate)" in report_text
+    assert "Inventory Mark-to-Market:$5.00" in report_text

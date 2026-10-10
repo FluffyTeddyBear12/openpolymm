@@ -1,5 +1,6 @@
 import time
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from pmus.fees import maker_rebate
@@ -46,6 +47,7 @@ def estimate_lip_score(
     ts_ms: int | None = None,
 ) -> LipSnapshot:
     now_ms = ts_ms if ts_ms is not None else int(time.time() * 1000)
+    now_dt = datetime.fromtimestamp(now_ms / 1000.0, tz=timezone.utc)
 
     if window is None or window.status.lower() != "active" or not book.bids or not book.asks:
         return LipSnapshot(
@@ -75,20 +77,28 @@ def estimate_lip_score(
             reward_usd=Decimal("0"),
         )
 
+    if window.end is not None:
+        duration_seconds = Decimal(str(max(1, int((window.end - window.start).total_seconds()))))
+        in_time_window = window.start <= now_dt < window.end
+    else:
+        duration_seconds = Decimal("86400")
+        in_time_window = now_dt >= window.start
+
     bid_sap, total_bid_score = _walk_side_score(book.bids, best_bid, window.target_size, window.discount, tick, is_bid=True)
     ask_sap, total_ask_score = _walk_side_score(book.asks, best_ask, window.target_size, window.discount, tick, is_bid=False)
 
-    qualifies = True
-    if window.max_spread is not None:
-        if bid_sap is None or ask_sap is None:
-            qualifies = False
-        else:
-            midpoint = (bid_sap + ask_sap) / Decimal("2")
-            if (midpoint - bid_sap) > window.max_spread or (ask_sap - midpoint) > window.max_spread:
+    qualifies = in_time_window
+    if qualifies:
+        if window.max_spread is not None:
+            if bid_sap is None or ask_sap is None:
                 qualifies = False
-    else:
-        if total_bid_score <= 0 and total_ask_score <= 0:
-            qualifies = False
+            else:
+                midpoint = (bid_sap + ask_sap) / Decimal("2")
+                if (midpoint - bid_sap) > window.max_spread or (ask_sap - midpoint) > window.max_spread:
+                    qualifies = False
+        else:
+            if total_bid_score <= 0 and total_ask_score <= 0:
+                qualifies = False
 
     trader_bid_score = Decimal("0")
     trader_ask_score = Decimal("0")
@@ -96,11 +106,11 @@ def estimate_lip_score(
     for order in resting_orders:
         if order.slug != book.slug or order.qty_open <= Decimal("0"):
             continue
-        if order.side == "BUY_LONG":
+        if order.side in ("BUY_LONG", "BUY_SHORT"):
             if bid_sap is not None and order.price >= bid_sap:
                 ticks = max(0, int((best_bid - order.price) / tick))
                 trader_bid_score += (window.discount ** ticks) * order.qty_open
-        elif order.side == "SELL_LONG":
+        elif order.side in ("SELL_LONG", "SELL_SHORT"):
             if ask_sap is not None and order.price <= ask_sap:
                 ticks = max(0, int((order.price - best_ask) / tick))
                 trader_ask_score += (window.discount ** ticks) * order.qty_open
@@ -108,7 +118,7 @@ def estimate_lip_score(
     combined_bid_score = total_bid_score + trader_bid_score
     combined_ask_score = total_ask_score + trader_ask_score
 
-    pool_per_second = window.pool_usd / Decimal("86400")
+    pool_per_second = window.pool_usd / duration_seconds
     reward = Decimal("0")
 
     if qualifies:
@@ -137,7 +147,7 @@ def check_paper_fills(book: Book, open_orders: list[LiveOrder]) -> tuple[list[Sh
 
     for order in open_orders:
         filled = False
-        if order.side == "BUY_LONG" and best_ask is not None:
+        if order.side in ("BUY_LONG", "BUY_SHORT") and best_ask is not None:
             if best_ask <= order.price:
                 rebate = maker_rebate(order.qty_open, order.price)
                 fill = ShadowFill(
@@ -153,7 +163,7 @@ def check_paper_fills(book: Book, open_orders: list[LiveOrder]) -> tuple[list[Sh
                 )
                 fills.append(fill)
                 filled = True
-        elif order.side == "SELL_LONG" and best_bid is not None:
+        elif order.side in ("SELL_LONG", "SELL_SHORT") and best_bid is not None:
             if best_bid >= order.price:
                 rebate = maker_rebate(order.qty_open, order.price)
                 fill = ShadowFill(

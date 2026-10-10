@@ -12,8 +12,12 @@ class Settings:
     gateway_url: str = "https://gateway.polymarket.us"
     max_collateral: Decimal = Decimal("70.00")
     max_per_market: Decimal = Decimal("25.00")
+    total_budget: Decimal = Decimal("60.00")
+    max_markets: int = 4
+    max_contracts_per_market: int = 200
     max_open_orders: int = 20
     daily_loss_limit: Decimal = Decimal("5.00")
+    daily_loss_stop: Decimal = Decimal("10.00")
     data_dir: Path = Path(__file__).resolve().parent / "data"
     logs_dir: Path = Path(__file__).resolve().parent / "logs"
 
@@ -28,8 +32,12 @@ class Settings:
             gateway_url=os.getenv("PMUS_GATEWAY_URL", "https://gateway.polymarket.us").strip(),
             max_collateral=Decimal(os.getenv("PMUS_MAX_COLLATERAL", "70.00")),
             max_per_market=Decimal(os.getenv("PMUS_MAX_PER_MARKET", "25.00")),
+            total_budget=Decimal(os.getenv("PMUS_TOTAL_BUDGET", "60.00")),
+            max_markets=int(os.getenv("PMUS_MAX_MARKETS", "4")),
+            max_contracts_per_market=int(os.getenv("PMUS_MAX_CONTRACTS_PER_MARKET", "200")),
             max_open_orders=int(os.getenv("PMUS_MAX_OPEN_ORDERS", "20")),
             daily_loss_limit=Decimal(os.getenv("PMUS_DAILY_LOSS_LIMIT", "5.00")),
+            daily_loss_stop=Decimal(os.getenv("PMUS_DAILY_LOSS_STOP", "10.00")),
             data_dir=Path(os.getenv("PMUS_DATA_DIR", str(Path(__file__).resolve().parent / "data"))),
             logs_dir=Path(os.getenv("PMUS_LOGS_DIR", str(Path(__file__).resolve().parent / "logs"))),
         )

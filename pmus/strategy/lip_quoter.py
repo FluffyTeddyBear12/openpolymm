@@ -16,7 +16,7 @@ def desired_quotes(
     window: IncentiveWindow | None,
     position: Position | None,
     budget: Decimal,
-    max_position_cap: Decimal | None = None,
+    max_contracts_cap: Decimal | None = None,
 ) -> list[Quote]:
     if window is None or window.status.lower() != "active":
         return []
@@ -38,15 +38,14 @@ def desired_quotes(
         if (midpoint - bid_sap) > window.max_spread or (ask_sap - midpoint) > window.max_spread:
             return []
 
-    net_qty = position.net_qty if position is not None else Decimal("0")
-    cap = max_position_cap if max_position_cap is not None else Decimal("50")
+    net = position.net_qty if position is not None else Decimal("0")
+    cap = max_contracts_cap if max_contracts_cap is not None else Decimal("200")
 
-    quote_bid = True
-    quote_ask = True
-    if net_qty >= cap:
-        quote_bid = False
-    elif net_qty <= -cap:
-        quote_ask = False
+    max_bid_contracts = max(Decimal("0"), cap - max(net, Decimal("0")))
+    max_ask_contracts = max(Decimal("0"), cap + min(net, Decimal("0")))
+
+    quote_bid = max_bid_contracts >= market.min_qty
+    quote_ask = max_ask_contracts >= market.min_qty
 
     if not quote_bid and not quote_ask:
         return []
@@ -58,16 +57,20 @@ def desired_quotes(
         bid_price = (best_bid // market.tick) * market.tick
         collateral = bid_price
         if collateral > Decimal("0"):
-            qty = (side_budget / collateral) // market.min_qty * market.min_qty
-            if qty >= market.min_qty and bid_price < best_ask:
-                quotes.append(Quote(slug=market.slug, side="BUY_LONG", price=bid_price, qty=qty))
+            budget_qty = (side_budget / collateral) // market.min_qty * market.min_qty
+            bid_qty = min(budget_qty, max_bid_contracts) // market.min_qty * market.min_qty
+            if bid_qty >= market.min_qty and bid_price < best_ask:
+                side = "BUY_SHORT" if net < Decimal("0") else "BUY_LONG"
+                quotes.append(Quote(slug=market.slug, side=side, price=bid_price, qty=bid_qty))
 
     if quote_ask:
         ask_price = (best_ask // market.tick) * market.tick
         collateral = Decimal("1") - ask_price
         if collateral > Decimal("0"):
-            qty = (side_budget / collateral) // market.min_qty * market.min_qty
-            if qty >= market.min_qty and ask_price > best_bid:
-                quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=ask_price, qty=qty))
+            budget_qty = (side_budget / collateral) // market.min_qty * market.min_qty
+            ask_qty = min(budget_qty, max_ask_contracts) // market.min_qty * market.min_qty
+            if ask_qty >= market.min_qty and ask_price > best_bid:
+                side = "SELL_LONG" if (net > Decimal("0") and ask_qty <= net) else "SELL_SHORT"
+                quotes.append(Quote(slug=market.slug, side=side, price=ask_price, qty=ask_qty))
 
     return quotes

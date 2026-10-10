@@ -1,6 +1,7 @@
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
@@ -9,6 +10,7 @@ from pmus.ledger import Ledger
 from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quote
 from pmus.shadow import check_paper_fills, estimate_lip_score
 from pmus.strategy.lip_quoter import desired_quotes
+from pmus.strategy.market_selector import rank_markets
 from pmus.venue import PublicGatewayClient
 
 MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
@@ -41,7 +43,7 @@ def update_position_from_fill(current_pos: Position, fill_side: str, fill_price:
     old_qty = current_pos.net_qty
     old_avg = current_pos.avg_price
 
-    if fill_side == "BUY_LONG":
+    if fill_side in ("BUY_LONG", "BUY_SHORT"):
         new_qty = old_qty + fill_qty
         if new_qty > 0 and old_qty >= 0:
             new_avg = (old_qty * old_avg + fill_qty * fill_price) / new_qty
@@ -82,23 +84,41 @@ class ShadowEngine:
         self.logger.info("Starting ShadowEngine for %s seconds", duration_seconds)
         end_time = time.time() + duration_seconds
 
-        windows = self.client.fetch_incentives(status="active", page_size=50)
+        windows = self.client.fetch_incentives(status="active", page_size=200)
         active_windows: dict[str, IncentiveWindow] = {}
+        candidate_books: dict[str, Book] = {}
+
+        now_dt = datetime.now(timezone.utc)
         for w in windows:
             if w.status.lower() == "active" and w.slug not in active_windows:
                 active_windows[w.slug] = w
 
-        target_slugs = list(active_windows.keys())[:3]
-        active_mkts = self.client.fetch_markets(active=True, closed=False, limit=10)
-        for m in active_mkts:
-            if m.slug not in target_slugs and len(target_slugs) < 5:
-                target_slugs.append(m.slug)
+        for slug in list(active_windows.keys())[:15]:
+            try:
+                candidate_books[slug] = self.client.fetch_book(slug)
+            except Exception as e:
+                self.logger.debug("Failed to fetch candidate book %s: %s", slug, e)
+
+        target_slugs = rank_markets(
+            windows=list(active_windows.values()),
+            books=candidate_books,
+            now=now_dt,
+            max_n=self.settings.max_markets,
+        )
+
+        if not target_slugs:
+            target_slugs = list(active_windows.keys())[: self.settings.max_markets]
+
+        market_budget = min(
+            self.settings.max_per_market,
+            self.settings.total_budget / Decimal(str(max(1, len(target_slugs)))),
+        )
 
         market_metadata: dict[str, Market] = {}
         for slug in target_slugs:
             self.market_states[slug] = "IDLE"
 
-        self.logger.info("Targeting markets: %s", target_slugs)
+        self.logger.info("Selected %s markets with budget $%s each: %s", len(target_slugs), market_budget, target_slugs)
 
         tick_count = 0
         while time.time() < end_time:
@@ -122,7 +142,7 @@ class ShadowEngine:
                     market = market_metadata[slug]
 
                     pos = self.ledger.get_position(slug)
-                    if abs(pos.net_qty) >= self.settings.max_per_market:
+                    if abs(pos.net_qty) >= self.settings.max_contracts_per_market:
                         self.market_states[slug] = "FLATTENING"
                     else:
                         self.market_states[slug] = "QUOTING"
@@ -141,8 +161,8 @@ class ShadowEngine:
                         book=book,
                         window=window,
                         position=pos,
-                        budget=self.settings.max_per_market,
-                        max_position_cap=self.settings.max_per_market,
+                        budget=market_budget,
+                        max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
                     )
                     for q in quotes:
                         self.ledger.record_quote(q, ts_ms=now_ms)
