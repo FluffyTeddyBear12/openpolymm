@@ -52,12 +52,15 @@ class NegRiskBasketScanner:
         # Normalize to iterable of market dictionaries
         market_items = []
         if isinstance(markets_data, dict):
-            for k, v in markets_data.items():
-                if isinstance(v, dict):
-                    m_copy = dict(v)
-                    if "condition_id" not in m_copy and "conditionId" not in m_copy:
-                        m_copy["condition_id"] = k
-                    market_items.append(m_copy)
+            if "data" in markets_data and isinstance(markets_data["data"], list):
+                market_items = [m for m in markets_data["data"] if isinstance(m, dict)]
+            else:
+                for k, v in markets_data.items():
+                    if isinstance(v, dict):
+                        m_copy = dict(v)
+                        if "condition_id" not in m_copy and "conditionId" not in m_copy:
+                            m_copy["condition_id"] = k
+                        market_items.append(m_copy)
         elif isinstance(markets_data, list):
             market_items = [m for m in markets_data if isinstance(m, dict)]
 

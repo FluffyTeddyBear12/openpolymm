@@ -2010,6 +2010,12 @@ def fetch_top_markets(
             "tick_size": float(item.get("orderPriceMinTickSize") or item.get("minimum_tick_size") or item.get("tick_size") or 0.001),
             "minimum_tick_size": float(item.get("orderPriceMinTickSize") or item.get("minimum_tick_size") or item.get("tick_size") or 0.001),
             "neg_risk": bool(item.get("negRisk") or item.get("neg_risk") or False),
+            "neg_risk_market_id": (
+                item.get("negRiskMarketID")
+                or item.get("neg_risk_market_id")
+                or item.get("negRiskMarketId")
+                or (item.get("market_meta", {}).get("neg_risk_market_id") if isinstance(item.get("market_meta"), dict) else None)
+            ),
         }
 
     target_buffer = int(limit * 1.25)
@@ -2167,9 +2173,18 @@ class PaperSimulator:
         if NegRiskBasketScanner:
             try:
                 self.negrisk_scanner = NegRiskBasketScanner()
+                indexed_count = 0
                 if self.market_token_map:
-                    self.negrisk_scanner.index_market_universe(self.market_token_map)
-            except Exception:
+                    indexed_count = self.negrisk_scanner.index_market_universe(self.market_token_map)
+                if indexed_count == 0:
+                    m_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "markets.json")
+                    if os.path.exists(m_path):
+                        with open(m_path, "r", encoding="utf-8") as f_mkt:
+                            m_raw = json.load(f_mkt)
+                        indexed_count = self.negrisk_scanner.index_market_universe(m_raw)
+                        logger.info(f"🪢 NegRiskBasketScanner indexed {indexed_count} baskets from markets.json")
+            except Exception as e:
+                logger.warning(f"Failed to initialize NegRiskBasketScanner: {e}")
                 self.negrisk_scanner = None
         else:
             self.negrisk_scanner = None
