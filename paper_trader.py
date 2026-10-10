@@ -3346,16 +3346,17 @@ def on_message(ws, message, simulator):
 
         # Evaluate parity across all touched markets in this frame
         candidates = []
-        exec_style = getattr(simulator.dash_state, "state", {}).get("execution_style", "maker_taker") if simulator.dash_state else "maker_taker"
+        exec_style = getattr(simulator.dash_state, "state", {}).get("execution_style", "taker_taker") if simulator.dash_state else "taker_taker"
+        total_cap = getattr(getattr(simulator, "risk", None), "capital", 1000.0) or 1000.0
         for m_id in touched_markets:
             opp = None
             taker_opp = simulator.check_market_parity(m_id)
             if taker_opp and taker_opp.get("execution_type") == "simultaneous_dual_taker":
                 opp = taker_opp
-            elif exec_style == "maker_taker":
+            elif exec_style == "maker_taker" and total_cap >= 100.0:
                 opp = simulator.check_maker_taker_parity(m_id) or taker_opp
             else:
-                opp = taker_opp or simulator.check_maker_taker_parity(m_id)
+                opp = taker_opp
             if opp:
                 candidates.append(opp)
 
@@ -5280,6 +5281,12 @@ class LiveExecutor(PaperSimulator):
                     if hasattr(self, "shadow_tracker") and self.shadow_tracker:
                         self.shadow_tracker.record_missed(dict(opp), MissedReason.INSUFFICIENT_CASH)
                     return False
+
+            exec_style = getattr(target_state, "state", {}).get("execution_style", "taker_taker") if target_state else "taker_taker"
+            total_cap = getattr(getattr(self, "risk", None), "capital", 1000.0) or 1000.0
+            if exec_style != "maker_taker" or total_cap < 100.0:
+                logger.debug(f"Maker-taker execution blocked by style ({exec_style}) or low capital (${total_cap:.2f} < $100)")
+                return False
 
             shares = max(5.0, float(max_shares))
             trade_size = round(shares * cost_per_pair, 2)
