@@ -309,3 +309,154 @@ def test_live_engine_prepare_uses_buying_power_if_lower_than_budget():
     assert engine.condition_pairs == (("c1-yes", "c1-no"),)
 
 
+def test_live_engine_tick_records_lip_snapshots_single_market():
+    logger = logging.getLogger("test_live_engine_single_snapshots")
+    now = datetime(2026, 10, 12, 15, 0, tzinfo=timezone.utc)
+    w = IncentiveWindow(
+        slug="mkt-test",
+        program_id="p-test",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    market = Market(
+        slug="mkt-test",
+        event_id="ev-test",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will test pass?",
+    )
+    book = Book(
+        slug="mkt-test",
+        bids=(Level(Decimal("0.48"), Decimal("100")),),
+        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        ts_ms=1000,
+    )
+
+    public_client = MagicMock()
+    public_client.fetch_book.return_value = book
+    public_client.get_market.return_value = market
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.create_orders_batch.return_value = []
+
+    ledger = MagicMock()
+    existing_order = LiveOrder("o-1", "mkt-test", "BUY_LONG", Decimal("0.48"), Decimal("10"))
+    ledger.get_open_orders.return_value = [existing_order]
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    risk_mgr = MagicMock()
+    risk_mgr.is_kill_switch_active.return_value = False
+    risk_mgr.is_maintenance_active.return_value = False
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(
+        venue="us",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.target_slugs = ["mkt-test"]
+    engine.active_windows = {"mkt-test": w}
+
+    period = engine.tick(now.timestamp())
+    assert period == 1.0
+    ledger.record_lip_snapshot.assert_called_once()
+    snapshot = ledger.record_lip_snapshot.call_args[0][0]
+    assert snapshot.slug == "mkt-test"
+
+
+def test_live_engine_tick_records_lip_snapshots_condition_pairs():
+    logger = logging.getLogger("test_live_engine_pair_snapshots")
+    now = datetime(2026, 10, 12, 15, 0, tzinfo=timezone.utc)
+    w = IncentiveWindow(
+        slug="c1-yes",
+        program_id="p-c1",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    yes_b = Book(slug="c1-yes", bids=(Level(Decimal("0.48"), Decimal("100")),), asks=(Level(Decimal("0.52"), Decimal("100")),), ts_ms=1000)
+    no_b = Book(slug="c1-no", bids=(Level(Decimal("0.48"), Decimal("100")),), asks=(Level(Decimal("0.52"), Decimal("100")),), ts_ms=1000)
+
+    market_y = Market(slug="c1-yes", event_id="c1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True, question="Yes?")
+    market_n = Market(slug="c1-no", event_id="c1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True, question="No?")
+    public_client = MagicMock()
+    public_client.fetch_book.side_effect = lambda slug: yes_b if slug == "c1-yes" else no_b
+    public_client.get_market.side_effect = lambda slug: market_y if slug == "c1-yes" else market_n
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.create_orders_batch.return_value = []
+
+    ledger = MagicMock()
+    orders_yes = [LiveOrder("o-yes", "c1-yes", "BUY_LONG", Decimal("0.48"), Decimal("10"))]
+    orders_no = [LiveOrder("o-no", "c1-no", "BUY_LONG", Decimal("0.48"), Decimal("10"))]
+    ledger.get_open_orders.side_effect = lambda slug=None: (
+        orders_yes if slug == "c1-yes" else (orders_no if slug == "c1-no" else (orders_yes + orders_no))
+    )
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    risk_mgr = MagicMock()
+    risk_mgr.is_kill_switch_active.return_value = False
+    risk_mgr.is_maintenance_active.return_value = False
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.target_slugs = ["c1-yes", "c1-no"]
+    engine.paired_slugs = frozenset({"c1-yes", "c1-no"})
+    engine.condition_pairs = (("c1-yes", "c1-no"),)
+    engine.active_windows = {"c1-yes": w, "c1-no": w}
+
+    period = engine.tick(now.timestamp())
+    assert period == 1.0
+    assert ledger.record_lip_snapshot.call_count == 2
+
+
+

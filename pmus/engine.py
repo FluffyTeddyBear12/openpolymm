@@ -445,10 +445,29 @@ class LiveEngine:
             return 10.0
         self.daily_loss_stop_tripped = False
 
+        pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] = {}
         for slug in self.target_slugs:
             if now_ts < self.slug_cooldown.get(slug, 0.0):
                 continue
-            self._quote_market(slug, now_dt, now_ts, now_ms, exchange_open, live_positions, buying_power, realized_loss_today)
+            self._quote_market(
+                slug,
+                now_dt,
+                now_ts,
+                now_ms,
+                exchange_open,
+                live_positions,
+                buying_power,
+                realized_loss_today,
+                pair_inputs=pair_inputs,
+            )
+
+        if self.condition_pairs:
+            for yes_slug, no_slug in self.condition_pairs:
+                if yes_slug in pair_inputs and no_slug in pair_inputs:
+                    yes_book, window, yes_orders = pair_inputs[yes_slug]
+                    no_book, _, no_orders = pair_inputs[no_slug]
+                    for snap in estimate_global_pair_score(yes_book, no_book, window, yes_orders + no_orders, ts_ms=now_ms):
+                        self.ledger.record_lip_snapshot(snap)
         return 1.0
 
     def _fill_window_start(self, now_ts: float) -> datetime:
@@ -529,6 +548,7 @@ class LiveEngine:
         live_positions: dict[str, Position],
         buying_power: Decimal,
         realized_loss_today: Decimal,
+        pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] | None = None,
     ) -> None:
         window = self.active_windows.get(slug)
         try:
@@ -586,6 +606,16 @@ class LiveEngine:
                     self.order_created_at[o.order_id] = now_ts
 
             self.market_states[slug] = "QUOTING"
+
+            orders = self.ledger.get_open_orders(slug)
+            is_global = (self.settings.venue == "global")
+            if slug in self.paired_slugs:
+                if pair_inputs is not None:
+                    pair_inputs[slug] = (book, window, orders)
+            elif is_global:
+                self.ledger.record_lip_snapshot(estimate_global_lip_score(book, window, orders, ts_ms=now_ms))
+            else:
+                self.ledger.record_lip_snapshot(estimate_lip_score(book, window, orders, market.tick, ts_ms=now_ms))
         except Exception as exc:
             self.slug_cooldown[slug] = now_ts + 30.0
             self.market_states[slug] = "PAUSED"

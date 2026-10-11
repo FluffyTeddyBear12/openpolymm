@@ -1,7 +1,10 @@
 from decimal import Decimal
 import time
+from unittest.mock import MagicMock, patch
 
+from pmus.config import Settings
 from pmus.dashboard import (
+    _get_official_daily_earnings,
     compute_kpis,
     format_fills_table,
     format_market_overview,
@@ -324,3 +327,52 @@ def test_sync_ledger_from_vps_missing_key(tmp_path):
     success, msg = sync_ledger_from_vps(target)
     assert isinstance(success, bool)
     assert isinstance(msg, str)
+
+
+def test_get_official_daily_earnings_not_global():
+    _get_official_daily_earnings.clear()
+    settings = Settings(venue="us", polygon_private_key="0xabc")
+    assert _get_official_daily_earnings(settings) is None
+
+    settings_no_key = Settings(venue="global", polygon_private_key="")
+    assert _get_official_daily_earnings(settings_no_key) is None
+
+
+def test_get_official_daily_earnings_success():
+    _get_official_daily_earnings.clear()
+    mock_clob = MagicMock()
+    mock_clob.client.get_total_earnings_for_user_for_day.return_value = [
+        {"earnings": "1.2345"},
+        {"earnings": "0.5000"},
+    ]
+
+    with patch("pmus.clob_venue.ClobVenueClient", return_value=mock_clob):
+        settings = Settings(venue="global", polygon_private_key="0x123")
+        res = _get_official_daily_earnings(settings)
+        assert res == Decimal("1.7345")
+
+
+def test_get_official_daily_earnings_dict_structure():
+    _get_official_daily_earnings.clear()
+    mock_clob = MagicMock()
+    mock_clob.client.get_total_earnings_for_user_for_day.return_value = {
+        "earnings": "2.50"
+    }
+
+    with patch("pmus.clob_venue.ClobVenueClient", return_value=mock_clob):
+        settings = Settings(venue="global", polygon_private_key="0x123")
+        res = _get_official_daily_earnings(settings)
+        assert res == Decimal("2.50")
+
+
+def test_get_official_daily_earnings_exception_fallback():
+    _get_official_daily_earnings.clear()
+    mock_clob = MagicMock()
+    mock_clob.client.get_total_earnings_for_user_for_day.side_effect = RuntimeError("API error")
+
+    with patch("pmus.clob_venue.ClobVenueClient", return_value=mock_clob):
+        settings = Settings(venue="global", polygon_private_key="0x123")
+        res = _get_official_daily_earnings(settings)
+        assert res is None
+
+

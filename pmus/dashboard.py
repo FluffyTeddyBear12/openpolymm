@@ -349,6 +349,29 @@ def _get_live_buying_power(settings: Settings) -> Decimal:
     return Decimal("0")
 
 
+@st.cache_data(ttl=60)
+def _get_official_daily_earnings(settings: Settings) -> Decimal | None:
+    if settings.venue == "global" and settings.polygon_private_key:
+        try:
+            from pmus.clob_venue import ClobVenueClient
+            client = ClobVenueClient(settings)
+            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            results = client.client.get_total_earnings_for_user_for_day(today_str)
+            if results:
+                if isinstance(results, list):
+                    return sum((Decimal(str(item.get("earnings", 0))) for item in results), Decimal("0"))
+                if isinstance(results, dict):
+                    if "earnings" in results:
+                        return Decimal(str(results.get("earnings", 0)))
+                    if "data" in results and isinstance(results["data"], list):
+                        return sum((Decimal(str(item.get("earnings", 0))) for item in results["data"]), Decimal("0"))
+                return Decimal("0")
+            return Decimal("0")
+        except Exception:
+            return None
+    return None
+
+
 @st.fragment(run_every="2s")
 def render_live_hud(ledger: Ledger, settings: Settings) -> None:
     empty = is_database_empty(ledger)
@@ -358,6 +381,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
 
     buying_power = _get_live_buying_power(settings) if not empty else Decimal("0")
     kpis = compute_kpis(ledger, since_ms=0, buying_power=buying_power, max_collateral=settings.max_collateral)
+    official_rewards = _get_official_daily_earnings(settings)
 
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
@@ -369,13 +393,22 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
             border=True,
         )
     with c2:
-        st.metric(
-            label="Accrued LIP Rewards",
-            value=f"${kpis['lip_reward_total']:,.4f}",
-            delta="LIP Yield",
-            delta_color="off",
-            border=True,
-        )
+        if official_rewards is not None and official_rewards > Decimal("0"):
+            st.metric(
+                label="Accrued LIP Rewards",
+                value=f"${official_rewards:,.4f}",
+                delta=f"Est Yield: ${kpis['lip_reward_total']:,.4f}",
+                delta_color="off",
+                border=True,
+            )
+        else:
+            st.metric(
+                label="Accrued LIP Rewards",
+                value=f"${kpis['lip_reward_total']:,.4f}",
+                delta="LIP Yield",
+                delta_color="off",
+                border=True,
+            )
     with c3:
         st.metric(
             label="Qualifying Seconds",
