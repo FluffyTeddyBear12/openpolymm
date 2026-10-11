@@ -145,7 +145,11 @@ def allocate_conditions(
         if target is not None:
             candidates.append(target)
 
-    candidates.sort(key=lambda t: t.expected_reward_sec, reverse=True)
+    def _rank_score(t: ConditionTarget) -> Decimal:
+        weight = pair_preference if (t.mode == "two_sided" and pair_preference > Decimal("0")) else Decimal("1.0")
+        return t.expected_reward_sec / weight
+
+    candidates.sort(key=_rank_score, reverse=True)
 
     selected: list[ConditionTarget] = []
     remaining_budget = total_budget
