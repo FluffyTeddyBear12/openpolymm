@@ -30,6 +30,7 @@ class AllocationResult:
     side_qtys: dict[tuple[str, str], Decimal]  # (slug, side) -> needed qty
     unfunded_reason: str | None = None
     paired_slugs: frozenset[str] = frozenset()
+    condition_pairs: tuple[tuple[str, str], ...] = ()
 
 def extract_event_id(slug: str, slug_to_event_map: dict[str, str] | None = None) -> str:
     if slug_to_event_map and slug in slug_to_event_map:

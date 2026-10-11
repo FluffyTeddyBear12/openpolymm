@@ -85,10 +85,11 @@ def desired_quotes(
     if is_global:
         if paired:
             target_sz = quote_size if quote_size is not None else window.target_size
-            if net < target_sz:
+            remaining = target_sz - net
+            if remaining >= window.target_size:
                 price = global_rewards.bid_price(book, window, market.tick)
-                qty = target_sz
-                if price is not None and quote_bid and qty >= window.target_size and qty <= max_bid_contracts:
+                qty = min(remaining, max_bid_contracts)
+                if price is not None and quote_bid and qty >= window.target_size:
                     quotes.append(Quote(slug=market.slug, side="BUY_LONG", price=price, qty=qty))
             return quotes
 

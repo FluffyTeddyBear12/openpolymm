@@ -34,6 +34,7 @@ class Settings:
     clob_host: str = "https://clob.polymarket.com"
     chain_id: int = 137
     order_sync_grace_seconds: int = 20
+    pair_preference: Decimal = Decimal("1.0")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -117,4 +118,5 @@ class Settings:
             clob_host=clob_host,
             chain_id=chain_id,
             order_sync_grace_seconds=int(os.getenv("PMUS_ORDER_SYNC_GRACE_SECONDS", "20")),
+            pair_preference=Decimal(os.getenv("PMUS_PAIR_PREFERENCE", "1.0")),
         )

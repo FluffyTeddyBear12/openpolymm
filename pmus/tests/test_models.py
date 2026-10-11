@@ -31,3 +31,15 @@ def test_book_sorting_invariant():
     book = Book(slug="test-slug", bids=bids, asks=asks, ts_ms=1000)
     assert book.bids[0].price > book.bids[1].price
     assert book.asks[0].price < book.asks[1].price
+
+
+def test_settings_pair_preference(monkeypatch):
+    from pmus.config import Settings
+
+    s_default = Settings()
+    assert s_default.pair_preference == Decimal("1.0")
+
+    monkeypatch.setenv("PMUS_PAIR_PREFERENCE", "0.85")
+    s_env = Settings.from_env()
+    assert s_env.pair_preference == Decimal("0.85")
+

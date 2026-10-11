@@ -208,6 +208,7 @@ def test_targets_to_allocation_fields():
     alloc = targets_to_allocation([target_pair])
     assert alloc.selected_slugs == [cond_pair.yes.slug, cond_pair.no.slug]
     assert alloc.paired_slugs == frozenset({cond_pair.yes.slug, cond_pair.no.slug})
+    assert alloc.condition_pairs == ((cond_pair.yes.slug, cond_pair.no.slug),)
     assert alloc.side_budgets[(cond_pair.yes.slug, "bid")] == target_pair.size * Decimal("0.48")
     assert alloc.side_budgets[(cond_pair.no.slug, "bid")] == target_pair.size * Decimal("0.47")
     assert alloc.side_qtys[(cond_pair.yes.slug, "bid")] == target_pair.size
@@ -218,4 +219,45 @@ def test_targets_to_allocation_fields():
     empty_alloc = targets_to_allocation([])
     assert empty_alloc.selected_slugs == []
     assert empty_alloc.paired_slugs == frozenset()
+    assert empty_alloc.condition_pairs == ()
     assert empty_alloc.unfunded_reason == "no condition clears payout floor within budget"
+
+
+def test_pair_preference_selects_two_sided_when_within_ratio():
+    cond = make_condition(pool="200", target="50", max_spread="0.05")
+    yes_b = make_book([("0.48", "100")], [("0.52", "100")], slug=cond.yes.slug)
+    no_b = make_book([("0.47", "100")], [("0.53", "100")], slug=cond.no.slug)
+
+    target_default = evaluate_condition(
+        cond=cond,
+        yes_book=yes_b,
+        no_book=no_b,
+        max_cost=Decimal("50"),
+        max_contracts=Decimal("200"),
+        pair_preference=Decimal("1.0"),
+    )
+    assert target_default is not None
+    assert target_default.mode == "yes_only"
+
+    target_preferred = evaluate_condition(
+        cond=cond,
+        yes_book=yes_b,
+        no_book=no_b,
+        max_cost=Decimal("50"),
+        max_contracts=Decimal("200"),
+        pair_preference=Decimal("0.7"),
+    )
+    assert target_preferred is not None
+    assert target_preferred.mode == "two_sided"
+
+    target_strict = evaluate_condition(
+        cond=cond,
+        yes_book=yes_b,
+        no_book=no_b,
+        max_cost=Decimal("50"),
+        max_contracts=Decimal("200"),
+        pair_preference=Decimal("0.9"),
+    )
+    assert target_strict is not None
+    assert target_strict.mode == "yes_only"
+

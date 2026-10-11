@@ -271,7 +271,7 @@ def test_run_cancels_target_orders_in_finally(tmp_path, monkeypatch):
         side_budgets={("tok", "bid"): Decimal("100")},
         side_qtys={},
     )
-    monkeypatch.setattr(engine_mod, "allocate_markets", lambda *a: ({"tok": window("tok")}, alloc))
+    monkeypatch.setattr(engine_mod, "allocate_markets", lambda *a, **kw: ({"tok": window("tok")}, alloc))
 
     def sigterm(now_ts):
         eng.ledger.record_order(LiveOrder("0xlive", "tok", "BUY_LONG", Decimal("0.49"), Decimal("50")), status="OPEN")

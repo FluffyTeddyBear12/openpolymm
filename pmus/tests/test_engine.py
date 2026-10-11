@@ -7,6 +7,7 @@ import pytest
 from pmus.config import Settings
 from pmus.engine import LiveEngine, allocate_markets, reconcile_quotes, update_position_from_fill
 from pmus.models import Book, ConditionMarket, IncentiveWindow, Level, LiveOrder, Market, Position, Quote
+from pmus.tests.test_condition_selector import make_book, make_condition
 
 def test_reconcile_quotes():
     current = [
@@ -133,6 +134,35 @@ def test_allocate_markets_global_path_selects_both_tokens_and_sets_windows():
     assert alloc_res.side_budgets[("cond-123-no", "bid")] == Decimal("47.00")
     assert alloc_res.side_qtys[("cond-123-yes", "bid")] == Decimal("100")
     assert alloc_res.side_qtys[("cond-123-no", "bid")] == Decimal("100")
+    assert alloc_res.condition_pairs == (("cond-123-yes", "cond-123-no"),)
+
+
+def test_allocate_markets_respects_available_budget():
+    logger = logging.getLogger("test_engine_budget")
+    cond1 = make_condition(cond_id="c1", pool="200")
+    cond2 = make_condition(cond_id="c2", pool="150")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond1, cond2]
+    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    _, alloc_full = allocate_markets(settings, client, logger)
+    assert alloc_full.selected_slugs == ["c1-yes", "c1-no", "c2-yes", "c2-no"]
+
+    _, alloc_half = allocate_markets(settings, client, logger, available_budget=Decimal("100.00"))
+    assert alloc_half.selected_slugs == ["c1-yes", "c1-no"]
+
+    _, alloc_empty = allocate_markets(settings, client, logger, available_budget=Decimal("20.00"))
+    assert alloc_empty.selected_slugs == []
 
 
 def test_live_engine_prepare_stores_paired_and_passes_to_quoter():
@@ -195,6 +225,7 @@ def test_live_engine_prepare_stores_paired_and_passes_to_quoter():
     auth_client = MagicMock()
     auth_client.is_available = True
     auth_client.cancel_all_scoped.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
 
     ledger = MagicMock()
     ledger.get_open_orders.return_value = []
@@ -220,6 +251,7 @@ def test_live_engine_prepare_stores_paired_and_passes_to_quoter():
     engine.prepare()
 
     assert engine.paired_slugs == frozenset({"cond-123-yes", "cond-123-no"})
+    assert engine.condition_pairs == (("cond-123-yes", "cond-123-no"),)
     assert engine.side_qtys[("cond-123-yes", "bid")] == Decimal("100")
     assert engine.side_qtys[("cond-123-no", "bid")] == Decimal("100")
 
@@ -240,4 +272,40 @@ def test_live_engine_prepare_stores_paired_and_passes_to_quoter():
         assert kws["paired"] is True
         assert kws["quote_size"] == Decimal("100")
         assert kws["is_global"] is True
+
+
+def test_live_engine_prepare_uses_buying_power_if_lower_than_budget():
+    logger = logging.getLogger("test_live_engine_bp")
+    cond1 = make_condition(cond_id="c1", pool="200")
+    cond2 = make_condition(cond_id="c2", pool="150")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond1, cond2]
+    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("100.00")
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    engine.prepare()
+    assert engine.target_slugs == ["c1-yes", "c1-no"]
+    assert engine.condition_pairs == (("c1-yes", "c1-no"),)
+
 

@@ -90,18 +90,13 @@ def resolve_market(client: Any, slug: str) -> Market:
         mutually_exclusive=False,
     )
 
-def _pairs(pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]]) -> list[tuple[str, str]]:
-    by_condition: dict[str, list[str]] = {}
-    for slug, (_, window, _) in pair_inputs.items():
-        if window is not None:
-            by_condition.setdefault(window.program_id, []).append(slug)
-    return [(slugs[0], slugs[1]) for slugs in by_condition.values() if len(slugs) == 2]
-
 def allocate_markets(
     settings: Settings,
     client: Any,
     logger: logging.Logger,
+    available_budget: Decimal | None = None,
 ) -> tuple[dict[str, IncentiveWindow], AllocationResult]:
+    budget = available_budget if available_budget is not None else settings.total_budget
     is_global = settings.venue == "global"
     if is_global and hasattr(client, "fetch_reward_conditions"):
         conditions = client.fetch_reward_conditions()
@@ -124,10 +119,11 @@ def allocate_markets(
         targets = allocate_conditions(
             conditions=conditions,
             books=candidate_books,
-            total_budget=settings.total_budget,
+            total_budget=budget,
             max_cost_per_condition=min(settings.max_per_market, settings.max_collateral_per_market),
             max_markets=settings.max_markets,
             max_contracts=Decimal(str(settings.max_contracts_per_market)),
+            pair_preference=settings.pair_preference,
         )
         for target in targets:
             daily_usd = target.expected_reward_sec * global_rewards.SECONDS_PER_DAY
@@ -158,7 +154,7 @@ def allocate_markets(
         alloc_res = greedy_allocate(
             windows=list(active_windows.values()),
             books=candidate_books,
-            total_budget=settings.total_budget,
+            total_budget=budget,
             now=datetime.now(timezone.utc),
             max_markets=settings.max_markets,
             max_contracts_cap=Decimal(str(settings.max_contracts_per_market)),
@@ -201,6 +197,7 @@ class ShadowEngine:
         self.market_states: dict[str, MarketState] = {}
         self.paired_slugs: frozenset[str] = frozenset()
         self.side_qtys: dict[tuple[str, str], Decimal] = {}
+        self.condition_pairs: tuple[tuple[str, str], ...] = ()
 
     def run(self, duration_seconds: int | None = None) -> None:
         if duration_seconds is not None and duration_seconds > 0:
@@ -215,6 +212,7 @@ class ShadowEngine:
         is_global = (self.settings.venue == "global")
         self.paired_slugs = alloc_res.paired_slugs
         self.side_qtys = alloc_res.side_qtys
+        self.condition_pairs = alloc_res.condition_pairs
 
         market_metadata: dict[str, Market] = {}
         for slug in target_slugs:
@@ -299,11 +297,12 @@ class ShadowEngine:
                     self.market_states[slug] = "PAUSED"
                     self.logger.warning("Error processing %s: %s", slug, exc)
 
-            for yes_slug, no_slug in _pairs(pair_inputs):
-                yes_book, window, yes_orders = pair_inputs[yes_slug]
-                no_book, _, no_orders = pair_inputs[no_slug]
-                for snap in estimate_global_pair_score(yes_book, no_book, window, yes_orders + no_orders, ts_ms=now_ms):
-                    self.ledger.record_lip_snapshot(snap)
+            for yes_slug, no_slug in self.condition_pairs:
+                if yes_slug in pair_inputs and no_slug in pair_inputs:
+                    yes_book, window, yes_orders = pair_inputs[yes_slug]
+                    no_book, _, no_orders = pair_inputs[no_slug]
+                    for snap in estimate_global_pair_score(yes_book, no_book, window, yes_orders + no_orders, ts_ms=now_ms):
+                        self.ledger.record_lip_snapshot(snap)
 
             tick_count += 1
             if tick_count % 30 == 0:
@@ -341,6 +340,7 @@ class LiveEngine:
         self.side_budgets: dict[tuple[str, str], Decimal] = {}
         self.side_qtys: dict[tuple[str, str], Decimal] = {}
         self.paired_slugs: frozenset[str] = frozenset()
+        self.condition_pairs: tuple[tuple[str, str], ...] = ()
         self.markets: dict[str, Market] = {}
         self.started_at: float = time.time()
         self.order_created_at: dict[str, float] = {}
@@ -372,11 +372,19 @@ class LiveEngine:
             self.shutdown()
 
     def prepare(self) -> None:
-        self.active_windows, alloc_res = allocate_markets(self.settings, self.public_client, self.logger)
+        effective_budget = self.settings.total_budget
+        try:
+            bp = self.auth_client.get_buying_power()
+            if bp > Decimal("0"):
+                effective_budget = min(self.settings.total_budget, bp)
+        except Exception as exc:
+            self.logger.warning("Could not fetch buying power for allocation: %s", exc)
+        self.active_windows, alloc_res = allocate_markets(self.settings, self.public_client, self.logger, available_budget=effective_budget)
         self.target_slugs = alloc_res.selected_slugs
         self.side_budgets = alloc_res.side_budgets
         self.side_qtys = alloc_res.side_qtys
         self.paired_slugs = alloc_res.paired_slugs
+        self.condition_pairs = alloc_res.condition_pairs
         for slug in self.target_slugs:
             self.market_states[slug] = "IDLE"
         self.logger.info("Scoped startup cancel for target slugs: %s", self.target_slugs)

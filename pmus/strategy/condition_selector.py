@@ -45,6 +45,7 @@ def evaluate_condition(
     no_book: Book,
     max_cost: Decimal,
     max_contracts: Decimal,
+    pair_preference: Decimal = Decimal("1.0"),
 ) -> ConditionTarget | None:
     window = cond.window
     lot = cond.yes.min_qty
@@ -110,6 +111,12 @@ def evaluate_condition(
 
     if not surviving:
         return None
+    if pair_preference < Decimal("1.0"):
+        pair_target = next((t for t in surviving if t.mode == "two_sided"), None)
+        best_single = max((t for t in surviving if t.mode in ("yes_only", "no_only")), key=lambda t: t.expected_reward_sec, default=None)
+        if pair_target is not None and best_single is not None:
+            if pair_target.expected_reward_sec >= best_single.expected_reward_sec * pair_preference:
+                return pair_target
     return max(surviving, key=lambda t: t.expected_reward_sec)
 
 
@@ -120,6 +127,7 @@ def allocate_conditions(
     max_cost_per_condition: Decimal,
     max_markets: int,
     max_contracts: Decimal,
+    pair_preference: Decimal = Decimal("1.0"),
 ) -> list[ConditionTarget]:
     max_cost = min(max_cost_per_condition, total_budget)
     candidates: list[ConditionTarget] = []
@@ -132,6 +140,7 @@ def allocate_conditions(
             no_book=books[cond.no.slug],
             max_cost=max_cost,
             max_contracts=max_contracts,
+            pair_preference=pair_preference,
         )
         if target is not None:
             candidates.append(target)
@@ -200,6 +209,7 @@ def targets_to_allocation(targets: list[ConditionTarget]) -> AllocationResult:
             selected_candidates.append(candidate)
 
     unfunded_reason = "no condition clears payout floor within budget" if not targets else None
+    pairs = tuple((t.condition.yes.slug, t.condition.no.slug) for t in targets if t.mode == "two_sided")
 
     return AllocationResult(
         candidates=selected_candidates,
@@ -209,4 +219,5 @@ def targets_to_allocation(targets: list[ConditionTarget]) -> AllocationResult:
         side_qtys=side_qtys,
         unfunded_reason=unfunded_reason,
         paired_slugs=frozenset(paired_slugs),
+        condition_pairs=pairs,
     )

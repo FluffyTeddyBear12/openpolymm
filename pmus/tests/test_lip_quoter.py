@@ -522,5 +522,72 @@ def test_quoter_non_paired_uses_quote_size(base_market):
     assert quotes_default[0].qty == Decimal("100")
 
 
+def test_paired_partial_fill_quotes_remaining_when_eligible(base_market):
+    win = IncentiveWindow(
+        slug="mkt-pair",
+        program_id="p-pair",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("40"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    bids = (Level(Decimal("0.480"), Decimal("500")),)
+    asks = (Level(Decimal("0.520"), Decimal("500")),)
+    book = Book(slug="mkt-pair", bids=bids, asks=asks, ts_ms=1000)
+
+    quotes_partial = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-pair", net_qty=Decimal("30"), avg_price=Decimal("0.480")),
+        budget=Decimal("100.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert len(quotes_partial) == 1
+    assert quotes_partial[0].side == "BUY_LONG"
+    assert quotes_partial[0].qty == Decimal("70")
+
+    quotes_insufficient = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-pair", net_qty=Decimal("70"), avg_price=Decimal("0.480")),
+        budget=Decimal("100.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert quotes_insufficient == []
+
+    quotes_exact = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-pair", net_qty=Decimal("100"), avg_price=Decimal("0.480")),
+        budget=Decimal("100.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert quotes_exact == []
+
+    quotes_over = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-pair", net_qty=Decimal("120"), avg_price=Decimal("0.480")),
+        budget=Decimal("100.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert quotes_over == []
+
+
 
 
