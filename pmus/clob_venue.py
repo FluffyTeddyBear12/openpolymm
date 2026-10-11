@@ -337,19 +337,24 @@ class ClobVenueClient:
     def get_buying_power(self) -> Decimal:
         if not self.is_authenticated:
             return Decimal("0")
-        try:
-            resp = self.client.get_balance_allowance(
-                BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-            )
-            if isinstance(resp, dict):
-                bal = resp.get("balance", "0")
-            elif hasattr(resp, "balance"):
-                bal = getattr(resp, "balance")
-            else:
-                bal = str(resp)
-            return Decimal(str(bal)) / Decimal("1000000")
-        except Exception:
-            return Decimal("0")
+        sig_candidates = [3, getattr(getattr(self.client, "builder", None), "sig_type", 2), 2, 1, 0]
+        for sig in sig_candidates:
+            try:
+                resp = self.client.get_balance_allowance(
+                    BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=sig)
+                )
+                if isinstance(resp, dict):
+                    bal = resp.get("balance", "0")
+                elif hasattr(resp, "balance"):
+                    bal = getattr(resp, "balance")
+                else:
+                    bal = str(resp)
+                val = Decimal(str(bal)) / Decimal("1000000")
+                if val > Decimal("0"):
+                    return val
+            except Exception:
+                continue
+        return Decimal("0")
 
     def is_order_scoring(self, order_id: str) -> bool:
         if not self.is_authenticated:
