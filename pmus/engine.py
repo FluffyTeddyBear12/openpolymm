@@ -103,6 +103,7 @@ def allocate_markets(
         except Exception as e:
             logger.debug("Failed to fetch candidate book %s: %s", slug, e)
 
+    is_global = settings.venue == "global"
     alloc_res = greedy_allocate(
         windows=list(active_windows.values()),
         books=candidate_books,
@@ -114,7 +115,9 @@ def allocate_markets(
         pre_start_cancel_seconds=settings.pre_start_cancel_seconds,
         quote_live_periods=settings.quote_live_periods,
         slug_to_event_map=client.fetch_slug_to_event_map(),
-        is_global=(settings.venue == "global"),
+        is_global=is_global,
+        ticks={slug: resolve_market(client, slug).tick for slug in candidate_books} if is_global else None,
+        max_cost_per_market=min(settings.max_per_market, settings.max_collateral_per_market) if is_global else None,
     )
 
     if not alloc_res.selected_slugs:

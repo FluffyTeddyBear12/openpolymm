@@ -342,11 +342,10 @@ def test_global_quotes_min_size_despite_saturated_book(base_market):
         end=None,
         status="active",
     )
-    bids = (Level(Decimal("0.050"), Decimal("500000")),)
-    asks = (Level(Decimal("0.060"), Decimal("500000")),)
+    bids = (Level(Decimal("0.500"), Decimal("500000")),)
+    asks = (Level(Decimal("0.520"), Decimal("500000")),)
     book = Book(slug="mkt-global", bids=bids, asks=asks, ts_ms=1000)
 
-    # In US mode, saturated book quotes nothing
     us_quotes = desired_quotes(
         market=base_market,
         book=book,
@@ -357,7 +356,6 @@ def test_global_quotes_min_size_despite_saturated_book(base_market):
     )
     assert len(us_quotes) == 0
 
-    # In Global mode, quotes min_size (200) for both bid and ask
     global_quotes = desired_quotes(
         market=base_market,
         book=book,
@@ -366,13 +364,7 @@ def test_global_quotes_min_size_despite_saturated_book(base_market):
         budget=Decimal("400.00"),
         is_global=True,
     )
-    assert len(global_quotes) == 2
-    bid_q = next(q for q in global_quotes if q.side == "BUY_LONG")
-    ask_q = next(q for q in global_quotes if q.side == "SELL_LONG")
-    assert bid_q.qty == Decimal("200")
-    assert bid_q.price == Decimal("0.050")
-    assert ask_q.qty == Decimal("200")
-    assert ask_q.price == Decimal("0.060")
+    assert global_quotes == [Quote(slug=base_market.slug, side="BUY_LONG", price=Decimal("0.500"), qty=Decimal("200"))]
 
 def test_global_long_inventory_unwinds(base_market):
     win = IncentiveWindow(

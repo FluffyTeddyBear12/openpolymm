@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from pmus.models import Book, IncentiveWindow, LiveOrder
 from pmus.shadow import estimate_lip_score
+from pmus.strategy import global_rewards
 
 @dataclass(frozen=True)
 class CandidateSide:
@@ -50,9 +51,12 @@ def greedy_allocate(
     quote_live_periods: bool = False,
     slug_to_event_map: dict[str, str] | None = None,
     is_global: bool = False,
+    ticks: dict[str, Decimal] | None = None,
+    max_cost_per_market: Decimal | None = None,
 ) -> AllocationResult:
     candidates: list[CandidateSide] = []
     seen_window_keys: set[str] = set()
+    global_skips = {"outside 0.10-0.90 mid or one-sided": 0, "no scoring bid price": 0, "over budget": 0, "below $1/day": 0}
 
     for w in windows:
         if w.status.lower() != "active":
@@ -79,6 +83,9 @@ def greedy_allocate(
                 continue
 
         book = books[w.slug]
+        if is_global and not global_rewards.reward_eligible(book, w.target_size):
+            global_skips["outside 0.10-0.90 mid or one-sided"] += 1
+            continue
         if not book.bids or not book.asks:
             continue
 
@@ -107,51 +114,36 @@ def greedy_allocate(
         col_ask = (Decimal("1") - ask_px) if (Decimal("1") - ask_px) > Decimal("0") else tick
 
         if is_global:
-            needed_bid = w.target_size
-            cost_bid = needed_bid * col_bid
-            if cost_bid <= total_budget and needed_bid <= max_contracts_cap and cost_bid > Decimal("0"):
-                rew_bid = (w.pool_usd / Decimal("86400")) * (needed_bid / (existing_bids + needed_bid + Decimal("1")))
-                if rew_bid > Decimal("0"):
-                    eff_bid = rew_bid / cost_bid
-                    candidates.append(
-                        CandidateSide(
-                            slug=w.slug,
-                            event_id=event_id,
-                            side="bid",
-                            price=bid_px,
-                            existing_qty=existing_bids,
-                            needed_qty=needed_bid,
-                            cost=cost_bid,
-                            expected_reward_sec=rew_bid,
-                            efficiency=eff_bid,
-                            period=period or "early",
-                            pool_usd=w.pool_usd,
-                            duration_seconds=dur_secs,
-                        )
-                    )
-
-            needed_ask = w.target_size
-            cost_ask = needed_ask * col_ask
-            if cost_ask <= total_budget and needed_ask <= max_contracts_cap and cost_ask > Decimal("0"):
-                rew_ask = (w.pool_usd / Decimal("86400")) * (needed_ask / (existing_asks + needed_ask + Decimal("1")))
-                if rew_ask > Decimal("0"):
-                    eff_ask = rew_ask / cost_ask
-                    candidates.append(
-                        CandidateSide(
-                            slug=w.slug,
-                            event_id=event_id,
-                            side="ask",
-                            price=ask_px,
-                            existing_qty=existing_asks,
-                            needed_qty=needed_ask,
-                            cost=cost_ask,
-                            expected_reward_sec=rew_ask,
-                            efficiency=eff_ask,
-                            period=period or "early",
-                            pool_usd=w.pool_usd,
-                            duration_seconds=dur_secs,
-                        )
-                    )
+            price = global_rewards.bid_price(book, w, (ticks or {}).get(w.slug, tick))
+            if price is None:
+                global_skips["no scoring bid price"] += 1
+                continue
+            size = w.target_size
+            cost = size * price
+            per_market_cap = max_cost_per_market if max_cost_per_market is not None else total_budget
+            if cost <= Decimal("0") or cost > min(total_budget, per_market_cap) or size > max_contracts_cap:
+                global_skips["over budget"] += 1
+                continue
+            rew = global_rewards.expected_bid_reward_sec(book, w, price, size)
+            if rew * global_rewards.SECONDS_PER_DAY < global_rewards.MIN_DAILY_PAYOUT_USD:
+                global_skips["below $1/day"] += 1
+                continue
+            candidates.append(
+                CandidateSide(
+                    slug=w.slug,
+                    event_id=event_id,
+                    side="bid",
+                    price=price,
+                    existing_qty=existing_bids,
+                    needed_qty=size,
+                    cost=cost,
+                    expected_reward_sec=rew,
+                    efficiency=rew / cost,
+                    period=period or "early",
+                    pool_usd=w.pool_usd,
+                    duration_seconds=dur_secs,
+                )
+            )
         else:
             existing_bids_in_spread = sum(
                 lvl.qty for lvl in book.bids
@@ -266,7 +258,7 @@ def greedy_allocate(
     side_qtys: dict[tuple[str, str], Decimal] = {}
 
     for c in candidates:
-        if not is_global and (c.expected_reward_sec * c.duration_seconds) < Decimal("1.00"):
+        if (c.expected_reward_sec * c.duration_seconds) < Decimal("1.00"):
             continue
         if c.expected_reward_sec <= Decimal("0"):
             continue
@@ -315,7 +307,10 @@ def greedy_allocate(
 
     unfunded_reason = None
     if not selected_candidates:
-        if not candidates:
+        if not candidates and is_global:
+            skipped = ", ".join(f"{n} {why}" for why, n in global_skips.items() if n)
+            unfunded_reason = f"No fundable global markets among {len(books)} books ({skipped or 'none eligible'})"
+        elif not candidates:
             unfunded_reason = "No active candidate markets with positive expected reward"
         else:
             min_cost = min(c.cost for c in candidates)

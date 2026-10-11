@@ -335,7 +335,7 @@ def test_greedy_allocate_global_uses_min_size_with_deep_book():
     w_global = IncentiveWindow(
         slug="mkt-global-deep",
         program_id="p-global",
-        pool_usd=Decimal("50.00"),
+        pool_usd=Decimal("50000.00"),
         discount=Decimal("0.30"),
         target_size=Decimal("200"),
         max_spread=Decimal("0.05"),
@@ -343,25 +343,22 @@ def test_greedy_allocate_global_uses_min_size_with_deep_book():
         end=now + timedelta(hours=23),
         status="active",
     )
-    # Book with 500,000 contracts depth
     book = Book(
         slug="mkt-global-deep",
-        bids=(Level(Decimal("0.050"), Decimal("500000")),),
-        asks=(Level(Decimal("0.060"), Decimal("500000")),),
+        bids=(Level(Decimal("0.500"), Decimal("500000")),),
+        asks=(Level(Decimal("0.520"), Decimal("500000")),),
         ts_ms=1000,
     )
     books = {w_global.slug: book}
 
-    # In US mode (is_global=False), needed_bid is 0, so 0 candidates
-    res_us = greedy_allocate([w_global], books, total_budget=Decimal("50.00"), now=now, is_global=False)
+    res_us = greedy_allocate([w_global], books, total_budget=Decimal("150.00"), now=now, is_global=False)
     assert len(res_us.selected_slugs) == 0
 
-    # In Global mode (is_global=True), needed_bid is target_size (200)
-    res_global = greedy_allocate([w_global], books, total_budget=Decimal("50.00"), now=now, is_global=True)
+    res_global = greedy_allocate([w_global], books, total_budget=Decimal("150.00"), now=now, is_global=True)
     assert res_global.selected_slugs == [w_global.slug]
-    assert (w_global.slug, "bid") in res_global.side_budgets
     assert res_global.side_qtys[(w_global.slug, "bid")] == Decimal("200")
-    assert res_global.side_budgets[(w_global.slug, "bid")] == Decimal("200") * Decimal("0.050")
+    assert res_global.side_budgets[(w_global.slug, "bid")] == Decimal("200") * Decimal("0.500")
+    assert (w_global.slug, "ask") not in res_global.side_budgets
 
 def test_rank_markets_global():
     now = datetime.now(timezone.utc)
@@ -387,8 +384,8 @@ def test_rank_markets_global():
         end=now + timedelta(hours=23),
         status="active",
     )
-    b1 = Book("mkt-g1", (Level(Decimal("0.100"), Decimal("10000")),), (Level(Decimal("0.110"), Decimal("10000")),), 1000)
-    b2 = Book("mkt-g2", (Level(Decimal("0.100"), Decimal("10000")),), (Level(Decimal("0.110"), Decimal("10000")),), 1000)
+    b1 = Book("mkt-g1", (Level(Decimal("0.100"), Decimal("100")),), (Level(Decimal("0.110"), Decimal("100")),), 1000)
+    b2 = Book("mkt-g2", (Level(Decimal("0.100"), Decimal("100")),), (Level(Decimal("0.110"), Decimal("100")),), 1000)
     books = {"mkt-g1": b1, "mkt-g2": b2}
 
     ranked = rank_markets([w1, w2], books, now=now, max_n=2, total_budget=Decimal("150.00"), is_global=True)

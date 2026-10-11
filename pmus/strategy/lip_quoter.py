@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from pmus.models import Book, IncentiveWindow, Level, Market, Position, Quote
+from pmus.strategy import global_rewards
 
 def desired_quotes(
     market: Market,
@@ -80,30 +81,15 @@ def desired_quotes(
     quotes: list[Quote] = []
 
     if is_global:
-        if quote_bid:
-            collateral = bid_price
-            if collateral > Decimal("0"):
-                bid_qty = max(window.target_size, market.min_qty)
-                budget_qty = (side_budget_bid / collateral) // market.min_qty * market.min_qty
-                bid_qty = min(bid_qty, budget_qty, max_bid_contracts)
-                min_qual = window.target_size if window.target_size > Decimal("0") else market.min_qty
-                if (bid_qty >= min_qual or bid_qty >= market.min_qty) and bid_qty >= market.min_qty and bid_price < best_ask:
-                    quotes.append(Quote(slug=market.slug, side="BUY_LONG", price=bid_price, qty=bid_qty))
+        if quote_bid and global_rewards.reward_eligible(book, window.target_size):
+            price = global_rewards.bid_price(book, window, market.tick)
+            bid_qty = min(max(window.target_size, market.min_qty), max_bid_contracts)
+            if price is not None and bid_qty >= window.target_size:
+                quotes.append(Quote(slug=market.slug, side="BUY_LONG", price=price, qty=bid_qty))
 
         if net > Decimal("0"):
             ask_qty = min(net, max_ask_contracts) // market.min_qty * market.min_qty
             if ask_qty >= market.min_qty and ask_price > best_bid:
-                quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=ask_price, qty=ask_qty))
-        elif quote_ask:
-            collateral = (Decimal("1") - ask_price)
-            ask_qty = max(window.target_size, market.min_qty)
-            if collateral > Decimal("0"):
-                budget_qty = (side_budget_ask / collateral) // market.min_qty * market.min_qty
-                ask_qty = min(ask_qty, budget_qty, max_ask_contracts)
-            else:
-                ask_qty = min(ask_qty, max_ask_contracts) // market.min_qty * market.min_qty
-            min_qual = window.target_size if window.target_size > Decimal("0") else market.min_qty
-            if (ask_qty >= min_qual or ask_qty >= market.min_qty) and ask_qty >= market.min_qty and ask_price > best_bid:
                 quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=ask_price, qty=ask_qty))
 
         return quotes
