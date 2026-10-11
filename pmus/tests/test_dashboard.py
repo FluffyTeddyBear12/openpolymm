@@ -315,7 +315,7 @@ def test_resolve_market_title_success(monkeypatch):
             return [{"question": "Will candidate X win the election?"}]
 
     monkeypatch.setattr(requests, "get", lambda *args, **kwargs: MockResponse())
-    title = resolve_market_title(test_slug)
+    title = resolve_market_title(test_slug, fetch=True)
     assert title == "Will candidate X win the election?"
 
 

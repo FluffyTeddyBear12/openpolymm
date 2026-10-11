@@ -23,17 +23,19 @@ from pmus.models import LipSnapshot, LiveOrder, Position, ShadowFill
 _TITLE_CACHE: dict[str, str] = {}
 
 
-@st.cache_data(ttl=3600)
-def resolve_market_title(slug: str) -> str:
+def resolve_market_title(slug: str, fetch: bool = False) -> str:
     if not slug:
         return ""
     if slug in _TITLE_CACHE:
         return _TITLE_CACHE[slug]
 
     short_slug = f"{slug[:8]}...{slug[-6:]}" if len(slug) > 14 else slug
+    if not fetch:
+        return short_slug
+
     try:
         url = f"https://gamma-api.polymarket.com/markets?clob_token_ids={slug}"
-        resp = requests.get(url, timeout=2)
+        resp = requests.get(url, timeout=0.5)
         if resp.status_code == 200:
             data = resp.json()
             if isinstance(data, list) and len(data) > 0 and "question" in data[0]:
@@ -204,16 +206,16 @@ def format_market_overview(ledger: Ledger, recent_ms: int = 0) -> list[dict[str,
     return rows
 
 
-def format_fills_table(fills: list[ShadowFill]) -> list[dict[str, Any]]:
+def format_fills_table(fills: list[ShadowFill], limit: int = 25) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for f in sorted(fills, key=lambda x: x.ts_ms, reverse=True):
+    for f in sorted(fills, key=lambda x: x.ts_ms, reverse=True)[:limit]:
         dt = datetime.fromtimestamp(f.ts_ms / 1000, tz=timezone.utc)
         ts_str = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
         if f.fee < Decimal("0"):
             fee_str = f"+${abs(f.fee):.4f}"
         else:
             fee_str = f"-${f.fee:.4f}"
-        title = resolve_market_title(f.slug)
+        title = resolve_market_title(f.slug, fetch=False)
         rows.append({
             "Timestamp": ts_str,
             "Title": title,
@@ -281,7 +283,7 @@ def get_active_positions(ledger: Ledger) -> list[Position]:
                     if pos_qty < Decimal("0"):
                         avg_px = f.price
 
-        if pos_qty != Decimal("0"):
+        if pos_qty != Decimal("0") and abs(pos_qty * avg_px) >= Decimal("0.50"):
             reconstructed.append(Position(slug=slug, net_qty=pos_qty, avg_price=avg_px))
 
     return reconstructed
@@ -298,6 +300,7 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
+    temp_target = target_path.with_suffix(".tmp")
     cmd = [
         "scp",
         "-i",
@@ -307,11 +310,17 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
         "-o",
         "ConnectTimeout=10",
         "ubuntu@52.16.177.132:/home/ubuntu/polymarket_bot/pmus/data/ledger.db",
-        str(target_path),
+        str(temp_target),
     ]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         if res.returncode == 0:
+            import shutil
+            shutil.copyfile(str(temp_target), str(target_path))
+            try:
+                temp_target.unlink(missing_ok=True)
+            except Exception:
+                pass
             return True, "Synced successfully from Ireland VPS"
         err = res.stderr.strip() or res.stdout.strip() or f"Exit code {res.returncode}"
         return False, f"SCP failed: {err}"
