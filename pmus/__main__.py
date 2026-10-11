@@ -102,6 +102,12 @@ def main() -> None:
     dashboard_parser = subparsers.add_parser("dashboard", help="Launch Streamlit Web HUD")
     dashboard_parser.add_argument("--port", type=int, default=None, help="Optional port for Streamlit")
 
+    satellite_parser = subparsers.add_parser("satellite", help="High-Certainty Satellite Engine")
+    satellite_parser.add_argument("--shadow", action="store_true", default=True, help="Run in shadow/paper trading mode (default)")
+    satellite_parser.add_argument("--live", action="store_true", help="Run in live trading mode")
+    satellite_parser.add_argument("--status", action="store_true", help="Print performance summary and open paper trades")
+    satellite_parser.add_argument("--once", action="store_true", help="Run a single scan pass and exit")
+
 
     args = parser.parse_args()
     venue = args.venue or settings.venue
@@ -258,6 +264,23 @@ def main() -> None:
         if getattr(args, "port", None):
             cmd.extend(["--server.port", str(args.port)])
         subprocess.run(cmd)
+    elif args.command == "satellite":
+        from pmus.certainty_ledger import CertaintyLedger
+        from pmus.satellite_engine import SatelliteEngine
+
+        ledger_path = settings.data_dir / "certainty_ledger.db"
+        ledger = CertaintyLedger(ledger_path)
+
+        if getattr(args, "status", False):
+            print(SatelliteEngine.format_status(ledger))
+        else:
+            trade_mode = "live" if getattr(args, "live", False) else "shadow"
+            engine = SatelliteEngine(settings=settings, ledger=ledger, trade_mode=trade_mode)
+            if getattr(args, "once", False):
+                res = engine.run_once()
+                print("Satellite single scan result:", res)
+            else:
+                engine.run()
 
 if __name__ == "__main__":
     main()
