@@ -5,11 +5,14 @@ from pmus.dashboard import (
     compute_kpis,
     format_fills_table,
     format_market_overview,
+    get_active_positions,
     get_profile_links,
     is_database_empty,
+    resolve_market_title,
+    sync_ledger_from_vps,
 )
 from pmus.ledger import Ledger
-from pmus.models import LipSnapshot, LiveOrder, Quote, ShadowFill
+from pmus.models import LipSnapshot, LiveOrder, Position, Quote, ShadowFill
 
 
 def test_is_database_empty_missing_file(tmp_path):
@@ -17,7 +20,6 @@ def test_is_database_empty_missing_file(tmp_path):
     ledger = Ledger.__new__(Ledger)
     ledger.db_path = missing_db
     assert is_database_empty(ledger) is True
-
 
 
 def test_is_database_empty_fresh_db(tmp_path):
@@ -234,3 +236,91 @@ def test_get_profile_links():
     empty_links = get_profile_links("")
     assert empty_links["polymarket"] == "https://polymarket.com"
     assert empty_links["polygonscan"] == "https://polygonscan.com"
+
+
+def test_get_active_positions_reconstructs_from_fills(tmp_path):
+    ledger = Ledger(tmp_path / "recon.db")
+    now_ms = 1_000_000
+
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f1",
+            order_id="o1",
+            slug="slug-a",
+            side="BUY_LONG",
+            price=Decimal("0.38"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=now_ms,
+        )
+    )
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f2",
+            order_id="o2",
+            slug="slug-a",
+            side="BUY_LONG",
+            price=Decimal("0.40"),
+            qty=Decimal("105"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=now_ms + 1000,
+        )
+    )
+
+    positions = get_active_positions(ledger)
+    assert len(positions) == 1
+    p = positions[0]
+    assert p.slug == "slug-a"
+    assert p.net_qty == Decimal("205")
+    expected_avg = Decimal("80") / Decimal("205")
+    assert p.avg_price == expected_avg
+
+
+def test_get_active_positions_from_positions_table(tmp_path):
+    ledger = Ledger(tmp_path / "table.db")
+    ledger.update_position(Position(slug="slug-table", net_qty=Decimal("50"), avg_price=Decimal("0.55")), 1000)
+    ledger.update_position(Position(slug="slug-zero", net_qty=Decimal("0"), avg_price=Decimal("0.55")), 1000)
+
+    positions = get_active_positions(ledger)
+    assert len(positions) == 1
+    assert positions[0].slug == "slug-table"
+    assert positions[0].net_qty == Decimal("50")
+    assert positions[0].avg_price == Decimal("0.55")
+
+
+def test_resolve_market_title_fallback(monkeypatch):
+    import requests
+
+    long_slug = "2174263314346390629056905015582624153306727273685651494952952650494641127760"
+
+    def mock_get_fail(*args, **kwargs):
+        raise requests.RequestException("Network error")
+
+    monkeypatch.setattr(requests, "get", mock_get_fail)
+    title = resolve_market_title(long_slug)
+    assert title == f"{long_slug[:8]}...{long_slug[-6:]}"
+
+
+def test_resolve_market_title_success(monkeypatch):
+    import requests
+
+    test_slug = "success_slug_1234567890"
+
+    class MockResponse:
+        status_code = 200
+
+        def json(self):
+            return [{"question": "Will candidate X win the election?"}]
+
+    monkeypatch.setattr(requests, "get", lambda *args, **kwargs: MockResponse())
+    title = resolve_market_title(test_slug)
+    assert title == "Will candidate X win the election?"
+
+
+def test_sync_ledger_from_vps_missing_key(tmp_path):
+    target = tmp_path / "ledger.db"
+    success, msg = sync_ledger_from_vps(target)
+    assert isinstance(success, bool)
+    assert isinstance(msg, str)

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 import sqlite3
+import subprocess
 import time
 from typing import Any
 
@@ -12,11 +13,39 @@ if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
 import pandas as pd
+import requests
 import streamlit as st
 
 from pmus.config import Settings
 from pmus.ledger import Ledger
 from pmus.models import LipSnapshot, LiveOrder, Position, ShadowFill
+
+_TITLE_CACHE: dict[str, str] = {}
+
+
+@st.cache_data(ttl=3600)
+def resolve_market_title(slug: str) -> str:
+    if not slug:
+        return ""
+    if slug in _TITLE_CACHE:
+        return _TITLE_CACHE[slug]
+
+    short_slug = f"{slug[:8]}...{slug[-6:]}" if len(slug) > 14 else slug
+    try:
+        url = f"https://gamma-api.polymarket.com/markets?clob_token_ids={slug}"
+        resp = requests.get(url, timeout=2)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list) and len(data) > 0 and "question" in data[0]:
+                q = str(data[0]["question"]).strip()
+                if q:
+                    _TITLE_CACHE[slug] = q
+                    return q
+    except Exception:
+        pass
+
+    _TITLE_CACHE[slug] = short_slug
+    return short_slug
 
 
 def is_database_empty(ledger: Ledger) -> bool:
@@ -149,9 +178,11 @@ def format_market_overview(ledger: Ledger, recent_ms: int = 0) -> list[dict[str,
 
         snap = latest_snaps.get(slug)
         status = "QUOTING" if (bids or asks) else "MONITORING"
+        title = resolve_market_title(slug)
 
         rows.append({
             "slug": slug,
+            "title": title,
             "status": status,
             "bid_count": len(bids),
             "best_bid": best_bid,
@@ -182,8 +213,10 @@ def format_fills_table(fills: list[ShadowFill]) -> list[dict[str, Any]]:
             fee_str = f"+${abs(f.fee):.4f}"
         else:
             fee_str = f"-${f.fee:.4f}"
+        title = resolve_market_title(f.slug)
         rows.append({
             "Timestamp": ts_str,
+            "Title": title,
             "Slug": f.slug,
             "Side": f.side,
             "Price": f"${f.price:.4f}",
@@ -207,6 +240,88 @@ def get_profile_links(proxy_address: str) -> dict[str, str]:
     }
 
 
+def get_active_positions(ledger: Ledger) -> list[Position]:
+    positions = ledger.get_all_positions()
+    active = [p for p in positions if p.net_qty != Decimal("0")]
+    if active:
+        return active
+
+    fills = ledger.get_fills_since(0)
+    if not fills:
+        return []
+
+    market_fills: dict[str, list[ShadowFill]] = {}
+    for f in fills:
+        market_fills.setdefault(f.slug, []).append(f)
+
+    reconstructed: list[Position] = []
+    for slug, m_fills in market_fills.items():
+        pos_qty = Decimal("0")
+        avg_px = Decimal("0")
+        sorted_fills = sorted(m_fills, key=lambda x: x.ts_ms)
+        for f in sorted_fills:
+            if f.side in ("BUY_LONG", "BUY_SHORT"):
+                if pos_qty >= Decimal("0"):
+                    new_qty = pos_qty + f.qty
+                    if new_qty > Decimal("0"):
+                        avg_px = (pos_qty * avg_px + f.qty * f.price) / new_qty
+                    pos_qty = new_qty
+                else:
+                    pos_qty += f.qty
+                    if pos_qty > Decimal("0"):
+                        avg_px = f.price
+            else:
+                if pos_qty <= Decimal("0"):
+                    new_qty = abs(pos_qty) + f.qty
+                    if new_qty > Decimal("0"):
+                        avg_px = (abs(pos_qty) * avg_px + f.qty * f.price) / new_qty
+                    pos_qty = -new_qty
+                else:
+                    pos_qty -= f.qty
+                    if pos_qty < Decimal("0"):
+                        avg_px = f.price
+
+        if pos_qty != Decimal("0"):
+            reconstructed.append(Position(slug=slug, net_qty=pos_qty, avg_price=avg_px))
+
+    return reconstructed
+
+
+def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
+    key_path = Path(r"C:\Users\redwi\.ssh\LightsailDefaultKey-eu-west-1.pem")
+    if not key_path.exists():
+        return False, f"SSH key not found at {key_path}"
+
+    if target_path is None:
+        settings = Settings.from_env()
+        target_path = settings.data_dir / "ledger.db"
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "scp",
+        "-i",
+        str(key_path),
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "ConnectTimeout=10",
+        "ubuntu@52.16.177.132:/home/ubuntu/polymarket_bot/pmus/data/ledger.db",
+        str(target_path),
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if res.returncode == 0:
+            return True, "Synced successfully from Ireland VPS"
+        err = res.stderr.strip() or res.stdout.strip() or f"Exit code {res.returncode}"
+        return False, f"SCP failed: {err}"
+    except subprocess.TimeoutExpired:
+        return False, "SCP timed out after 15 seconds"
+    except Exception as e:
+        return False, f"Sync error: {e}"
+
+
+@st.cache_data(ttl=15)
 def _get_live_buying_power(settings: Settings) -> Decimal:
     if settings.venue == "global" and settings.polygon_private_key:
         try:
@@ -288,7 +403,9 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
             qual_symbol = "YES" if r["qualifies"] else "NO"
             b_qual_symbol = "YES" if r["bid_qualifies"] else "NO"
             a_qual_symbol = "YES" if r["ask_qualifies"] else "NO"
+            title = r.get("title") or resolve_market_title(r["slug"])
             display_data.append({
+                "Title": title,
                 "Market Slug": r["slug"],
                 "Status": r["status"],
                 "Qualifies": qual_symbol,
@@ -302,7 +419,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
                 "Est LIP Rate/s": f"${r['est_reward_rate']:.8f}",
             })
         df_markets = pd.DataFrame(display_data)
-        st.dataframe(df_markets, use_container_width=True, hide_index=True)
+        st.dataframe(df_markets, width="stretch", hide_index=True)
     else:
         st.markdown("_No active quoting markets found._")
 
@@ -311,16 +428,16 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
     blotter_rows = format_fills_table(fills)
     if blotter_rows:
         df_fills = pd.DataFrame(blotter_rows)
-        st.dataframe(df_fills, use_container_width=True, hide_index=True)
+        st.dataframe(df_fills, width="stretch", hide_index=True)
     else:
         st.markdown("_No fills recorded yet._")
 
-    positions = ledger.get_all_positions()
-    active_positions = [p for p in positions if p.net_qty != Decimal("0")]
+    active_positions = get_active_positions(ledger)
     if active_positions:
         st.markdown("### Open Positions")
         pos_data = [
             {
+                "Title": resolve_market_title(p.slug),
                 "Slug": p.slug,
                 "Net Qty": f"{p.net_qty:,}",
                 "Avg Price": f"${p.avg_price:.4f}",
@@ -328,7 +445,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
             }
             for p in active_positions
         ]
-        st.dataframe(pd.DataFrame(pos_data), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(pos_data), width="stretch", hide_index=True)
 
     st.caption(f"Last updated: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')} (auto-refreshing every 2s)")
 
@@ -348,11 +465,19 @@ def main() -> None:
 
     with links_col:
         links = get_profile_links(settings.polymarket_proxy_address)
-        l_col1, l_col2 = st.columns(2)
+        l_col1, l_col2, l_col3 = st.columns(3)
         with l_col1:
             st.link_button("Polymarket Profile", links["polymarket"], use_container_width=True)
         with l_col2:
             st.link_button("Polygonscan", links["polygonscan"], use_container_width=True)
+        with l_col3:
+            if st.button("Sync with VPS", use_container_width=True, help="Download latest ledger.db from Ireland VPS"):
+                success, msg = sync_ledger_from_vps(db_path)
+                if success:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
         if settings.polymarket_proxy_address:
             addr = settings.polymarket_proxy_address
             short_addr = f"{addr[:6]}...{addr[-4:]}" if len(addr) > 10 else addr
