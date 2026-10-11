@@ -266,8 +266,10 @@ def main() -> None:
         subprocess.run(cmd)
     elif args.command == "satellite":
         from pmus.certainty_ledger import CertaintyLedger
+        from pmus.logging_setup import setup_logging
         from pmus.satellite_engine import SatelliteEngine
 
+        logger = setup_logging(logs_dir=settings.logs_dir)
         ledger_path = settings.data_dir / "certainty_ledger.db"
         ledger = CertaintyLedger(ledger_path)
 
@@ -275,7 +277,7 @@ def main() -> None:
             print(SatelliteEngine.format_status(ledger))
         else:
             trade_mode = "live" if getattr(args, "live", False) else "shadow"
-            engine = SatelliteEngine(settings=settings, ledger=ledger, trade_mode=trade_mode)
+            engine = SatelliteEngine(settings=settings, ledger=ledger, trade_mode=trade_mode, logger_instance=logger)
             if getattr(args, "once", False):
                 res = engine.run_once()
                 print("Satellite single scan result:", res)
