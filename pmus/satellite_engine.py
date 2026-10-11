@@ -4,7 +4,7 @@ Scans for Parity Arbitrage (sum(asks) < 1.00) and Heavy Favorites (0.96 <= ask <
 Enforces microstructure defense gates and runs in read-only shadow mode by default.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
 import logging
@@ -138,11 +138,31 @@ class SatelliteEngine:
     def fetch_public_markets(self, limit: int = 100) -> list[dict[str, Any]]:
         try:
             url = f"{self.gamma_url}/markets"
-            params = {"limit": limit, "active": "true", "closed": "false"}
-            resp = requests.get(url, params=params, timeout=10.0)
-            resp.raise_for_status()
-            data = resp.json()
-            return data if isinstance(data, list) else []
+            now = datetime.now(timezone.utc)
+            # 1. Prioritize short-duration markets resolving in <= 48 hours for fast trade feedback
+            short_params = {
+                "limit": limit,
+                "active": "true",
+                "closed": "false",
+                "end_date_min": now.isoformat(),
+                "end_date_max": (now + timedelta(days=2)).isoformat(),
+            }
+            resp_short = requests.get(url, params=short_params, timeout=10.0)
+            short_data = resp_short.json() if resp_short.status_code == 200 and isinstance(resp_short.json(), list) else []
+
+            # 2. General volume markets
+            gen_params = {"limit": limit, "active": "true", "closed": "false"}
+            resp_gen = requests.get(url, params=gen_params, timeout=10.0)
+            gen_data = resp_gen.json() if resp_gen.status_code == 200 and isinstance(resp_gen.json(), list) else []
+
+            seen = set()
+            combined = []
+            for m in short_data + gen_data:
+                slug = m.get("slug")
+                if slug and slug not in seen:
+                    seen.add(slug)
+                    combined.append(m)
+            return combined
         except Exception as e:
             self.logger.error(f"Error fetching markets from Gamma API: {e}")
             return []
