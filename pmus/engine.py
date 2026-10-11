@@ -17,9 +17,10 @@ from pmus.venue import AuthenticatedClient, PublicGatewayClient
 
 MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
 
-CANDIDATE_BOOK_LIMIT = 15
+CANDIDATE_BOOK_LIMIT = 60
 FILL_LOOKBACK_SECONDS = 60
 FILL_WINDOW_SECONDS = 3600
+REALLOCATE_SECONDS = 1800
 
 def reconcile_quotes(
     current_orders: list[LiveOrder],
@@ -291,10 +292,15 @@ class LiveEngine:
             end_time = float("inf")
 
         self.prepare()
+        next_realloc = time.time() + REALLOCATE_SECONDS
         try:
             while time.time() < end_time:
                 tick_start = time.time()
-                period = self.tick(tick_start)
+                if tick_start >= next_realloc:
+                    self._cancel_targets(tick_start)
+                    self.prepare()
+                    next_realloc = tick_start + REALLOCATE_SECONDS
+                period = self.tick(tick_start) if self.target_slugs else 30.0
                 time.sleep(max(0.1, period - (time.time() - tick_start)))
         finally:
             self.shutdown()

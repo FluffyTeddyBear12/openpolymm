@@ -296,3 +296,50 @@ def test_sigterm_handler_raises_system_exit():
             raise_system_exit(signal.SIGTERM, None)
     finally:
         signal.signal(signal.SIGTERM, previous)
+
+
+def test_run_reallocates_markets_periodically(tmp_path, monkeypatch):
+    eng = make_engine(tmp_path)
+    monkeypatch.setattr(engine_mod, "REALLOCATE_SECONDS", 0)
+    calls = {"prepare": 0, "cancel": 0}
+
+    def fake_prepare():
+        calls["prepare"] += 1
+        eng.target_slugs = ["tok"]
+
+    def fake_cancel(now_ts):
+        calls["cancel"] += 1
+
+    monkeypatch.setattr(eng, "prepare", fake_prepare)
+    monkeypatch.setattr(eng, "_cancel_targets", fake_cancel)
+    monkeypatch.setattr(eng, "tick", lambda now_ts: 0.1)
+    monkeypatch.setattr(eng, "shutdown", lambda: None)
+
+    eng.run(duration_seconds=1)
+
+    assert calls["prepare"] >= 3
+    assert calls["cancel"] == calls["prepare"] - 1
+
+
+def test_run_idles_without_ticking_when_no_markets_selected(tmp_path, monkeypatch):
+    eng = make_engine(tmp_path)
+    ticks = []
+    sleeps = []
+
+    def fake_prepare():
+        eng.target_slugs = []
+
+    monkeypatch.setattr(eng, "prepare", fake_prepare)
+    monkeypatch.setattr(eng, "tick", lambda now_ts: ticks.append(now_ts) or 1.0)
+    monkeypatch.setattr(eng, "shutdown", lambda: None)
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(engine_mod.time, "sleep", fake_sleep)
+    with pytest.raises(KeyboardInterrupt):
+        eng.run(duration_seconds=60)
+
+    assert ticks == []
+    assert sleeps and sleeps[0] > 20
