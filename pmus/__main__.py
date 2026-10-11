@@ -266,7 +266,6 @@ def main() -> None:
         subprocess.run(cmd)
     elif args.command == "satellite":
         from pmus.certainty_ledger import CertaintyLedger
-        from pmus.logging_setup import setup_logging
         from pmus.satellite_engine import SatelliteEngine
 
         logger = setup_logging(logs_dir=settings.logs_dir)
