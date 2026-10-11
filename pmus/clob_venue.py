@@ -68,7 +68,9 @@ class ClobVenueClient:
                     funder=funder,
                 )
                 try:
-                    if hasattr(self.client, "create_or_derive_api_key"):
+                    if hasattr(self.client, "derive_api_key"):
+                        creds = self.client.derive_api_key()
+                    elif hasattr(self.client, "create_or_derive_api_key"):
                         creds = self.client.create_or_derive_api_key()
                     else:
                         creds = self.client.create_or_derive_api_creds()
