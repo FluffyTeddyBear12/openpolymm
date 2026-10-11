@@ -11,7 +11,7 @@ from pmus.ledger import Ledger
 from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quote, ShadowFill
 from pmus.notify import Notifier
 from pmus.risk import RiskManager
-from pmus.shadow import check_paper_fills, estimate_global_lip_score, estimate_lip_score
+from pmus.shadow import check_paper_fills, estimate_global_lip_score, estimate_global_pair_score, estimate_lip_score
 from pmus.strategy import global_rewards
 from pmus.strategy.condition_selector import allocate_conditions, targets_to_allocation
 from pmus.strategy.lip_quoter import desired_quotes
@@ -89,6 +89,13 @@ def resolve_market(client: Any, slug: str) -> Market:
         active=True,
         mutually_exclusive=False,
     )
+
+def _pairs(pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]]) -> list[tuple[str, str]]:
+    by_condition: dict[str, list[str]] = {}
+    for slug, (_, window, _) in pair_inputs.items():
+        if window is not None:
+            by_condition.setdefault(window.program_id, []).append(slug)
+    return [(slugs[0], slugs[1]) for slugs in by_condition.values() if len(slugs) == 2]
 
 def allocate_markets(
     settings: Settings,
@@ -218,6 +225,7 @@ class ShadowEngine:
             tick_start = time.time()
             now_dt = datetime.now(timezone.utc)
             now_ms = int(time.time() * 1000)
+            pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] = {}
 
             for slug in target_slugs:
                 window = active_windows.get(slug)
@@ -280,15 +288,22 @@ class ShadowEngine:
                         self.ledger.record_order(new_order, status="OPEN", ts_ms=now_ms)
                         current_open_orders.append(new_order)
 
-                    if is_global:
-                        lip_snap = estimate_global_lip_score(book, window, current_open_orders, ts_ms=now_ms)
+                    if slug in self.paired_slugs:
+                        pair_inputs[slug] = (book, window, current_open_orders)
+                    elif is_global:
+                        self.ledger.record_lip_snapshot(estimate_global_lip_score(book, window, current_open_orders, ts_ms=now_ms))
                     else:
-                        lip_snap = estimate_lip_score(book, window, current_open_orders, market.tick, ts_ms=now_ms)
-                    self.ledger.record_lip_snapshot(lip_snap)
+                        self.ledger.record_lip_snapshot(estimate_lip_score(book, window, current_open_orders, market.tick, ts_ms=now_ms))
 
                 except Exception as exc:
                     self.market_states[slug] = "PAUSED"
                     self.logger.warning("Error processing %s: %s", slug, exc)
+
+            for yes_slug, no_slug in _pairs(pair_inputs):
+                yes_book, window, yes_orders = pair_inputs[yes_slug]
+                no_book, _, no_orders = pair_inputs[no_slug]
+                for snap in estimate_global_pair_score(yes_book, no_book, window, yes_orders + no_orders, ts_ms=now_ms):
+                    self.ledger.record_lip_snapshot(snap)
 
             tick_count += 1
             if tick_count % 30 == 0:

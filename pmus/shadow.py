@@ -57,6 +57,20 @@ def estimate_global_lip_score(
         ask_qualifies=qualifies and our_ask > zero,
     )
 
+def _zero_snapshot(ts_ms: int, slug: str, program_id: str) -> LipSnapshot:
+    zero = Decimal("0")
+    return LipSnapshot(
+        ts_ms=ts_ms,
+        slug=slug,
+        program_id=program_id,
+        trader_bid_score=zero,
+        total_bid_score=zero,
+        trader_ask_score=zero,
+        total_ask_score=zero,
+        qualifies=False,
+        reward_usd=zero,
+    )
+
 def estimate_global_pair_score(
     yes_book: Book,
     no_book: Book,
@@ -68,58 +82,12 @@ def estimate_global_pair_score(
     zero = Decimal("0")
     if window is None or window.status.lower() != "active" or window.max_spread is None:
         prog = window.program_id if window is not None else "none"
-        return (
-            LipSnapshot(
-                ts_ms=now_ms,
-                slug=yes_book.slug,
-                program_id=prog,
-                trader_bid_score=zero,
-                total_bid_score=zero,
-                trader_ask_score=zero,
-                total_ask_score=zero,
-                qualifies=False,
-                reward_usd=zero,
-            ),
-            LipSnapshot(
-                ts_ms=now_ms,
-                slug=no_book.slug,
-                program_id=prog,
-                trader_bid_score=zero,
-                total_bid_score=zero,
-                trader_ask_score=zero,
-                total_ask_score=zero,
-                qualifies=False,
-                reward_usd=zero,
-            ),
-        )
+        return _zero_snapshot(now_ms, yes_book.slug, prog), _zero_snapshot(now_ms, no_book.slug, prog)
 
     mid_y = global_rewards.adjusted_mid(yes_book, window.target_size)
     mid_n = global_rewards.adjusted_mid(no_book, window.target_size)
     if mid_y is None or mid_n is None:
-        return (
-            LipSnapshot(
-                ts_ms=now_ms,
-                slug=yes_book.slug,
-                program_id=window.program_id,
-                trader_bid_score=zero,
-                total_bid_score=zero,
-                trader_ask_score=zero,
-                total_ask_score=zero,
-                qualifies=False,
-                reward_usd=zero,
-            ),
-            LipSnapshot(
-                ts_ms=now_ms,
-                slug=no_book.slug,
-                program_id=window.program_id,
-                trader_bid_score=zero,
-                total_bid_score=zero,
-                trader_ask_score=zero,
-                total_ask_score=zero,
-                qualifies=False,
-                reward_usd=zero,
-            ),
-        )
+        return _zero_snapshot(now_ms, yes_book.slug, window.program_id), _zero_snapshot(now_ms, no_book.slug, window.program_id)
 
     v = window.max_spread
     yes_orders = [o for o in resting_orders if o.slug == yes_book.slug and o.qty_open >= window.target_size and o.side in BID_SIDES]
