@@ -78,7 +78,7 @@ def main() -> None:
 
     run_parser = subparsers.add_parser("run", help="Run bot engine")
     run_parser.add_argument("--venue", choices=["global", "us"], default=None, help="Trading venue (global or us)")
-    run_parser.add_argument("--mode", choices=["shadow", "live"], default="shadow", help="Run mode")
+    run_parser.add_argument("--mode", choices=["shadow", "live"], default=None, help="Run mode")
     run_parser.add_argument("--confirm-live", action="store_true", help="Explicit confirmation required to run live")
     run_parser.add_argument("--minutes", type=int, default=None, help="Run duration in minutes (omit for indefinite)")
     run_parser.add_argument("--seconds", type=int, default=None, help="Run duration in seconds (omit for indefinite)")
@@ -97,9 +97,11 @@ def main() -> None:
 
     args = parser.parse_args()
     venue = args.venue or settings.venue
-    if venue != settings.venue:
+    mode = getattr(args, "mode", None) or settings.mode
+    confirm_live = getattr(args, "confirm_live", False) or (os.getenv("PMUS_CONFIRM_LIVE", "").strip().lower() in ("1", "true", "yes"))
+    if venue != settings.venue or mode != settings.mode:
         import dataclasses
-        settings = dataclasses.replace(settings, venue=venue)
+        settings = dataclasses.replace(settings, venue=venue, mode=mode)
 
     if args.command == "probe":
         probe_command(settings, venue=venue)
@@ -110,9 +112,9 @@ def main() -> None:
 
         if venue == "global":
             clob_client = ClobVenueClient(settings)
-            if args.mode == "live":
-                if settings.mode != "live" or not args.confirm_live:
-                    sys.exit("Error: Live mode requires both PMUS_MODE=live environment variable and --confirm-live flag.")
+            if mode == "live":
+                if not confirm_live:
+                    sys.exit("Error: Live mode requires explicit confirmation via --confirm-live flag or PMUS_CONFIRM_LIVE=1.")
                 if not clob_client.is_available:
                     sys.exit("Error: POLYGON_PRIVATE_KEY is required for live mode on Polymarket Global.")
 
@@ -131,9 +133,9 @@ def main() -> None:
                 engine.run(duration_seconds=duration)
         else:
             public_client = PublicGatewayClient(base_url=settings.gateway_url)
-            if args.mode == "live":
-                if settings.mode != "live" or not args.confirm_live:
-                    sys.exit("Error: Live mode requires both PMUS_MODE=live environment variable and --confirm-live flag.")
+            if mode == "live":
+                if not confirm_live:
+                    sys.exit("Error: Live mode requires explicit confirmation via --confirm-live flag or PMUS_CONFIRM_LIVE=1.")
                 if not settings.key_id or not settings.secret_key:
                     sys.exit("Error: PMUS_KEY_ID and PMUS_SECRET_KEY are required for live mode.")
 
