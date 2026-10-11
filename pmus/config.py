@@ -60,9 +60,9 @@ class Settings:
         if polymarket_signature_type == 3:
             polymarket_signature_type = 2
 
-        clob_api_key = os.getenv("CLOB_API_KEY", "").strip()
-        clob_secret = os.getenv("CLOB_SECRET", "").strip()
-        clob_passphrase = os.getenv("CLOB_PASSPHRASE", "").strip()
+        clob_api_key = (os.getenv("CLOB_API_KEY") or os.getenv("POLY_BUILDER_API_KEY") or "").strip()
+        clob_secret = (os.getenv("CLOB_SECRET") or os.getenv("POLY_BUILDER_SECRET") or "").strip()
+        clob_passphrase = (os.getenv("CLOB_PASSPHRASE") or os.getenv("POLY_BUILDER_PASSPHRASE") or "").strip()
         clob_host = (
             os.getenv("CLOB_HOST") or os.getenv("POLYMARKET_HOST") or "https://clob.polymarket.com"
         ).strip()
