@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import logging
 import time
 from typing import Any
 import requests
@@ -12,7 +13,9 @@ try:
         BalanceAllowanceParams,
         OpenOrderParams,
         OrderArgs,
+        OrderMarketCancelParams,
         OrderScoringParams,
+        TradeParams,
     )
     from py_clob_client_v2.order_builder.constants import BUY, SELL
     IS_V2 = True
@@ -25,8 +28,10 @@ except ImportError:
         OpenOrderParams,
         OrderArgs,
         OrderScoringParams,
+        TradeParams,
     )
     from py_clob_client.order_builder.constants import BUY, SELL
+    OrderMarketCancelParams = None
     IS_V2 = False
 
 from pmus.config import Settings
@@ -41,6 +46,61 @@ from pmus.models import (
     ShadowFill,
     Side,
 )
+
+DATA_API_POSITIONS_URL = "https://data-api.polymarket.com/positions"
+POSITIONS_PAGE_SIZE = 500
+
+logger = logging.getLogger(__name__)
+
+
+def _fee_usd(fee_rate_bps: Any, price: Decimal, qty: Decimal) -> Decimal:
+    raw = str(fee_rate_bps or "").strip()
+    if not raw:
+        return Decimal("0")
+    return Decimal(raw) / Decimal("10000") * min(price, Decimal("1") - price) * qty
+
+
+def parse_trade_fills(trade: dict, proxy_address: str) -> list[ShadowFill]:
+    """Return our fills in one /data/trades record.
+
+    For our maker fills the top-level fields describe the taker, so our legs are
+    the maker_orders entries whose maker_address is our proxy wallet.
+    """
+    if str(trade.get("status", "")).upper() == "FAILED":
+        return []
+    ts_ms = int(trade["match_time"]) * 1000
+    if trade.get("trader_side") == "TAKER":
+        legs = [(
+            trade["taker_order_id"], trade["asset_id"], trade["side"],
+            trade["size"], trade["price"], trade.get("fee_rate_bps"), False,
+        )]
+    else:
+        proxy = proxy_address.lower()
+        legs = [
+            (m["order_id"], m["asset_id"], m["side"], m["matched_amount"], m["price"], m.get("fee_rate_bps"), True)
+            for m in trade.get("maker_orders") or []
+            if str(m.get("maker_address", "")).lower() == proxy
+        ]
+
+    fills = []
+    for order_id, asset_id, side, qty, price, fee_bps, is_maker in legs:
+        px = Decimal(str(price))
+        size = Decimal(str(qty))
+        fills.append(
+            ShadowFill(
+                fill_id=f"{trade['id']}:{order_id}",
+                order_id=str(order_id),
+                slug=str(asset_id),
+                side="BUY_LONG" if str(side).upper() == "BUY" else "SELL_LONG",
+                price=px,
+                qty=size,
+                fee=_fee_usd(fee_bps, px, size),
+                is_maker=is_maker,
+                ts_ms=ts_ms,
+            )
+        )
+    return fills
+
 
 class ClobVenueClient:
     def __init__(self, settings: Settings, client: Any = None):
@@ -291,7 +351,11 @@ class ClobVenueClient:
             elif hasattr(resp, "id"):
                 order_id = str(resp.id)
             else:
-                order_id = str(resp)
+                order_id = ""
+
+            if not order_id:
+                logger.warning("Order for %s %s @ %s not acknowledged: %r", quote.slug, quote.side, quote.price, resp)
+                continue
 
             created.append(
                 LiveOrder(
@@ -318,22 +382,36 @@ class ClobVenueClient:
         return order_ids
 
     def cancel_all_scoped(self, slugs: list[str]) -> list[str]:
-        open_orders = self.get_open_orders(slugs=slugs)
+        if not slugs:
+            return []
+        try:
+            open_orders = self.get_open_orders(slugs=slugs)
+        except Exception as exc:
+            logger.warning("Open-orders read failed during scoped cancel (%s); canceling by market", exc)
+            self._cancel_by_market(slugs)
+            return []
         order_ids = [o.order_id for o in open_orders if o.order_id]
-        if order_ids:
-            self.cancel_orders(order_ids)
+        self.cancel_orders(order_ids)
         return order_ids
+
+    def _cancel_by_market(self, slugs: list[str]) -> None:
+        try:
+            for slug in slugs:
+                if IS_V2:
+                    self.client.cancel_market_orders(OrderMarketCancelParams(asset_id=slug))
+                else:
+                    self.client.cancel_market_orders(asset_id=slug)
+        except Exception as exc:
+            logger.warning("Per-market cancel failed (%s); canceling all orders", exc)
+            self.client.cancel_all()
 
     def get_open_orders(self, slugs: list[str] | None = None) -> list[LiveOrder]:
         if not self.is_authenticated:
             return []
-        try:
-            if hasattr(self.client, "get_open_orders"):
-                raw_orders = self.client.get_open_orders(OpenOrderParams())
-            else:
-                raw_orders = self.client.get_orders(OpenOrderParams())
-        except Exception:
-            return []
+        if hasattr(self.client, "get_open_orders"):
+            raw_orders = self.client.get_open_orders(OpenOrderParams())
+        else:
+            raw_orders = self.client.get_orders(OpenOrderParams())
 
         results: list[LiveOrder] = []
         slug_filter = set(slugs) if slugs else None
@@ -464,7 +542,33 @@ class ClobVenueClient:
         self.cancel_all_scoped([token_id])
 
     def get_positions(self) -> list[Position]:
-        return []
+        if not self.is_authenticated:
+            return []
+        proxy = self.settings.polymarket_proxy_address.strip()
+        if not proxy:
+            raise RuntimeError("POLYMARKET_PROXY_ADDRESS is required to read positions")
+        positions: list[Position] = []
+        offset = 0
+        while True:
+            resp = requests.get(
+                DATA_API_POSITIONS_URL,
+                params={"user": proxy, "sizeThreshold": 0, "limit": POSITIONS_PAGE_SIZE, "offset": offset},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            page = resp.json()
+            if not page:
+                return positions
+            positions.extend(
+                Position(slug=str(p["asset"]), net_qty=Decimal(str(p["size"])), avg_price=Decimal(str(p["avgPrice"])))
+                for p in page
+            )
+            offset += len(page)
 
     def get_fills(self, since: datetime | None = None) -> list[ShadowFill]:
-        return []
+        if not self.is_authenticated:
+            return []
+        params = TradeParams(after=int(since.timestamp())) if since is not None else TradeParams()
+        trades = self.client.get_trades(params)
+        proxy = self.settings.polymarket_proxy_address
+        return [fill for trade in trades for fill in parse_trade_fills(trade, proxy)]
