@@ -257,8 +257,9 @@ def greedy_allocate(
     side_budgets: dict[tuple[str, str], Decimal] = {}
     side_qtys: dict[tuple[str, str], Decimal] = {}
 
+    payout_floor = global_rewards.MIN_DAILY_PAYOUT_USD if is_global else Decimal("1.00")
     for c in candidates:
-        if (c.expected_reward_sec * c.duration_seconds) < Decimal("1.00"):
+        if (c.expected_reward_sec * c.duration_seconds) < payout_floor:
             continue
         if c.expected_reward_sec <= Decimal("0"):
             continue

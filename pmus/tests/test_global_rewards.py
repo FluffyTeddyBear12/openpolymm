@@ -164,3 +164,15 @@ def test_global_snapshot_single_sided_tail_market_earns_nothing():
 
     assert snap.qualifies is False
     assert snap.reward_usd == 0
+
+
+def test_selector_honors_configured_global_floor(monkeypatch):
+    b = book([("0.49", "100")], [("0.51", "100")])
+    w = window(pool="5")
+
+    default = greedy_allocate([w], {"tok": b}, total_budget=Decimal("60"), now=NOW, is_global=True)
+    monkeypatch.setattr(global_rewards, "MIN_DAILY_PAYOUT_USD", Decimal("0.50"))
+    lowered = greedy_allocate([w], {"tok": b}, total_budget=Decimal("60"), now=NOW, is_global=True)
+
+    assert default.selected_slugs == []
+    assert lowered.selected_slugs == ["tok"]
