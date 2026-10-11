@@ -91,6 +91,10 @@ def main() -> None:
     flatten_parser.add_argument("--venue", choices=["global", "us"], default=None, help="Trading venue (global or us)")
     flatten_parser.add_argument("--slug", help="Optional specific market slug to flatten")
 
+    dashboard_parser = subparsers.add_parser("dashboard", help="Launch Streamlit Web HUD")
+    dashboard_parser.add_argument("--port", type=int, default=None, help="Optional port for Streamlit")
+
+
     args = parser.parse_args()
     venue = args.venue or settings.venue
     if venue != settings.venue:
@@ -234,6 +238,16 @@ def main() -> None:
                         else:
                             print(f"Closed position for {pos.slug}")
                 print(f"Flattened all {len(slugs)} active markets")
+    elif args.command == "dashboard":
+        import subprocess
+        from pathlib import Path
+
+        dashboard_path = Path(__file__).resolve().parent / "dashboard.py"
+        cmd = [sys.executable, "-m", "streamlit", "run", str(dashboard_path)]
+        if getattr(args, "port", None):
+            cmd.extend(["--server.port", str(args.port)])
+        subprocess.run(cmd)
 
 if __name__ == "__main__":
     main()
+
