@@ -5,6 +5,7 @@ s the distance from the size-adjusted midpoint. Orders below the minimum size
 or at/after v score zero. With the midpoint in [0.10, 0.90] a single-sided
 book scores S/3; outside that band only two-sided liquidity scores.
 """
+import os
 from decimal import Decimal
 
 from pmus.models import Book, IncentiveWindow, Level
@@ -13,7 +14,7 @@ REWARD_MID_LOW = Decimal("0.10")
 REWARD_MID_HIGH = Decimal("0.90")
 SINGLE_SIDED_DIVISOR = Decimal("3")
 SECONDS_PER_DAY = Decimal("86400")
-MIN_DAILY_PAYOUT_USD = Decimal("1.00")
+MIN_DAILY_PAYOUT_USD = Decimal(os.getenv("PMUS_GLOBAL_MIN_DAILY_REWARD", "1.00"))
 ZERO = Decimal("0")
 
 
