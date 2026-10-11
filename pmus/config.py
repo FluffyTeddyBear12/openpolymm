@@ -33,6 +33,7 @@ class Settings:
     clob_passphrase: str = ""
     clob_host: str = "https://clob.polymarket.com"
     chain_id: int = 137
+    order_sync_grace_seconds: int = 20
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -115,4 +116,5 @@ class Settings:
             clob_passphrase=clob_passphrase,
             clob_host=clob_host,
             chain_id=chain_id,
+            order_sync_grace_seconds=int(os.getenv("PMUS_ORDER_SYNC_GRACE_SECONDS", "20")),
         )

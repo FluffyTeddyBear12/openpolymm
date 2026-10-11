@@ -7,15 +7,19 @@ from typing import Any, Literal
 
 from pmus.config import Settings
 from pmus.ledger import Ledger
-from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quote
+from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quote, ShadowFill
 from pmus.notify import Notifier
 from pmus.risk import RiskManager
 from pmus.shadow import check_paper_fills, estimate_lip_score
 from pmus.strategy.lip_quoter import desired_quotes
-from pmus.strategy.market_selector import greedy_allocate, rank_markets
+from pmus.strategy.market_selector import AllocationResult, greedy_allocate
 from pmus.venue import AuthenticatedClient, PublicGatewayClient
 
 MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
+
+CANDIDATE_BOOK_LIMIT = 15
+FILL_LOOKBACK_SECONDS = 60
+FILL_WINDOW_SECONDS = 3600
 
 def reconcile_quotes(
     current_orders: list[LiveOrder],
@@ -68,6 +72,66 @@ def update_position_from_fill(current_pos: Position, fill_side: str, fill_price:
 
     return Position(slug=current_pos.slug, net_qty=new_qty, avg_price=new_avg)
 
+def resolve_market(client: Any, slug: str) -> Market:
+    market = client.get_market(slug) if hasattr(client, "get_market") else None
+    if market is not None:
+        return market
+    return Market(
+        slug=slug,
+        event_id=None,
+        category="sports",
+        tick=Decimal("0.001"),
+        min_qty=Decimal("1"),
+        active=True,
+        mutually_exclusive=False,
+    )
+
+def allocate_markets(
+    settings: Settings,
+    client: Any,
+    logger: logging.Logger,
+) -> tuple[dict[str, IncentiveWindow], AllocationResult]:
+    active_windows: dict[str, IncentiveWindow] = {}
+    for w in client.fetch_incentives(status="active", page_size=200):
+        if w.status.lower() == "active" and w.slug not in active_windows:
+            active_windows[w.slug] = w
+
+    candidate_books: dict[str, Book] = {}
+    for slug in list(active_windows.keys())[:CANDIDATE_BOOK_LIMIT]:
+        try:
+            candidate_books[slug] = client.fetch_book(slug)
+        except Exception as e:
+            logger.debug("Failed to fetch candidate book %s: %s", slug, e)
+
+    alloc_res = greedy_allocate(
+        windows=list(active_windows.values()),
+        books=candidate_books,
+        total_budget=settings.total_budget,
+        now=datetime.now(timezone.utc),
+        max_markets=settings.max_markets,
+        max_contracts_cap=Decimal(str(settings.max_contracts_per_market)),
+        tick=Decimal("0.001"),
+        pre_start_cancel_seconds=settings.pre_start_cancel_seconds,
+        quote_live_periods=settings.quote_live_periods,
+        slug_to_event_map=client.fetch_slug_to_event_map(),
+        is_global=(settings.venue == "global"),
+    )
+
+    if not alloc_res.selected_slugs:
+        logger.warning("No fundable markets selected: %s", alloc_res.unfunded_reason)
+    for cand in alloc_res.selected_candidates:
+        logger.info(
+            "Selected candidate market=%s, event=%s, side=%s, cost=$%.2f, expected=$%.4f/hr ($%.6f/s)",
+            cand.slug,
+            cand.event_id,
+            cand.side,
+            cand.cost,
+            cand.expected_reward_sec * Decimal("3600"),
+            cand.expected_reward_sec,
+        )
+    logger.info("Allocated %s markets with greedy selection: %s", len(alloc_res.selected_slugs), alloc_res.selected_slugs)
+    return active_windows, alloc_res
+
 class ShadowEngine:
     def __init__(
         self,
@@ -90,58 +154,13 @@ class ShadowEngine:
             self.logger.info("Starting ShadowEngine indefinitely")
             end_time = float("inf")
 
-        windows = self.client.fetch_incentives(status="active", page_size=200)
-        active_windows: dict[str, IncentiveWindow] = {}
-        candidate_books: dict[str, Book] = {}
-
-        now_dt = datetime.now(timezone.utc)
-        for w in windows:
-            if w.status.lower() == "active" and w.slug not in active_windows:
-                active_windows[w.slug] = w
-
-        for slug in list(active_windows.keys())[:15]:
-            try:
-                candidate_books[slug] = self.client.fetch_book(slug)
-            except Exception as e:
-                self.logger.debug("Failed to fetch candidate book %s: %s", slug, e)
-
-        slug_to_event = self.client.fetch_slug_to_event_map()
-        is_global = (self.settings.venue == "global")
-        alloc_res = greedy_allocate(
-            windows=list(active_windows.values()),
-            books=candidate_books,
-            total_budget=self.settings.total_budget,
-            now=now_dt,
-            max_markets=self.settings.max_markets,
-            max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
-            tick=Decimal("0.001"),
-            pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
-            quote_live_periods=self.settings.quote_live_periods,
-            slug_to_event_map=slug_to_event,
-            is_global=is_global,
-        )
-
+        active_windows, alloc_res = allocate_markets(self.settings, self.client, self.logger)
         target_slugs = alloc_res.selected_slugs
-        if not target_slugs:
-            self.logger.warning("No fundable markets selected: %s", alloc_res.unfunded_reason)
-        else:
-            for cand in alloc_res.selected_candidates:
-                hr_reward = cand.expected_reward_sec * Decimal("3600")
-                self.logger.info(
-                    "Selected candidate market=%s, event=%s, side=%s, cost=$%.2f, expected=$%.4f/hr ($%.6f/s)",
-                    cand.slug,
-                    cand.event_id,
-                    cand.side,
-                    cand.cost,
-                    hr_reward,
-                    cand.expected_reward_sec,
-                )
+        is_global = (self.settings.venue == "global")
 
         market_metadata: dict[str, Market] = {}
         for slug in target_slugs:
             self.market_states[slug] = "IDLE"
-
-        self.logger.info("Allocated %s markets with greedy selection: %s", len(target_slugs), target_slugs)
 
         tick_count = 0
         while time.time() < end_time:
@@ -154,18 +173,7 @@ class ShadowEngine:
                 try:
                     book = self.client.fetch_book(slug)
                     if slug not in market_metadata:
-                        if hasattr(self.client, "get_market") and self.client.get_market(slug) is not None:
-                            market_metadata[slug] = self.client.get_market(slug)
-                        else:
-                            market_metadata[slug] = Market(
-                                slug=slug,
-                                event_id=None,
-                                category="sports",
-                                tick=Decimal("0.001"),
-                                min_qty=Decimal("1"),
-                                active=True,
-                                mutually_exclusive=False,
-                            )
+                        market_metadata[slug] = resolve_market(self.client, slug)
                     market = market_metadata[slug]
 
                     pos = self.ledger.get_position(slug)
@@ -257,7 +265,13 @@ class LiveEngine:
         self.notifier = Notifier(settings)
         self.kill_switch_active: bool = False
         self.daily_loss_stop_tripped: bool = False
-        self.recorded_fill_ids: set[str] = set()
+        self.target_slugs: list[str] = []
+        self.active_windows: dict[str, IncentiveWindow] = {}
+        self.side_budgets: dict[tuple[str, str], Decimal] = {}
+        self.markets: dict[str, Market] = {}
+        self.started_at: float = time.time()
+        self.order_created_at: dict[str, float] = {}
+        self.recent_cancels: dict[str, float] = {}
 
     def run(self, duration_seconds: int | None = None) -> None:
         if not self.auth_client.is_available:
@@ -270,204 +284,217 @@ class LiveEngine:
             self.logger.info("Starting LiveEngine indefinitely")
             end_time = float("inf")
 
-        windows = self.public_client.fetch_incentives(status="active", page_size=200)
-        active_windows: dict[str, IncentiveWindow] = {w.slug: w for w in windows if w.status.lower() == "active"}
+        self.prepare()
+        try:
+            while time.time() < end_time:
+                tick_start = time.time()
+                period = self.tick(tick_start)
+                time.sleep(max(0.1, period - (time.time() - tick_start)))
+        finally:
+            self.shutdown()
 
-        candidate_books: dict[str, Book] = {}
-        for slug in list(active_windows.keys())[:15]:
-            try:
-                candidate_books[slug] = self.public_client.fetch_book(slug)
-            except Exception:
-                pass
-
-        slug_to_event = self.public_client.fetch_slug_to_event_map()
-        is_global = (self.settings.venue == "global")
-        alloc_res = greedy_allocate(
-            windows=list(active_windows.values()),
-            books=candidate_books,
-            total_budget=self.settings.total_budget,
-            now=datetime.now(timezone.utc),
-            max_markets=self.settings.max_markets,
-            max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
-            tick=Decimal("0.001"),
-            pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
-            quote_live_periods=self.settings.quote_live_periods,
-            slug_to_event_map=slug_to_event,
-            is_global=is_global,
-        )
-
-        target_slugs = alloc_res.selected_slugs
-        if not target_slugs:
-            self.logger.warning("No fundable markets selected: %s", alloc_res.unfunded_reason)
-        else:
-            for cand in alloc_res.selected_candidates:
-                hr_reward = cand.expected_reward_sec * Decimal("3600")
-                self.logger.info(
-                    "Selected candidate market=%s, event=%s, side=%s, cost=$%.2f, expected=$%.4f/hr ($%.6f/s)",
-                    cand.slug,
-                    cand.event_id,
-                    cand.side,
-                    cand.cost,
-                    hr_reward,
-                    cand.expected_reward_sec,
-                )
-
-        self.logger.info("Scoped startup cancel for target slugs: %s", target_slugs)
-        self.auth_client.cancel_all_scoped(target_slugs)
-
-        market_metadata: dict[str, Market] = {}
-        for slug in target_slugs:
+    def prepare(self) -> None:
+        self.active_windows, alloc_res = allocate_markets(self.settings, self.public_client, self.logger)
+        self.target_slugs = alloc_res.selected_slugs
+        self.side_budgets = alloc_res.side_budgets
+        for slug in self.target_slugs:
             self.market_states[slug] = "IDLE"
+        self.logger.info("Scoped startup cancel for target slugs: %s", self.target_slugs)
+        self.started_at = time.time()
+        self._cancel_targets(self.started_at)
 
-        tick_count = 0
-        while time.time() < end_time:
-            tick_start = time.time()
-            now_dt = datetime.now(timezone.utc)
-            now_ms = int(time.time() * 1000)
+    def shutdown(self) -> None:
+        try:
+            self._cancel_targets(time.time())
+            self.logger.info("Shutdown cancel complete for %s", self.target_slugs)
+        except Exception as exc:
+            self.logger.error("Shutdown cancel failed for %s: %s", self.target_slugs, exc)
 
-            # Order state sync with exchange ground truth
+    def tick(self, now_ts: float) -> float:
+        now_dt = datetime.fromtimestamp(now_ts, timezone.utc)
+        now_ms = int(now_ts * 1000)
+
+        is_kill = self.risk_manager.is_kill_switch_active()
+        if is_kill != self.kill_switch_active:
+            self.kill_switch_active = is_kill
+            self.notifier.notify_kill_switch(is_kill)
+        if is_kill:
+            self.logger.warning("Kill switch active! Canceling orders and pausing.")
+            self._cancel_targets(now_ts)
+            return 5.0
+
+        if self.risk_manager.is_maintenance_active(now_dt):
+            self.logger.warning("Exchange weekly maintenance window active! Canceling orders and pausing.")
+            self._cancel_targets(now_ts)
+            return 10.0
+
+        try:
             exchange_open = self.auth_client.get_open_orders()
-            exchange_order_ids = {o.order_id for o in exchange_open}
-            local_open = self.ledger.get_open_orders()
-
-            missing_orders = [o for o in local_open if o.order_id not in exchange_order_ids]
-            if missing_orders:
-                recent_fills = self.auth_client.get_fills()
-                fill_order_ids = {f.order_id for f in recent_fills}
-                for f in recent_fills:
-                    self.ledger.record_fill(f)
-                    if f.fill_id not in self.recorded_fill_ids:
-                        self.recorded_fill_ids.add(f.fill_id)
-                        self.notifier.notify_fill(f)
-
-                for o in missing_orders:
-                    if o.order_id in fill_order_ids:
-                        self.ledger.close_order(o.order_id, status="FILLED", ts_ms=now_ms)
-                        self.logger.info("Order %s marked FILLED from exchange sync", o.order_id)
-                    else:
-                        self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
-                        self.logger.info("Order %s marked CANCELED from exchange sync", o.order_id)
-
-            is_kill = self.risk_manager.is_kill_switch_active()
-            if is_kill != self.kill_switch_active:
-                self.kill_switch_active = is_kill
-                self.notifier.notify_kill_switch(is_kill)
-
-            if is_kill:
-                self.logger.warning("Kill switch active! Canceling orders and pausing.")
-                self.auth_client.cancel_all_scoped(target_slugs)
-                time.sleep(5)
-                continue
-
-            if self.risk_manager.is_maintenance_active(now_dt):
-                self.logger.warning("Exchange weekly maintenance window active! Canceling orders and pausing.")
-                self.auth_client.cancel_all_scoped(target_slugs)
-                time.sleep(10)
-                continue
-
+            fills = self.auth_client.get_fills(since=self._fill_window_start(now_ts))
+            positions = self.auth_client.get_positions()
             buying_power = self.auth_client.get_buying_power()
-            live_positions = {p.slug: p for p in self.auth_client.get_positions()}
-            realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
+        except Exception as exc:
+            self.logger.warning("Exchange sync failed, skipping tick: %s", exc)
+            return 1.0
 
-            if realized_loss_today >= self.settings.daily_loss_stop:
-                if not self.daily_loss_stop_tripped:
-                    self.daily_loss_stop_tripped = True
-                    self.notifier.notify_daily_loss_stop(realized_loss_today, self.settings.daily_loss_stop)
-                self.logger.warning(
-                    "Daily loss stop tripped ($%s >= $%s)! Canceling all orders and pausing.",
-                    realized_loss_today,
-                    self.settings.daily_loss_stop,
-                )
-                self.auth_client.cancel_all_scoped(target_slugs)
-                time.sleep(10)
+        self._ingest_fills(fills)
+        self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms)
+
+        live_positions = {p.slug: p for p in positions}
+        realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
+        if realized_loss_today >= self.settings.daily_loss_stop:
+            if not self.daily_loss_stop_tripped:
+                self.daily_loss_stop_tripped = True
+                self.notifier.notify_daily_loss_stop(realized_loss_today, self.settings.daily_loss_stop)
+            self.logger.warning(
+                "Daily loss stop tripped ($%s >= $%s)! Canceling all orders and pausing.",
+                realized_loss_today,
+                self.settings.daily_loss_stop,
+            )
+            self._cancel_targets(now_ts)
+            return 10.0
+        self.daily_loss_stop_tripped = False
+
+        for slug in self.target_slugs:
+            self._quote_market(slug, now_dt, now_ts, now_ms, exchange_open, live_positions, buying_power, realized_loss_today)
+        return 1.0
+
+    def _fill_window_start(self, now_ts: float) -> datetime:
+        start = max(self.started_at, now_ts - FILL_WINDOW_SECONDS) - FILL_LOOKBACK_SECONDS
+        return datetime.fromtimestamp(start, timezone.utc)
+
+    def _in_grace(self, order_id: str, now_ts: float) -> bool:
+        created = self.order_created_at.get(order_id)
+        return created is not None and now_ts - created < self.settings.order_sync_grace_seconds
+
+    def _ingest_fills(self, fills: list[ShadowFill]) -> None:
+        for f in fills:
+            if self.ledger.record_fill(f):
+                self.notifier.notify_fill(f)
+                self.logger.info("Fill recorded: %s %s %s @ %s (order %s)", f.slug, f.side, f.qty, f.price, f.order_id)
+
+    def _sync_orders(self, exchange_open: list[LiveOrder], filled_order_ids: set[str], now_ts: float, now_ms: int) -> None:
+        exchange_ids = {o.order_id for o in exchange_open}
+        local_open = self.ledger.get_open_orders()
+        for o in local_open:
+            if o.order_id in exchange_ids or self._in_grace(o.order_id, now_ts):
                 continue
+            status = "FILLED" if o.order_id in filled_order_ids else "CANCELED"
+            self.ledger.close_order(o.order_id, status=status, ts_ms=now_ms)
+            self.order_created_at.pop(o.order_id, None)
+            self.logger.info("Order %s marked %s from exchange sync", o.order_id, status)
+
+        local_ids = {o.order_id for o in local_open}
+        orphans = [
+            o for o in exchange_open
+            if o.slug in self.target_slugs and o.order_id not in local_ids and o.order_id not in self.recent_cancels
+        ]
+        if orphans:
+            self.logger.warning("Canceling %s untracked exchange orders: %s", len(orphans), [o.order_id for o in orphans])
+            try:
+                self.auth_client.cancel_orders_batch(orphans)
+                for o in orphans:
+                    self.recent_cancels[o.order_id] = now_ts
+            except Exception as exc:
+                self.logger.warning("Orphan cancel failed: %s", exc)
+
+        grace = self.settings.order_sync_grace_seconds
+        self.recent_cancels = {oid: ts for oid, ts in self.recent_cancels.items() if now_ts - ts < grace}
+
+    def _risk_open_orders(self, exchange_open: list[LiveOrder], now_ts: float) -> list[LiveOrder]:
+        orders = {o.order_id: o for o in exchange_open if o.order_id not in self.recent_cancels}
+        for o in self.ledger.get_open_orders():
+            if self._in_grace(o.order_id, now_ts):
+                orders.setdefault(o.order_id, o)
+        return list(orders.values())
+
+    def _cancel_targets(self, now_ts: float) -> None:
+        if not self.target_slugs:
+            return
+        canceled = set(self.auth_client.cancel_all_scoped(self.target_slugs))
+        local = [o for slug in self.target_slugs for o in self.ledger.get_open_orders(slug)]
+        leftover = [o for o in local if o.order_id not in canceled]
+        if leftover:
+            self.auth_client.cancel_orders_batch(leftover)
+        now_ms = int(now_ts * 1000)
+        for o in local:
+            self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
+            self.order_created_at.pop(o.order_id, None)
+            self.recent_cancels[o.order_id] = now_ts
+
+    def _market(self, slug: str) -> Market:
+        if slug not in self.markets:
+            self.markets[slug] = resolve_market(self.public_client, slug)
+        return self.markets[slug]
+
+    def _quote_market(
+        self,
+        slug: str,
+        now_dt: datetime,
+        now_ts: float,
+        now_ms: int,
+        exchange_open: list[LiveOrder],
+        live_positions: dict[str, Position],
+        buying_power: Decimal,
+        realized_loss_today: Decimal,
+    ) -> None:
+        window = self.active_windows.get(slug)
+        try:
+            book = self.public_client.fetch_book(slug)
+            market = self._market(slug)
+            pos = live_positions.get(slug, Position(slug=slug, net_qty=Decimal("0"), avg_price=Decimal("0")))
+            if abs(pos.net_qty) >= self.settings.max_contracts_per_market:
+                self.market_states[slug] = "FLATTENING"
             else:
-                self.daily_loss_stop_tripped = False
+                self.market_states[slug] = "QUOTING"
 
-            for slug in target_slugs:
-                window = active_windows.get(slug)
-                try:
-                    book = self.public_client.fetch_book(slug)
-                    if slug not in market_metadata:
-                        if hasattr(self.public_client, "get_market") and self.public_client.get_market(slug) is not None:
-                            market_metadata[slug] = self.public_client.get_market(slug)
-                        else:
-                            market_metadata[slug] = Market(
-                                slug=slug,
-                                event_id=None,
-                                category="sports",
-                                tick=Decimal("0.001"),
-                                min_qty=Decimal("1"),
-                                active=True,
-                                mutually_exclusive=False,
-                            )
-                    market = market_metadata[slug]
-                    pos = live_positions.get(slug, self.ledger.get_position(slug))
-                    if abs(pos.net_qty) >= self.settings.max_contracts_per_market:
-                        self.market_states[slug] = "FLATTENING"
-                    else:
-                        self.market_states[slug] = "QUOTING"
+            quotes = desired_quotes(
+                market=market,
+                book=book,
+                window=window,
+                position=pos,
+                budget=self.settings.max_per_market,
+                max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
+                now=now_dt,
+                pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
+                quote_live_periods=self.settings.quote_live_periods,
+                bid_budget=self.side_budgets.get((slug, "bid"), Decimal("0")),
+                ask_budget=self.side_budgets.get((slug, "ask"), Decimal("0")),
+                is_global=(self.settings.venue == "global"),
+            )
 
-                    open_orders = self.ledger.get_open_orders(slug)
+            to_create, to_cancel, _ = reconcile_quotes(self.ledger.get_open_orders(slug), quotes)
 
-                    b_budget = alloc_res.side_budgets.get((slug, "bid"), Decimal("0"))
-                    a_budget = alloc_res.side_budgets.get((slug, "ask"), Decimal("0"))
+            if to_cancel:
+                self.auth_client.cancel_orders_batch(to_cancel)
+                for o in to_cancel:
+                    self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
+                    self.order_created_at.pop(o.order_id, None)
+                    self.recent_cancels[o.order_id] = now_ts
 
-                    quotes = desired_quotes(
-                        market=market,
-                        book=book,
-                        window=window,
-                        position=pos,
-                        budget=self.settings.max_per_market,
-                        max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
-                        now=now_dt,
-                        pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
-                        quote_live_periods=self.settings.quote_live_periods,
-                        bid_budget=b_budget,
-                        ask_budget=a_budget,
-                        is_global=is_global,
-                    )
+            risk_res = self.risk_manager.check_pre_submit(
+                new_quotes=to_create,
+                open_orders=self._risk_open_orders(exchange_open, now_ts),
+                positions=live_positions,
+                buying_power=buying_power,
+                realized_loss_today=realized_loss_today,
+                now=now_dt,
+            )
+            if not risk_res.allowed:
+                self.logger.warning("Risk gate blocked submission on %s: %s", slug, risk_res.reason)
+                self.market_states[slug] = "PAUSED"
+                return
 
-                    to_create, to_cancel, to_keep = reconcile_quotes(open_orders, quotes)
+            if to_create:
+                created = self.auth_client.create_orders_batch(to_create, {slug: market.tick}, {slug: market.min_qty})
+                for o in created:
+                    self.ledger.record_order(o, status="OPEN", ts_ms=now_ms)
+                    self.order_created_at[o.order_id] = now_ts
 
-                    # Execute to_cancel before to_create to free collateral and buying power
-                    if to_cancel:
-                        self.auth_client.cancel_orders_batch(to_cancel)
-                        for o in to_cancel:
-                            self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
-
-                    # Global portfolio open orders across all markets for pre-trade risk check
-                    global_open_orders = self.ledger.get_open_orders()
-
-                    risk_res = self.risk_manager.check_pre_submit(
-                        new_quotes=to_create,
-                        open_orders=global_open_orders,
-                        positions=live_positions,
-                        buying_power=buying_power,
-                        realized_loss_today=realized_loss_today,
-                        now=now_dt,
-                    )
-                    if not risk_res.allowed:
-                        self.logger.warning("Risk gate blocked submission on %s: %s", slug, risk_res.reason)
-                        self.market_states[slug] = "PAUSED"
-                        continue
-
-                    if to_create:
-                        tick_map = {slug: market.tick}
-                        min_qty_map = {slug: market.min_qty}
-                        created = self.auth_client.create_orders_batch(to_create, tick_map, min_qty_map)
-                        for o in created:
-                            self.ledger.record_order(o, status="OPEN", ts_ms=now_ms)
-
-                    self.market_states[slug] = "QUOTING"
-                except Exception as exc:
-                    self.market_states[slug] = "PAUSED"
-                    self.logger.warning("Error processing %s: %s", slug, exc)
-
-            tick_count += 1
-            elapsed = time.time() - tick_start
-            sleep_time = max(0.1, 1.0 - elapsed)
-            time.sleep(sleep_time)
+            self.market_states[slug] = "QUOTING"
+        except Exception as exc:
+            self.market_states[slug] = "PAUSED"
+            self.logger.warning("Error processing %s: %s", slug, exc)
 
     def handle_order_update(self, event: dict) -> None:
         now_ms = int(time.time() * 1000)

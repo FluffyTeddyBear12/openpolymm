@@ -142,11 +142,11 @@ class Ledger:
                 for r in rows
             ]
 
-    def record_fill(self, fill: ShadowFill) -> None:
+    def record_fill(self, fill: ShadowFill) -> bool:
         with self._get_connection() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
-                INSERT OR REPLACE INTO fills (fill_id, order_id, slug, side, price, qty, fee, is_maker, ts_ms)
+                INSERT OR IGNORE INTO fills (fill_id, order_id, slug, side, price, qty, fee, is_maker, ts_ms)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -161,6 +161,7 @@ class Ledger:
                     fill.ts_ms,
                 ),
             )
+            return cursor.rowcount == 1
 
     def record_lip_snapshot(self, snap: LipSnapshot) -> None:
         with self._get_connection() as conn:

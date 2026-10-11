@@ -1,5 +1,6 @@
 import argparse
 import os
+import signal
 import sys
 from decimal import Decimal
 
@@ -11,6 +12,12 @@ from pmus.logging_setup import setup_logging
 from pmus.report import generate_report
 from pmus.risk import RiskManager
 from pmus.venue import AuthenticatedClient, PublicGatewayClient
+
+def raise_system_exit(signum, frame) -> None:
+    raise SystemExit(0)
+
+def install_sigterm_handler() -> None:
+    signal.signal(signal.SIGTERM, raise_system_exit)
 
 def probe_command(settings: Settings, venue: str = "global") -> None:
     if venue == "global":
@@ -107,6 +114,7 @@ def main() -> None:
     if args.command == "probe":
         probe_command(settings, venue=venue)
     elif args.command == "run":
+        install_sigterm_handler()
         logger = setup_logging(logs_dir=settings.logs_dir)
         ledger = Ledger(settings.data_dir / "ledger.db")
         duration = args.seconds if args.seconds is not None else ((args.minutes * 60) if args.minutes is not None else None)
