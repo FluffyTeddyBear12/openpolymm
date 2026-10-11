@@ -1,9 +1,15 @@
+import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 import sqlite3
 import time
 from typing import Any
+
+# Ensure repository root is on sys.path
+_repo_root = str(Path(__file__).resolve().parent.parent)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 import pandas as pd
 import streamlit as st
