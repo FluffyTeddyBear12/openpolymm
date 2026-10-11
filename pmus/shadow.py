@@ -57,6 +57,122 @@ def estimate_global_lip_score(
         ask_qualifies=qualifies and our_ask > zero,
     )
 
+def estimate_global_pair_score(
+    yes_book: Book,
+    no_book: Book,
+    window: IncentiveWindow | None,
+    resting_orders: list[LiveOrder],
+    ts_ms: int | None = None,
+) -> tuple[LipSnapshot, LipSnapshot]:
+    now_ms = ts_ms if ts_ms is not None else int(time.time() * 1000)
+    zero = Decimal("0")
+    if window is None or window.status.lower() != "active" or window.max_spread is None:
+        prog = window.program_id if window is not None else "none"
+        return (
+            LipSnapshot(
+                ts_ms=now_ms,
+                slug=yes_book.slug,
+                program_id=prog,
+                trader_bid_score=zero,
+                total_bid_score=zero,
+                trader_ask_score=zero,
+                total_ask_score=zero,
+                qualifies=False,
+                reward_usd=zero,
+            ),
+            LipSnapshot(
+                ts_ms=now_ms,
+                slug=no_book.slug,
+                program_id=prog,
+                trader_bid_score=zero,
+                total_bid_score=zero,
+                trader_ask_score=zero,
+                total_ask_score=zero,
+                qualifies=False,
+                reward_usd=zero,
+            ),
+        )
+
+    mid_y = global_rewards.adjusted_mid(yes_book, window.target_size)
+    mid_n = global_rewards.adjusted_mid(no_book, window.target_size)
+    if mid_y is None or mid_n is None:
+        return (
+            LipSnapshot(
+                ts_ms=now_ms,
+                slug=yes_book.slug,
+                program_id=window.program_id,
+                trader_bid_score=zero,
+                total_bid_score=zero,
+                trader_ask_score=zero,
+                total_ask_score=zero,
+                qualifies=False,
+                reward_usd=zero,
+            ),
+            LipSnapshot(
+                ts_ms=now_ms,
+                slug=no_book.slug,
+                program_id=window.program_id,
+                trader_bid_score=zero,
+                total_bid_score=zero,
+                trader_ask_score=zero,
+                total_ask_score=zero,
+                qualifies=False,
+                reward_usd=zero,
+            ),
+        )
+
+    v = window.max_spread
+    yes_orders = [o for o in resting_orders if o.slug == yes_book.slug and o.qty_open >= window.target_size and o.side in BID_SIDES]
+    no_orders = [o for o in resting_orders if o.slug == no_book.slug and o.qty_open >= window.target_size and o.side in BID_SIDES]
+
+    s_one = sum((global_rewards.order_score(v, abs(o.price - mid_y), o.qty_open) for o in yes_orders), zero)
+    s_two = sum((global_rewards.order_score(v, abs(o.price - mid_n), o.qty_open) for o in no_orders), zero)
+
+    ours = global_rewards.combined_score(s_one, s_two, mid_y)
+    competitors = global_rewards.competitor_q(yes_book, no_book, window)
+    reward = global_rewards.reward_rate(window.pool_usd, ours, competitors)
+
+    if s_one + s_two > zero:
+        reward_y = (reward * s_one) / (s_one + s_two)
+        reward_n = (reward * s_two) / (s_one + s_two)
+    else:
+        reward_y = zero
+        reward_n = zero
+
+    comp_bid_y = global_rewards.side_score(yes_book.bids, mid_y, v)
+    comp_bid_n = global_rewards.side_score(no_book.bids, mid_n, v)
+    qualifies = ours > zero
+
+    return (
+        LipSnapshot(
+            ts_ms=now_ms,
+            slug=yes_book.slug,
+            program_id=window.program_id,
+            trader_bid_score=s_one,
+            total_bid_score=comp_bid_y + s_one,
+            trader_ask_score=zero,
+            total_ask_score=zero,
+            qualifies=qualifies,
+            reward_usd=reward_y,
+            bid_qualifies=qualifies and s_one > zero,
+            ask_qualifies=False,
+        ),
+        LipSnapshot(
+            ts_ms=now_ms,
+            slug=no_book.slug,
+            program_id=window.program_id,
+            trader_bid_score=s_two,
+            total_bid_score=comp_bid_n + s_two,
+            trader_ask_score=zero,
+            total_ask_score=zero,
+            qualifies=qualifies,
+            reward_usd=reward_n,
+            bid_qualifies=qualifies and s_two > zero,
+            ask_qualifies=False,
+        ),
+    )
+
+
 def _evaluate_side_with_orders(
     book_levels: tuple[Level, ...],
     resting_orders: list[LiveOrder],
