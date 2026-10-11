@@ -330,4 +330,78 @@ def test_flat_account_does_not_quote_ask_when_shortfall_zero(base_market, active
 
     assert not any(q.side in ("SELL_LONG", "SELL_SHORT") for q in quotes)
 
+def test_global_quotes_min_size_despite_saturated_book(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("200"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    bids = (Level(Decimal("0.050"), Decimal("500000")),)
+    asks = (Level(Decimal("0.060"), Decimal("500000")),)
+    book = Book(slug="mkt-global", bids=bids, asks=asks, ts_ms=1000)
+
+    # In US mode, saturated book quotes nothing
+    us_quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("50.00"),
+        is_global=False,
+    )
+    assert len(us_quotes) == 0
+
+    # In Global mode, quotes min_size (200) for both bid and ask
+    global_quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("400.00"),
+        is_global=True,
+    )
+    assert len(global_quotes) == 2
+    bid_q = next(q for q in global_quotes if q.side == "BUY_LONG")
+    ask_q = next(q for q in global_quotes if q.side == "SELL_LONG")
+    assert bid_q.qty == Decimal("200")
+    assert bid_q.price == Decimal("0.050")
+    assert ask_q.qty == Decimal("200")
+    assert ask_q.price == Decimal("0.060")
+
+def test_global_long_inventory_unwinds(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("200"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    bids = (Level(Decimal("0.050"), Decimal("500000")),)
+    asks = (Level(Decimal("0.060"), Decimal("500000")),)
+    book = Book(slug="mkt-global", bids=bids, asks=asks, ts_ms=1000)
+
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("50"), avg_price=Decimal("0.050")),
+        budget=Decimal("50.00"),
+        is_global=True,
+    )
+    ask_q = next((q for q in quotes if q.side == "SELL_LONG"), None)
+    assert ask_q is not None
+    assert ask_q.qty == Decimal("50")
+    assert ask_q.price == Decimal("0.060")
+
+
 

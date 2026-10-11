@@ -93,6 +93,9 @@ def main() -> None:
 
     args = parser.parse_args()
     venue = args.venue or settings.venue
+    if venue != settings.venue:
+        import dataclasses
+        settings = dataclasses.replace(settings, venue=venue)
 
     if args.command == "probe":
         probe_command(settings, venue=venue)

@@ -102,6 +102,7 @@ class ShadowEngine:
                 self.logger.debug("Failed to fetch candidate book %s: %s", slug, e)
 
         slug_to_event = self.client.fetch_slug_to_event_map()
+        is_global = (self.settings.venue == "global")
         alloc_res = greedy_allocate(
             windows=list(active_windows.values()),
             books=candidate_books,
@@ -113,6 +114,7 @@ class ShadowEngine:
             pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
             quote_live_periods=self.settings.quote_live_periods,
             slug_to_event_map=slug_to_event,
+            is_global=is_global,
         )
 
         target_slugs = alloc_res.selected_slugs
@@ -192,6 +194,7 @@ class ShadowEngine:
                         quote_live_periods=self.settings.quote_live_periods,
                         bid_budget=b_budget,
                         ask_budget=a_budget,
+                        is_global=is_global,
                     )
                     for q in quotes:
                         self.ledger.record_quote(q, ts_ms=now_ms)
@@ -269,6 +272,7 @@ class LiveEngine:
                 pass
 
         slug_to_event = self.public_client.fetch_slug_to_event_map()
+        is_global = (self.settings.venue == "global")
         alloc_res = greedy_allocate(
             windows=list(active_windows.values()),
             books=candidate_books,
@@ -280,6 +284,7 @@ class LiveEngine:
             pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
             quote_live_periods=self.settings.quote_live_periods,
             slug_to_event_map=slug_to_event,
+            is_global=is_global,
         )
 
         target_slugs = alloc_res.selected_slugs
@@ -411,6 +416,7 @@ class LiveEngine:
                         quote_live_periods=self.settings.quote_live_periods,
                         bid_budget=b_budget,
                         ask_budget=a_budget,
+                        is_global=is_global,
                     )
 
                     to_create, to_cancel, to_keep = reconcile_quotes(open_orders, quotes)
