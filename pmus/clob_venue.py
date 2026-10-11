@@ -52,14 +52,17 @@ class ClobVenueClient:
                 signature_type=sig_type,
                 funder=funder,
             )
-            if settings.clob_api_key and settings.clob_secret and settings.clob_passphrase:
-                creds = ApiCreds(
-                    api_key=settings.clob_api_key,
-                    api_secret=settings.clob_secret,
-                    api_passphrase=settings.clob_passphrase,
-                )
-            else:
+            try:
                 creds = self.client.create_or_derive_api_creds()
+            except Exception:
+                if settings.clob_api_key and settings.clob_secret and settings.clob_passphrase:
+                    creds = ApiCreds(
+                        api_key=settings.clob_api_key,
+                        api_secret=settings.clob_secret,
+                        api_passphrase=settings.clob_passphrase,
+                    )
+                else:
+                    raise
             self.client.set_api_creds(creds)
             self.is_authenticated = True
         else:
