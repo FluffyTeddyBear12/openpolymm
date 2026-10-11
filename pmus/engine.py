@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import time
 import uuid
@@ -11,6 +12,8 @@ from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quot
 from pmus.notify import Notifier
 from pmus.risk import RiskManager
 from pmus.shadow import check_paper_fills, estimate_global_lip_score, estimate_lip_score
+from pmus.strategy import global_rewards
+from pmus.strategy.condition_selector import allocate_conditions, targets_to_allocation
 from pmus.strategy.lip_quoter import desired_quotes
 from pmus.strategy.market_selector import AllocationResult, greedy_allocate
 from pmus.venue import AuthenticatedClient, PublicGatewayClient
@@ -92,34 +95,74 @@ def allocate_markets(
     client: Any,
     logger: logging.Logger,
 ) -> tuple[dict[str, IncentiveWindow], AllocationResult]:
-    active_windows: dict[str, IncentiveWindow] = {}
-    for w in client.fetch_incentives(status="active", page_size=200):
-        if w.status.lower() == "active" and w.slug not in active_windows:
-            active_windows[w.slug] = w
-
-    candidate_books: dict[str, Book] = {}
-    for slug in list(active_windows.keys())[:CANDIDATE_BOOK_LIMIT]:
-        try:
-            candidate_books[slug] = client.fetch_book(slug)
-        except Exception as e:
-            logger.debug("Failed to fetch candidate book %s: %s", slug, e)
-
     is_global = settings.venue == "global"
-    alloc_res = greedy_allocate(
-        windows=list(active_windows.values()),
-        books=candidate_books,
-        total_budget=settings.total_budget,
-        now=datetime.now(timezone.utc),
-        max_markets=settings.max_markets,
-        max_contracts_cap=Decimal(str(settings.max_contracts_per_market)),
-        tick=Decimal("0.001"),
-        pre_start_cancel_seconds=settings.pre_start_cancel_seconds,
-        quote_live_periods=settings.quote_live_periods,
-        slug_to_event_map=client.fetch_slug_to_event_map(),
-        is_global=is_global,
-        ticks={slug: resolve_market(client, slug).tick for slug in candidate_books} if is_global else None,
-        max_cost_per_market=min(settings.max_per_market, settings.max_collateral_per_market) if is_global else None,
-    )
+    if is_global and hasattr(client, "fetch_reward_conditions"):
+        conditions = client.fetch_reward_conditions()
+        active_windows: dict[str, IncentiveWindow] = {}
+        for cond in conditions:
+            active_windows[cond.yes.slug] = dataclasses.replace(cond.window, slug=cond.yes.slug)
+            active_windows[cond.no.slug] = dataclasses.replace(cond.window, slug=cond.no.slug)
+
+        candidate_books: dict[str, Book] = {}
+        for cond in conditions[: CANDIDATE_BOOK_LIMIT // 2]:
+            try:
+                yes_book = client.fetch_book(cond.yes.slug)
+                no_book = client.fetch_book(cond.no.slug)
+            except Exception as e:
+                logger.debug("Failed to fetch candidate books for condition %s: %s", cond.condition_id, e)
+                continue
+            candidate_books[cond.yes.slug] = yes_book
+            candidate_books[cond.no.slug] = no_book
+
+        targets = allocate_conditions(
+            conditions=conditions,
+            books=candidate_books,
+            total_budget=settings.total_budget,
+            max_cost_per_condition=min(settings.max_per_market, settings.max_collateral_per_market),
+            max_markets=settings.max_markets,
+            max_contracts=Decimal(str(settings.max_contracts_per_market)),
+        )
+        for target in targets:
+            daily_usd = target.expected_reward_sec * global_rewards.SECONDS_PER_DAY
+            logger.info(
+                "Condition target question='%s', mode=%s, size=%s, yes_price=%s, no_price=%s, cost=$%.2f, $/day=$%.2f",
+                target.condition.question,
+                target.mode,
+                target.size,
+                target.yes_price,
+                target.no_price,
+                target.cost,
+                daily_usd,
+            )
+        alloc_res = targets_to_allocation(targets)
+    else:
+        active_windows = {}
+        for w in client.fetch_incentives(status="active", page_size=200):
+            if w.status.lower() == "active" and w.slug not in active_windows:
+                active_windows[w.slug] = w
+
+        candidate_books = {}
+        for slug in list(active_windows.keys())[:CANDIDATE_BOOK_LIMIT]:
+            try:
+                candidate_books[slug] = client.fetch_book(slug)
+            except Exception as e:
+                logger.debug("Failed to fetch candidate book %s: %s", slug, e)
+
+        alloc_res = greedy_allocate(
+            windows=list(active_windows.values()),
+            books=candidate_books,
+            total_budget=settings.total_budget,
+            now=datetime.now(timezone.utc),
+            max_markets=settings.max_markets,
+            max_contracts_cap=Decimal(str(settings.max_contracts_per_market)),
+            tick=Decimal("0.001"),
+            pre_start_cancel_seconds=settings.pre_start_cancel_seconds,
+            quote_live_periods=settings.quote_live_periods,
+            slug_to_event_map=client.fetch_slug_to_event_map(),
+            is_global=is_global,
+            ticks={slug: resolve_market(client, slug).tick for slug in candidate_books} if is_global else None,
+            max_cost_per_market=min(settings.max_per_market, settings.max_collateral_per_market) if is_global else None,
+        )
 
     if not alloc_res.selected_slugs:
         logger.warning("No fundable markets selected: %s", alloc_res.unfunded_reason)
@@ -149,6 +192,8 @@ class ShadowEngine:
         self.client = client
         self.logger = logger
         self.market_states: dict[str, MarketState] = {}
+        self.paired_slugs: frozenset[str] = frozenset()
+        self.side_qtys: dict[tuple[str, str], Decimal] = {}
 
     def run(self, duration_seconds: int | None = None) -> None:
         if duration_seconds is not None and duration_seconds > 0:
@@ -161,6 +206,8 @@ class ShadowEngine:
         active_windows, alloc_res = allocate_markets(self.settings, self.client, self.logger)
         target_slugs = alloc_res.selected_slugs
         is_global = (self.settings.venue == "global")
+        self.paired_slugs = alloc_res.paired_slugs
+        self.side_qtys = alloc_res.side_qtys
 
         market_metadata: dict[str, Market] = {}
         for slug in target_slugs:
@@ -211,6 +258,8 @@ class ShadowEngine:
                         bid_budget=b_budget,
                         ask_budget=a_budget,
                         is_global=is_global,
+                        paired=(slug in self.paired_slugs),
+                        quote_size=self.side_qtys.get((slug, "bid")),
                     )
                     for q in quotes:
                         self.ledger.record_quote(q, ts_ms=now_ms)
@@ -275,6 +324,8 @@ class LiveEngine:
         self.target_slugs: list[str] = []
         self.active_windows: dict[str, IncentiveWindow] = {}
         self.side_budgets: dict[tuple[str, str], Decimal] = {}
+        self.side_qtys: dict[tuple[str, str], Decimal] = {}
+        self.paired_slugs: frozenset[str] = frozenset()
         self.markets: dict[str, Market] = {}
         self.started_at: float = time.time()
         self.order_created_at: dict[str, float] = {}
@@ -309,6 +360,8 @@ class LiveEngine:
         self.active_windows, alloc_res = allocate_markets(self.settings, self.public_client, self.logger)
         self.target_slugs = alloc_res.selected_slugs
         self.side_budgets = alloc_res.side_budgets
+        self.side_qtys = alloc_res.side_qtys
+        self.paired_slugs = alloc_res.paired_slugs
         for slug in self.target_slugs:
             self.market_states[slug] = "IDLE"
         self.logger.info("Scoped startup cancel for target slugs: %s", self.target_slugs)
@@ -473,6 +526,8 @@ class LiveEngine:
                 bid_budget=self.side_budgets.get((slug, "bid"), Decimal("0")),
                 ask_budget=self.side_budgets.get((slug, "ask"), Decimal("0")),
                 is_global=(self.settings.venue == "global"),
+                paired=(slug in self.paired_slugs),
+                quote_size=self.side_qtys.get((slug, "bid")),
             )
 
             to_create, to_cancel, _ = reconcile_quotes(self.ledger.get_open_orders(slug), quotes)

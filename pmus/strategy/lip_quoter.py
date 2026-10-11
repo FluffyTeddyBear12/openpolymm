@@ -17,6 +17,8 @@ def desired_quotes(
     bid_budget: Decimal | None = None,
     ask_budget: Decimal | None = None,
     is_global: bool = False,
+    paired: bool = False,
+    quote_size: Decimal | None = None,
 ) -> list[Quote]:
     if window is None or window.status.lower() != "active":
         return []
@@ -81,9 +83,19 @@ def desired_quotes(
     quotes: list[Quote] = []
 
     if is_global:
+        if paired:
+            target_sz = quote_size if quote_size is not None else window.target_size
+            if net < target_sz:
+                price = global_rewards.bid_price(book, window, market.tick)
+                qty = target_sz
+                if price is not None and quote_bid and qty >= window.target_size and qty <= max_bid_contracts:
+                    quotes.append(Quote(slug=market.slug, side="BUY_LONG", price=price, qty=qty))
+            return quotes
+
         if quote_bid and global_rewards.reward_eligible(book, window.target_size):
             price = global_rewards.bid_price(book, window, market.tick)
-            bid_qty = min(max(window.target_size, market.min_qty), max_bid_contracts)
+            target_sz = quote_size if quote_size is not None else window.target_size
+            bid_qty = min(max(target_sz, market.min_qty), max_bid_contracts)
             if price is not None and bid_qty >= window.target_size:
                 quotes.append(Quote(slug=market.slug, side="BUY_LONG", price=price, qty=bid_qty))
 

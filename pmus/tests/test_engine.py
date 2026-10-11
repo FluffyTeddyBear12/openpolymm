@@ -1,8 +1,12 @@
+import logging
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
 import pytest
 
-from pmus.engine import reconcile_quotes, update_position_from_fill
-from pmus.models import LiveOrder, Position, Quote
+from pmus.config import Settings
+from pmus.engine import LiveEngine, allocate_markets, reconcile_quotes, update_position_from_fill
+from pmus.models import Book, ConditionMarket, IncentiveWindow, Level, LiveOrder, Market, Position, Quote
 
 def test_reconcile_quotes():
     current = [
@@ -48,3 +52,192 @@ def test_update_position_short_sides():
 
     pos = update_position_from_fill(pos, "BUY_SHORT", Decimal("0.500"), Decimal("10"))
     assert pos.net_qty == Decimal("0")
+
+
+def test_allocate_markets_global_path_selects_both_tokens_and_sets_windows():
+    logger = logging.getLogger("test_engine")
+    now = datetime(2026, 10, 12, 15, 0, tzinfo=timezone.utc)
+    w = IncentiveWindow(
+        slug="cond-123",
+        program_id="p-123",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    yes_m = Market(
+        slug="cond-123-yes",
+        event_id="ev-123",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will X win?",
+    )
+    no_m = Market(
+        slug="cond-123-no",
+        event_id="ev-123",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will X win?",
+    )
+    cond = ConditionMarket(
+        condition_id="cond-123",
+        event_id="ev-123",
+        question="Will X win?",
+        yes=yes_m,
+        no=no_m,
+        window=w,
+    )
+
+    yes_b = Book(
+        slug="cond-123-yes",
+        bids=(Level(Decimal("0.48"), Decimal("100")),),
+        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    no_b = Book(
+        slug="cond-123-no",
+        bids=(Level(Decimal("0.47"), Decimal("100")),),
+        asks=(Level(Decimal("0.53"), Decimal("100")),),
+        ts_ms=1000,
+    )
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond]
+    client.fetch_book.side_effect = lambda slug: yes_b if slug == "cond-123-yes" else no_b
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    active_windows, alloc_res = allocate_markets(settings, client, logger)
+
+    assert "cond-123-yes" in active_windows
+    assert "cond-123-no" in active_windows
+    assert active_windows["cond-123-yes"].slug == "cond-123-yes"
+    assert active_windows["cond-123-no"].slug == "cond-123-no"
+    assert alloc_res.selected_slugs == ["cond-123-yes", "cond-123-no"]
+    assert alloc_res.paired_slugs == frozenset({"cond-123-yes", "cond-123-no"})
+    assert alloc_res.side_budgets[("cond-123-yes", "bid")] == Decimal("48.00")
+    assert alloc_res.side_budgets[("cond-123-no", "bid")] == Decimal("47.00")
+    assert alloc_res.side_qtys[("cond-123-yes", "bid")] == Decimal("100")
+    assert alloc_res.side_qtys[("cond-123-no", "bid")] == Decimal("100")
+
+
+def test_live_engine_prepare_stores_paired_and_passes_to_quoter():
+    logger = logging.getLogger("test_live_engine")
+    now = datetime(2026, 10, 12, 15, 0, tzinfo=timezone.utc)
+    w = IncentiveWindow(
+        slug="cond-123",
+        program_id="p-123",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    yes_m = Market(
+        slug="cond-123-yes",
+        event_id="ev-123",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    no_m = Market(
+        slug="cond-123-no",
+        event_id="ev-123",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    cond = ConditionMarket(
+        condition_id="cond-123",
+        event_id="ev-123",
+        question="Will X win?",
+        yes=yes_m,
+        no=no_m,
+        window=w,
+    )
+
+    yes_b = Book(
+        slug="cond-123-yes",
+        bids=(Level(Decimal("0.48"), Decimal("100")),),
+        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    no_b = Book(
+        slug="cond-123-no",
+        bids=(Level(Decimal("0.47"), Decimal("100")),),
+        asks=(Level(Decimal("0.53"), Decimal("100")),),
+        ts_ms=1000,
+    )
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond]
+    client.fetch_book.side_effect = lambda slug: yes_b if slug == "cond-123-yes" else no_b
+    client.fetch_market.side_effect = lambda slug: yes_m if slug == "cond-123-yes" else no_m
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.cancel_all_scoped.return_value = []
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = []
+
+    risk_mgr = MagicMock()
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.prepare()
+
+    assert engine.paired_slugs == frozenset({"cond-123-yes", "cond-123-no"})
+    assert engine.side_qtys[("cond-123-yes", "bid")] == Decimal("100")
+    assert engine.side_qtys[("cond-123-no", "bid")] == Decimal("100")
+
+    with patch("pmus.engine.desired_quotes") as mock_desired_quotes:
+        mock_desired_quotes.return_value = []
+        engine._quote_market(
+            slug="cond-123-yes",
+            now_dt=now,
+            now_ts=now.timestamp(),
+            now_ms=int(now.timestamp() * 1000),
+            exchange_open=[],
+            live_positions={},
+            buying_power=Decimal("1000"),
+            realized_loss_today=Decimal("0"),
+        )
+        mock_desired_quotes.assert_called_once()
+        kws = mock_desired_quotes.call_args.kwargs
+        assert kws["paired"] is True
+        assert kws["quote_size"] == Decimal("100")
+        assert kws["is_global"] is True
+

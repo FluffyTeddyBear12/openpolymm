@@ -396,4 +396,131 @@ def test_global_long_inventory_unwinds(base_market):
     assert ask_q.price == Decimal("0.060")
 
 
+def test_quoter_paired_bids_in_tail_market(base_market):
+    win = IncentiveWindow(
+        slug="mkt-tail",
+        program_id="p-tail",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    bids = (Level(Decimal("0.050"), Decimal("500")),)
+    asks = (Level(Decimal("0.060"), Decimal("500")),)
+    book = Book(slug="mkt-tail", bids=bids, asks=asks, ts_ms=1000)
+
+    quotes_unpaired = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-tail", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("50.00"),
+        is_global=True,
+        paired=False,
+    )
+    assert quotes_unpaired == []
+
+    quotes_paired = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-tail", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("50.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert len(quotes_paired) == 1
+    assert quotes_paired[0].side == "BUY_LONG"
+    assert quotes_paired[0].price == Decimal("0.050")
+    assert quotes_paired[0].qty == Decimal("100")
+
+
+def test_quoter_paired_stops_bidding_and_emits_no_sell_long(base_market):
+    win = IncentiveWindow(
+        slug="mkt-tail",
+        program_id="p-tail",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    bids = (Level(Decimal("0.050"), Decimal("500")),)
+    asks = (Level(Decimal("0.060"), Decimal("500")),)
+    book = Book(slug="mkt-tail", bids=bids, asks=asks, ts_ms=1000)
+
+    quotes_filled = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-tail", net_qty=Decimal("100"), avg_price=Decimal("0.050")),
+        budget=Decimal("50.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert quotes_filled == []
+
+    quotes_overfilled = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-tail", net_qty=Decimal("150"), avg_price=Decimal("0.050")),
+        budget=Decimal("50.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert quotes_overfilled == []
+
+
+def test_quoter_non_paired_uses_quote_size(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    bids = (Level(Decimal("0.500"), Decimal("500")),)
+    asks = (Level(Decimal("0.510"), Decimal("500")),)
+    book = Book(slug="mkt-global", bids=bids, asks=asks, ts_ms=1000)
+
+    quotes_custom = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("100.00"),
+        is_global=True,
+        paired=False,
+        quote_size=Decimal("150"),
+    )
+    assert len(quotes_custom) == 1
+    assert quotes_custom[0].qty == Decimal("150")
+
+    quotes_default = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("100.00"),
+        is_global=True,
+        paired=False,
+    )
+    assert len(quotes_default) == 1
+    assert quotes_default[0].qty == Decimal("100")
+
+
+
 
