@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from pmus.config import Settings
 from pmus.dashboard import (
     _get_official_daily_earnings,
+    check_password,
     compute_kpis,
     format_fills_table,
     format_market_overview,
@@ -374,5 +375,55 @@ def test_get_official_daily_earnings_exception_fallback():
         settings = Settings(venue="global", polygon_private_key="0x123")
         res = _get_official_daily_earnings(settings)
         assert res is None
+
+
+def test_check_password_empty():
+    settings = Settings(dashboard_password="")
+    assert check_password(settings) is True
+
+
+def test_check_password_authenticated():
+    settings = Settings(dashboard_password="secret_password")
+    with patch("pmus.dashboard.st") as mock_st:
+        mock_st.session_state = {"authenticated": True}
+        assert check_password(settings) is True
+
+
+def test_check_password_unauthenticated_renders():
+    settings = Settings(dashboard_password="secret_password")
+    with patch("pmus.dashboard.st") as mock_st:
+        mock_st.session_state = {}
+        mock_st.text_input.return_value = ""
+        mock_st.form_submit_button.return_value = False
+        assert check_password(settings) is False
+        mock_st.title.assert_called_with("PMUS Trading HUD")
+        mock_st.subheader.assert_called_with("Restricted Access - Authentication Required")
+        mock_st.text_input.assert_called_with("Dashboard Password", type="password", key="login_pwd")
+        mock_st.form_submit_button.assert_called_with("Unlock Dashboard")
+
+
+def test_check_password_success_submit():
+    settings = Settings(dashboard_password="secret_password")
+    session = {}
+    with patch("pmus.dashboard.st") as mock_st:
+        mock_st.session_state = session
+        mock_st.text_input.return_value = "secret_password"
+        mock_st.form_submit_button.return_value = True
+        assert check_password(settings) is False
+        assert session.get("authenticated") is True
+        mock_st.rerun.assert_called_once()
+
+
+def test_check_password_invalid_submit():
+    settings = Settings(dashboard_password="secret_password")
+    session = {}
+    with patch("pmus.dashboard.st") as mock_st:
+        mock_st.session_state = session
+        mock_st.text_input.return_value = "wrong_password"
+        mock_st.form_submit_button.return_value = True
+        assert check_password(settings) is False
+        assert session.get("authenticated") is not True
+        mock_st.error.assert_called_with("Invalid password")
+
 
 

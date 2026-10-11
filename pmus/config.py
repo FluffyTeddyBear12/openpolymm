@@ -35,6 +35,7 @@ class Settings:
     chain_id: int = 137
     order_sync_grace_seconds: int = 20
     pair_preference: Decimal = Decimal("1.0")
+    dashboard_password: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -88,6 +89,7 @@ class Settings:
         webhook_url = (
             os.getenv("HOMEASSISTANT_CLOUDHOOK_URL") or os.getenv("PMUS_WEBHOOK_URL") or ""
         ).strip()
+        dashboard_password = os.getenv("PMUS_DASHBOARD_PASSWORD", "").strip()
 
         return cls(
             key_id=os.getenv("PMUS_KEY_ID", "").strip(),
@@ -119,4 +121,5 @@ class Settings:
             chain_id=chain_id,
             order_sync_grace_seconds=int(os.getenv("PMUS_ORDER_SYNC_GRACE_SECONDS", "20")),
             pair_preference=Decimal(os.getenv("PMUS_PAIR_PREFERENCE", "1.0")),
+            dashboard_password=dashboard_password,
         )

@@ -1,0 +1,15 @@
+[Unit]
+Description=Polymarket US Trading HUD Web Dashboard
+After=network.target pmus.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/polymarket_bot
+EnvironmentFile=/etc/pmus.env
+ExecStart=/home/ubuntu/polymarket_bot/venv/bin/python -m streamlit run pmus/dashboard.py --server.port 8501 --server.headless true --server.address 0.0.0.0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

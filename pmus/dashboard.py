@@ -23,6 +23,25 @@ from pmus.models import LipSnapshot, LiveOrder, Position, ShadowFill
 _TITLE_CACHE: dict[str, str] = {}
 
 
+def check_password(settings: Settings) -> bool:
+    if not settings.dashboard_password:
+        return True
+    if st.session_state.get("authenticated", False):
+        return True
+
+    st.title("PMUS Trading HUD")
+    st.subheader("Restricted Access - Authentication Required")
+    with st.form("login_form"):
+        pwd = st.text_input("Dashboard Password", type="password", key="login_pwd")
+        if st.form_submit_button("Unlock Dashboard"):
+            if pwd == settings.dashboard_password:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            elif pwd:
+                st.error("Invalid password")
+    return False
+
+
 def resolve_market_title(slug: str, fetch: bool = False) -> str:
     if not slug:
         return ""
@@ -496,6 +515,14 @@ def main() -> None:
     st.set_page_config(page_title="PMUS Trading HUD", layout="wide", initial_sidebar_state="collapsed")
 
     settings = Settings.from_env()
+    if not check_password(settings):
+        st.stop()
+
+    if settings.dashboard_password:
+        if st.sidebar.button("Lock Dashboard"):
+            st.session_state["authenticated"] = False
+            st.rerun()
+
     db_path = settings.data_dir / "ledger.db"
     ledger = Ledger(db_path)
 
