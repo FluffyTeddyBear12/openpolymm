@@ -49,3 +49,32 @@ def test_generate_report(tmp_path):
     assert "Maker Rebates Earned:    $0.0312" in report_text
     assert "Estimated LIP Accrued:   $0.0500 (estimate)" in report_text
     assert "Inventory Mark-to-Market:$5.00" in report_text
+
+
+def test_report_header_and_caveat_follow_venue(tmp_path):
+    import time
+    ledger = Ledger(tmp_path / "venue_report.db")
+    ledger.record_lip_snapshot(
+        LipSnapshot(
+            ts_ms=int(time.time() * 1000),
+            slug="tok-1",
+            program_id="p-1",
+            trader_bid_score=Decimal("1"),
+            total_bid_score=Decimal("10"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("0"),
+            qualifies=True,
+            reward_usd=Decimal("0.001"),
+        )
+    )
+
+    global_text = generate_report(ledger, since_str="1h", venue="global")
+    us_text = generate_report(ledger, since_str="1h")
+
+    assert "POLYMARKET GLOBAL PERFORMANCE REPORT" in global_text
+    assert "Polymarket US enforces" not in global_text
+    assert "Completion Cost" not in global_text
+    assert "Projected Total" not in global_text
+    assert "POLYMARKET US PERFORMANCE REPORT" in us_text
+    assert "Polymarket US enforces" in us_text
+    assert "Completion Cost" in us_text

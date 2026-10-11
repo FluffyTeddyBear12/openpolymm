@@ -5,6 +5,57 @@ from decimal import Decimal
 
 from pmus.fees import maker_rebate
 from pmus.models import Book, IncentiveWindow, Level, LipSnapshot, LiveOrder, ShadowFill
+from pmus.strategy import global_rewards
+
+BID_SIDES = ("BUY_LONG", "BUY_SHORT")
+ASK_SIDES = ("SELL_LONG", "SELL_SHORT")
+
+def estimate_global_lip_score(
+    book: Book,
+    window: IncentiveWindow | None,
+    resting_orders: list[LiveOrder],
+    ts_ms: int | None = None,
+) -> LipSnapshot:
+    now_ms = ts_ms if ts_ms is not None else int(time.time() * 1000)
+    zero = Decimal("0")
+    mid = global_rewards.adjusted_mid(book, window.target_size) if window is not None else None
+    if window is None or window.status.lower() != "active" or window.max_spread is None or mid is None:
+        return LipSnapshot(
+            ts_ms=now_ms,
+            slug=book.slug,
+            program_id=window.program_id if window else "none",
+            trader_bid_score=zero,
+            total_bid_score=zero,
+            trader_ask_score=zero,
+            total_ask_score=zero,
+            qualifies=False,
+            reward_usd=zero,
+        )
+
+    v = window.max_spread
+    ours = [o for o in resting_orders if o.slug == book.slug and o.qty_open >= window.target_size]
+    our_bid = sum((global_rewards.order_score(v, abs(o.price - mid), o.qty_open) for o in ours if o.side in BID_SIDES), zero)
+    our_ask = sum((global_rewards.order_score(v, abs(o.price - mid), o.qty_open) for o in ours if o.side in ASK_SIDES), zero)
+    comp_bid = global_rewards.side_score(book.bids, mid, v)
+    comp_ask = global_rewards.side_score(book.asks, mid, v)
+
+    our_q = global_rewards.combined_score(our_bid, our_ask, mid)
+    competitors = (comp_bid if our_bid > zero else zero) + (comp_ask if our_ask > zero else zero)
+    qualifies = our_q > zero
+
+    return LipSnapshot(
+        ts_ms=now_ms,
+        slug=book.slug,
+        program_id=window.program_id,
+        trader_bid_score=our_bid,
+        total_bid_score=comp_bid + our_bid,
+        trader_ask_score=our_ask,
+        total_ask_score=comp_ask + our_ask,
+        qualifies=qualifies,
+        reward_usd=global_rewards.reward_rate(window.pool_usd, our_q, competitors),
+        bid_qualifies=qualifies and our_bid > zero,
+        ask_qualifies=qualifies and our_ask > zero,
+    )
 
 def _evaluate_side_with_orders(
     book_levels: tuple[Level, ...],

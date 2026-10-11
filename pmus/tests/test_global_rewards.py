@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from pmus.models import Book, IncentiveWindow, Level, Market, Position, Quote
+from pmus.models import Book, IncentiveWindow, Level, LiveOrder, Market, Position, Quote
+from pmus.shadow import estimate_global_lip_score
 from pmus.strategy import global_rewards
 from pmus.strategy.lip_quoter import desired_quotes
 from pmus.strategy.market_selector import greedy_allocate
@@ -47,7 +48,7 @@ def test_expected_reward_is_quadratic_single_sided_share():
 
     rate = global_rewards.expected_bid_reward_sec(b, w, Decimal("0.49"), Decimal("50"))
 
-    weight = (Decimal("0.01") / V) ** 2
+    weight = ((V - Decimal("0.01")) / V) ** 2
     ours = weight * 50 / 3
     competitors = weight * 100
     expected = Decimal("100") / Decimal("86400") * ours / (competitors + ours)
@@ -140,3 +141,26 @@ def test_quoter_never_posts_sell_without_inventory():
     b = book([("0.49", "100")], [("0.51", "100")])
     quotes = desired_quotes(market(), b, window(), flat(), budget=Decimal("100"), is_global=True)
     assert [q.side for q in quotes] == ["BUY_LONG"]
+
+
+def test_global_snapshot_scores_single_sided_bid_at_one_third():
+    b = book([("0.49", "100")], [("0.51", "100")])
+    ours = [LiveOrder("o1", "tok", "BUY_LONG", Decimal("0.49"), Decimal("50"))]
+
+    snap = estimate_global_lip_score(b, window(), ours, ts_ms=1)
+
+    weight = ((V - Decimal("0.01")) / V) ** 2
+    assert abs(snap.trader_bid_score - weight * 50) < Decimal("1e-20")
+    assert abs(snap.total_bid_score - weight * 150) < Decimal("1e-20")
+    assert snap.bid_qualifies is True
+    assert abs(snap.reward_usd - global_rewards.reward_rate(Decimal("100"), weight * 50 / 3, weight * 100)) < Decimal("1e-20")
+
+
+def test_global_snapshot_single_sided_tail_market_earns_nothing():
+    b = book([("0.05", "100")], [("0.07", "100")])
+    ours = [LiveOrder("o1", "tok", "BUY_LONG", Decimal("0.05"), Decimal("50"))]
+
+    snap = estimate_global_lip_score(b, window(), ours, ts_ms=1)
+
+    assert snap.qualifies is False
+    assert snap.reward_usd == 0

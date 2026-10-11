@@ -18,7 +18,9 @@ def generate_report(
     ledger: Ledger,
     since_str: str = "1h",
     client: PublicGatewayClient | None = None,
+    venue: str = "us",
 ) -> str:
+    is_global = venue == "global"
     window_ms = parse_duration_ms(since_str)
     now_ms = int(time.time() * 1000)
     since_ms = now_ms - window_ms
@@ -88,6 +90,12 @@ def generate_report(
             avg_share = (sum(shares) / Decimal(str(len(shares)))) * 100 if shares else Decimal("0")
 
             win = windows_map.get(slug)
+            if is_global:
+                pool_str = f"${win.pool_usd:.2f}/day" if win else "N/A"
+                market_breakdown_lines.append(
+                    f"  - Market {slug}: Pool={pool_str}, Share={avg_share:.1f}%, Est=${mkt_est:.4f} (Qual Secs: Bid={bid_secs}, Ask={ask_secs})"
+                )
+                continue
             if win:
                 period_str = getattr(win, "period", "early")
                 pool_str = f"${win.pool_usd:.2f}"
@@ -170,9 +178,16 @@ def generate_report(
 
     net_pnl = realized_pnl + maker_rebates + lip_reward_total - taker_fees + unrealized_mtm
 
+    venue_name = "POLYMARKET GLOBAL" if is_global else "POLYMARKET US"
+    caveat = (
+        "  * Polymarket Global pays liquidity rewards daily; days under $1.00 pay $0.00. LIP figures are model estimates."
+        if is_global
+        else "  * Minimum Payout Caveat: Polymarket US enforces a $1.00 minimum payout per market-period total; periods earning <$1.00 pay $0.00."
+    )
+
     lines = [
         "============================================================",
-        f"  POLYMARKET US PERFORMANCE REPORT (SINCE {since_str.upper()})",
+        f"  {venue_name} PERFORMANCE REPORT (SINCE {since_str.upper()})",
         "============================================================",
         f"  Total Fills:             {len(fills)}",
         f"  Total Trade Volume:      ${total_volume:.2f}",
@@ -194,7 +209,7 @@ def generate_report(
         "------------------------------------------------------------",
         f"  ESTIMATED NET EARNINGS:  ${net_pnl:.4f}",
         "============================================================",
-        "  * Minimum Payout Caveat: Polymarket US enforces a $1.00 minimum payout per market-period total; periods earning <$1.00 pay $0.00.",
+        caveat,
         "============================================================",
     ]
     return "\n".join(lines)

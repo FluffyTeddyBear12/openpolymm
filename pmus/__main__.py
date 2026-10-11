@@ -169,7 +169,7 @@ def main() -> None:
             client = ClobVenueClient(settings)
         else:
             client = PublicGatewayClient(base_url=settings.gateway_url)
-        print(generate_report(ledger, since_str=args.since, client=client))
+        print(generate_report(ledger, since_str=args.since, client=client, venue=venue))
 
     elif args.command == "flatten":
         if venue == "global":

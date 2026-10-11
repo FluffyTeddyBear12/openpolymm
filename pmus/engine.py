@@ -10,7 +10,7 @@ from pmus.ledger import Ledger
 from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quote, ShadowFill
 from pmus.notify import Notifier
 from pmus.risk import RiskManager
-from pmus.shadow import check_paper_fills, estimate_lip_score
+from pmus.shadow import check_paper_fills, estimate_global_lip_score, estimate_lip_score
 from pmus.strategy.lip_quoter import desired_quotes
 from pmus.strategy.market_selector import AllocationResult, greedy_allocate
 from pmus.venue import AuthenticatedClient, PublicGatewayClient
@@ -230,7 +230,10 @@ class ShadowEngine:
                         self.ledger.record_order(new_order, status="OPEN", ts_ms=now_ms)
                         current_open_orders.append(new_order)
 
-                    lip_snap = estimate_lip_score(book, window, current_open_orders, market.tick, ts_ms=now_ms)
+                    if is_global:
+                        lip_snap = estimate_global_lip_score(book, window, current_open_orders, ts_ms=now_ms)
+                    else:
+                        lip_snap = estimate_lip_score(book, window, current_open_orders, market.tick, ts_ms=now_ms)
                     self.ledger.record_lip_snapshot(lip_snap)
 
                 except Exception as exc:
