@@ -44,6 +44,15 @@ class IncentiveWindow:
     event_start_time: datetime | None = None
 
 @dataclass(frozen=True)
+class ConditionMarket:
+    condition_id: str
+    event_id: str
+    question: str
+    yes: Market
+    no: Market
+    window: IncentiveWindow
+
+@dataclass(frozen=True)
 class Quote:
     slug: str
     side: Side

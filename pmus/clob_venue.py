@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import logging
@@ -37,6 +38,7 @@ except ImportError:
 from pmus.config import Settings
 from pmus.models import (
     Book,
+    ConditionMarket,
     IncentiveWindow,
     Level,
     LiveOrder,
@@ -100,6 +102,19 @@ def parse_trade_fills(trade: dict, proxy_address: str) -> list[ShadowFill]:
             )
         )
     return fills
+
+
+@dataclass(frozen=True)
+class _SamplingMarket:
+    cond_id: str
+    market_slug: str
+    question: str
+    tick: Decimal
+    min_qty: Decimal
+    pool_usd: Decimal
+    target_size: Decimal
+    max_spread: Decimal
+    tokens: list[dict[str, Any]]
 
 
 class ClobVenueClient:
@@ -175,7 +190,7 @@ class ClobVenueClient:
     def is_available(self) -> bool:
         return self.is_authenticated
 
-    def fetch_reward_markets(self, limit: int = 20) -> list[tuple[Market, IncentiveWindow]]:
+    def _fetch_sampling_markets(self) -> list[_SamplingMarket]:
         if hasattr(self.client, "get_sampling_markets"):
             try:
                 raw_resp = self.client.get_sampling_markets()
@@ -195,9 +210,7 @@ class ClobVenueClient:
         else:
             raw_markets = []
 
-        now_utc = datetime.now(timezone.utc)
-        results: list[tuple[Market, IncentiveWindow]] = []
-
+        parsed: list[_SamplingMarket] = []
         for m in raw_markets:
             if not isinstance(m, dict):
                 continue
@@ -233,7 +246,27 @@ class ClobVenueClient:
             if not isinstance(tokens, list):
                 continue
 
-            for tok in tokens:
+            parsed.append(
+                _SamplingMarket(
+                    cond_id=cond_id,
+                    market_slug=market_slug,
+                    question=question,
+                    tick=tick,
+                    min_qty=min_qty,
+                    pool_usd=pool_usd,
+                    target_size=target_size,
+                    max_spread=max_spread,
+                    tokens=tokens,
+                )
+            )
+        return parsed
+
+    def fetch_reward_markets(self, limit: int = 20) -> list[tuple[Market, IncentiveWindow]]:
+        now_utc = datetime.now(timezone.utc)
+        results: list[tuple[Market, IncentiveWindow]] = []
+
+        for pm in self._fetch_sampling_markets():
+            for tok in pm.tokens:
                 if not isinstance(tok, dict):
                     continue
                 token_id = str(tok.get("token_id", ""))
@@ -242,23 +275,23 @@ class ClobVenueClient:
 
                 market = Market(
                     slug=token_id,
-                    event_id=market_slug,
+                    event_id=pm.market_slug,
                     category="global",
-                    tick=tick,
-                    min_qty=min_qty,
+                    tick=pm.tick,
+                    min_qty=pm.min_qty,
                     active=True,
                     mutually_exclusive=False,
-                    question=question,
+                    question=pm.question,
                 )
                 self._market_cache[token_id] = market
 
                 window = IncentiveWindow(
                     slug=token_id,
-                    program_id=cond_id,
-                    pool_usd=pool_usd,
+                    program_id=pm.cond_id,
+                    pool_usd=pm.pool_usd,
                     discount=Decimal("0.30"),
-                    target_size=target_size,
-                    max_spread=max_spread,
+                    target_size=pm.target_size,
+                    max_spread=pm.max_spread,
                     start=now_utc - timedelta(hours=1),
                     end=now_utc + timedelta(hours=23),
                     status="active",
@@ -268,6 +301,81 @@ class ClobVenueClient:
                     return results
 
         return results
+
+    def fetch_reward_conditions(self, limit: int = 0) -> list[ConditionMarket]:
+        now_utc = datetime.now(timezone.utc)
+        results: list[ConditionMarket] = []
+
+        for pm in self._fetch_sampling_markets():
+            valid_tokens = [
+                tok for tok in pm.tokens
+                if isinstance(tok, dict) and str(tok.get("token_id", "")).strip()
+            ]
+            if len(valid_tokens) != 2:
+                continue
+
+            out0 = str(valid_tokens[0].get("outcome", "")).strip().lower()
+            out1 = str(valid_tokens[1].get("outcome", "")).strip().lower()
+            if out0 == "yes" or out1 == "no":
+                tok_yes, tok_no = valid_tokens[0], valid_tokens[1]
+            elif out0 == "no" or out1 == "yes":
+                tok_yes, tok_no = valid_tokens[1], valid_tokens[0]
+            else:
+                tok_yes, tok_no = valid_tokens[0], valid_tokens[1]
+
+            yes_id = str(tok_yes.get("token_id", "")).strip()
+            no_id = str(tok_no.get("token_id", "")).strip()
+
+            market_yes = Market(
+                slug=yes_id,
+                event_id=pm.market_slug,
+                category="global",
+                tick=pm.tick,
+                min_qty=pm.min_qty,
+                active=True,
+                mutually_exclusive=False,
+                question=pm.question,
+            )
+            market_no = Market(
+                slug=no_id,
+                event_id=pm.market_slug,
+                category="global",
+                tick=pm.tick,
+                min_qty=pm.min_qty,
+                active=True,
+                mutually_exclusive=False,
+                question=pm.question,
+            )
+            self._market_cache[yes_id] = market_yes
+            self._market_cache[no_id] = market_no
+
+            window = IncentiveWindow(
+                slug=pm.cond_id,
+                program_id=pm.cond_id,
+                pool_usd=pm.pool_usd,
+                discount=Decimal("0.30"),
+                target_size=pm.target_size,
+                max_spread=pm.max_spread,
+                start=now_utc - timedelta(hours=1),
+                end=now_utc + timedelta(hours=23),
+                status="active",
+            )
+
+            results.append(
+                ConditionMarket(
+                    condition_id=pm.cond_id,
+                    event_id=pm.market_slug,
+                    question=pm.question,
+                    yes=market_yes,
+                    no=market_no,
+                    window=window,
+                )
+            )
+            if limit > 0 and len(results) >= limit:
+                return results
+
+        return results
+
 
     def fetch_book(self, token_id: str) -> Book:
         resp = requests.get(f"{self.host}/book?token_id={token_id}", timeout=10.0)
