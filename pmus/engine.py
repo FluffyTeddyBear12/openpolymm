@@ -345,6 +345,7 @@ class LiveEngine:
         self.started_at: float = time.time()
         self.order_created_at: dict[str, float] = {}
         self.recent_cancels: dict[str, float] = {}
+        self.slug_cooldown: dict[str, float] = {}
 
     def run(self, duration_seconds: int | None = None) -> None:
         if not self.auth_client.is_available:
@@ -376,7 +377,8 @@ class LiveEngine:
         try:
             bp = self.auth_client.get_buying_power()
             if bp > Decimal("0"):
-                effective_budget = min(self.settings.total_budget, bp)
+                fee_buffer = Decimal("0.75")
+                effective_budget = min(self.settings.total_budget, max(Decimal("0"), bp - fee_buffer))
         except Exception as exc:
             self.logger.warning("Could not fetch buying power for allocation: %s", exc)
         self.active_windows, alloc_res = allocate_markets(self.settings, self.public_client, self.logger, available_budget=effective_budget)
@@ -444,6 +446,8 @@ class LiveEngine:
         self.daily_loss_stop_tripped = False
 
         for slug in self.target_slugs:
+            if now_ts < self.slug_cooldown.get(slug, 0.0):
+                continue
             self._quote_market(slug, now_dt, now_ts, now_ms, exchange_open, live_positions, buying_power, realized_loss_today)
         return 1.0
 
@@ -583,6 +587,7 @@ class LiveEngine:
 
             self.market_states[slug] = "QUOTING"
         except Exception as exc:
+            self.slug_cooldown[slug] = now_ts + 30.0
             self.market_states[slug] = "PAUSED"
             self.logger.warning("Error processing %s: %s", slug, exc)
 
