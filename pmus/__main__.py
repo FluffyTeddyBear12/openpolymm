@@ -80,8 +80,8 @@ def main() -> None:
     run_parser.add_argument("--venue", choices=["global", "us"], default=None, help="Trading venue (global or us)")
     run_parser.add_argument("--mode", choices=["shadow", "live"], default="shadow", help="Run mode")
     run_parser.add_argument("--confirm-live", action="store_true", help="Explicit confirmation required to run live")
-    run_parser.add_argument("--minutes", type=int, default=10, help="Run duration in minutes")
-    run_parser.add_argument("--seconds", type=int, default=None, help="Run duration in seconds")
+    run_parser.add_argument("--minutes", type=int, default=None, help="Run duration in minutes (omit for indefinite)")
+    run_parser.add_argument("--seconds", type=int, default=None, help="Run duration in seconds (omit for indefinite)")
 
     report_parser = subparsers.add_parser("report", help="Generate performance report")
     report_parser.add_argument("--venue", choices=["global", "us"], default=None, help="Trading venue (global or us)")
@@ -102,7 +102,7 @@ def main() -> None:
     elif args.command == "run":
         logger = setup_logging(logs_dir=settings.logs_dir)
         ledger = Ledger(settings.data_dir / "ledger.db")
-        duration = args.seconds if args.seconds is not None else (args.minutes * 60)
+        duration = args.seconds if args.seconds is not None else ((args.minutes * 60) if args.minutes is not None else None)
 
         if venue == "global":
             clob_client = ClobVenueClient(settings)

@@ -82,9 +82,13 @@ class ShadowEngine:
         self.logger = logger
         self.market_states: dict[str, MarketState] = {}
 
-    def run(self, duration_seconds: int = 600) -> None:
-        self.logger.info("Starting ShadowEngine for %s seconds", duration_seconds)
-        end_time = time.time() + duration_seconds
+    def run(self, duration_seconds: int | None = None) -> None:
+        if duration_seconds is not None and duration_seconds > 0:
+            self.logger.info("Starting ShadowEngine for %s seconds", duration_seconds)
+            end_time = time.time() + duration_seconds
+        else:
+            self.logger.info("Starting ShadowEngine indefinitely")
+            end_time = float("inf")
 
         windows = self.client.fetch_incentives(status="active", page_size=200)
         active_windows: dict[str, IncentiveWindow] = {}
@@ -254,12 +258,16 @@ class LiveEngine:
         self.daily_loss_stop_tripped: bool = False
         self.recorded_fill_ids: set[str] = set()
 
-    def run(self, duration_seconds: int = 600) -> None:
+    def run(self, duration_seconds: int | None = None) -> None:
         if not self.auth_client.is_available:
             raise RuntimeError("Polymarket US authenticated SDK not configured")
 
-        self.logger.info("Starting LiveEngine for %s seconds", duration_seconds)
-        end_time = time.time() + duration_seconds
+        if duration_seconds is not None and duration_seconds > 0:
+            self.logger.info("Starting LiveEngine for %s seconds", duration_seconds)
+            end_time = time.time() + duration_seconds
+        else:
+            self.logger.info("Starting LiveEngine indefinitely")
+            end_time = float("inf")
 
         windows = self.public_client.fetch_incentives(status="active", page_size=200)
         active_windows: dict[str, IncentiveWindow] = {w.slug: w for w in windows if w.status.lower() == "active"}
