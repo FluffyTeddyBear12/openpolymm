@@ -228,7 +228,8 @@ class ShadowEngine:
 
             tick_count += 1
             if tick_count % 30 == 0:
-                self.logger.info("Completed %s ticks, remaining %s s", tick_count, int(end_time - time.time()))
+                rem_str = f"{int(end_time - time.time())} s" if end_time != float("inf") else "indefinite"
+                self.logger.info("Completed %s ticks, remaining %s", tick_count, rem_str)
 
             elapsed = time.time() - tick_start
             sleep_time = max(0.1, 1.0 - elapsed)
