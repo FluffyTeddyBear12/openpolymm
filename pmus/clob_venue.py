@@ -4,16 +4,30 @@ import time
 from typing import Any
 import requests
 
-from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import (
-    ApiCreds,
-    AssetType,
-    BalanceAllowanceParams,
-    OpenOrderParams,
-    OrderArgs,
-    OrderScoringParams,
-)
-from py_clob_client.order_builder.constants import BUY, SELL
+try:
+    from py_clob_client_v2.client import ClobClient
+    from py_clob_client_v2.clob_types import (
+        ApiCreds,
+        AssetType,
+        BalanceAllowanceParams,
+        OpenOrderParams,
+        OrderArgs,
+        OrderScoringParams,
+    )
+    from py_clob_client_v2.order_builder.constants import BUY, SELL
+    IS_V2 = True
+except ImportError:
+    from py_clob_client.client import ClobClient
+    from py_clob_client.clob_types import (
+        ApiCreds,
+        AssetType,
+        BalanceAllowanceParams,
+        OpenOrderParams,
+        OrderArgs,
+        OrderScoringParams,
+    )
+    from py_clob_client.order_builder.constants import BUY, SELL
+    IS_V2 = False
 
 from pmus.config import Settings
 from pmus.models import (
@@ -42,31 +56,57 @@ class ClobVenueClient:
         key = settings.polygon_private_key.strip()
         if key:
             sig_type = settings.polymarket_signature_type
-            if sig_type == 3:
-                sig_type = 2
             funder = settings.polymarket_proxy_address.strip() or None
-            self.client = ClobClient(
-                host=self.host,
-                key=key,
-                chain_id=settings.chain_id,
-                signature_type=sig_type,
-                funder=funder,
-            )
-            try:
-                creds = self.client.create_or_derive_api_creds()
-            except Exception:
-                if settings.clob_api_key and settings.clob_secret and settings.clob_passphrase:
-                    creds = ApiCreds(
-                        api_key=settings.clob_api_key,
-                        api_secret=settings.clob_secret,
-                        api_passphrase=settings.clob_passphrase,
-                    )
-                else:
-                    raise
-            self.client.set_api_creds(creds)
+            if IS_V2:
+                if funder and sig_type in (2, 3):
+                    sig_type = 3
+                self.client = ClobClient(
+                    self.host,
+                    settings.chain_id,
+                    key=key,
+                    signature_type=sig_type,
+                    funder=funder,
+                )
+                try:
+                    if hasattr(self.client, "create_or_derive_api_key"):
+                        creds = self.client.create_or_derive_api_key()
+                    else:
+                        creds = self.client.create_or_derive_api_creds()
+                except Exception:
+                    if settings.clob_api_key and settings.clob_secret and settings.clob_passphrase:
+                        creds = ApiCreds(
+                            api_key=settings.clob_api_key,
+                            api_secret=settings.clob_secret,
+                            api_passphrase=settings.clob_passphrase,
+                        )
+                    else:
+                        raise
+                self.client.set_api_creds(creds)
+            else:
+                if sig_type == 3:
+                    sig_type = 2
+                self.client = ClobClient(
+                    host=self.host,
+                    key=key,
+                    chain_id=settings.chain_id,
+                    signature_type=sig_type,
+                    funder=funder,
+                )
+                try:
+                    creds = self.client.create_or_derive_api_creds()
+                except Exception:
+                    if settings.clob_api_key and settings.clob_secret and settings.clob_passphrase:
+                        creds = ApiCreds(
+                            api_key=settings.clob_api_key,
+                            api_secret=settings.clob_secret,
+                            api_passphrase=settings.clob_passphrase,
+                        )
+                    else:
+                        raise
+                self.client.set_api_creds(creds)
             self.is_authenticated = True
         else:
-            self.client = ClobClient(host=self.host)
+            self.client = ClobClient(self.host, settings.chain_id) if IS_V2 else ClobClient(host=self.host)
             self.is_authenticated = False
 
     @property
@@ -286,7 +326,10 @@ class ClobVenueClient:
         if not self.is_authenticated:
             return []
         try:
-            raw_orders = self.client.get_orders(OpenOrderParams())
+            if hasattr(self.client, "get_open_orders"):
+                raw_orders = self.client.get_open_orders(OpenOrderParams())
+            else:
+                raw_orders = self.client.get_orders(OpenOrderParams())
         except Exception:
             return []
 

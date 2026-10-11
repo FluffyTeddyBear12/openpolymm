@@ -2,8 +2,12 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 import pytest
 
-from py_clob_client.clob_types import AssetType, BalanceAllowanceParams, OrderArgs
-from py_clob_client.order_builder.constants import BUY, SELL
+try:
+    from py_clob_client_v2.clob_types import AssetType, BalanceAllowanceParams, OrderArgs
+    from py_clob_client_v2.order_builder.constants import BUY, SELL
+except ImportError:
+    from py_clob_client.clob_types import AssetType, BalanceAllowanceParams, OrderArgs
+    from py_clob_client.order_builder.constants import BUY, SELL
 
 from pmus.config import Settings
 from pmus.clob_venue import ClobVenueClient
@@ -128,6 +132,8 @@ def test_clob_venue_fetches_and_sorts_book():
 def test_clob_venue_signature_type_3_normalized_to_2(monkeypatch):
     monkeypatch.setenv("POLYMARKET_SIGNATURE_TYPE", "3")
     monkeypatch.setenv("POLYGON_PRIVATE_KEY", "0x" + "a" * 64)
+    monkeypatch.setenv("POLYMARKET_PROXY_ADDRESS", "")
+    monkeypatch.setenv("POLYMARKET_ADDRESS", "")
     settings = Settings.from_env()
 
     assert settings.polymarket_signature_type == 2
@@ -142,6 +148,25 @@ def test_clob_venue_signature_type_3_normalized_to_2(monkeypatch):
         mock_clob_cls.assert_called_once()
         _, kwargs = mock_clob_cls.call_args
         assert kwargs["signature_type"] == 2
+
+
+def test_clob_venue_signature_type_deposit_wallet_v2(monkeypatch):
+    monkeypatch.setenv("POLYMARKET_SIGNATURE_TYPE", "2")
+    monkeypatch.setenv("POLYGON_PRIVATE_KEY", "0x" + "a" * 64)
+    monkeypatch.setenv("POLYMARKET_PROXY_ADDRESS", "0x1234567890abcdef1234567890abcdef12345678")
+    settings = Settings.from_env()
+
+    with patch("pmus.clob_venue.ClobClient") as mock_clob_cls:
+        mock_inst = MagicMock()
+        mock_clob_cls.return_value = mock_inst
+        mock_inst.create_or_derive_api_creds.return_value = MagicMock()
+
+        client = ClobVenueClient(settings)
+        mock_clob_cls.assert_called_once()
+        _, kwargs = mock_clob_cls.call_args
+        from pmus.clob_venue import IS_V2
+        expected_sig = 3 if IS_V2 else 2
+        assert kwargs["signature_type"] == expected_sig
 
 def test_clob_venue_balance_allowance_conversion():
     mock_clob = MagicMock()
@@ -199,7 +224,7 @@ def test_clob_venue_order_creation_args():
 def test_clob_venue_cancel_and_open_orders():
     mock_clob = MagicMock()
     mock_clob.cancel_orders.return_value = True
-    mock_clob.get_orders.return_value = [
+    orders_data = [
         {
             "id": "ord-1",
             "asset_id": "tok-a",
@@ -215,6 +240,8 @@ def test_clob_venue_cancel_and_open_orders():
             "size": "200",
         },
     ]
+    mock_clob.get_orders.return_value = orders_data
+    mock_clob.get_open_orders.return_value = orders_data
 
     settings = Settings(venue="global", polygon_private_key="dummy")
     client = ClobVenueClient(settings, client=mock_clob)
