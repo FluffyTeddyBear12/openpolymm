@@ -100,6 +100,7 @@ def allocate_markets(
     is_global = settings.venue == "global"
     if is_global and hasattr(client, "fetch_reward_conditions"):
         conditions = client.fetch_reward_conditions()
+        conditions.sort(key=lambda c: c.window.pool_usd, reverse=True)
         active_windows: dict[str, IncentiveWindow] = {}
         for cond in conditions:
             active_windows[cond.yes.slug] = dataclasses.replace(cond.window, slug=cond.yes.slug)

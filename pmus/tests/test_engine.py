@@ -165,6 +165,29 @@ def test_allocate_markets_respects_available_budget():
     assert alloc_empty.selected_slugs == []
 
 
+def test_allocate_markets_sorts_conditions_by_pool_size_descending():
+    logger = logging.getLogger("test_engine_pool_sort")
+    cond_small = make_condition(cond_id="c_small", pool="50")
+    cond_large = make_condition(cond_id="c_large", pool="300")
+    cond_medium = make_condition(cond_id="c_medium", pool="100")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond_small, cond_large, cond_medium]
+    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=2,
+        max_contracts_per_market=100,
+    )
+
+    _, alloc = allocate_markets(settings, client, logger)
+    assert alloc.selected_slugs == ["c_large-yes", "c_large-no"]
+
+
 def test_live_engine_prepare_stores_paired_and_passes_to_quoter():
     logger = logging.getLogger("test_live_engine")
     now = datetime(2026, 10, 12, 15, 0, tzinfo=timezone.utc)
