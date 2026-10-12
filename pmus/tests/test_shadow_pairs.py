@@ -235,7 +235,8 @@ def test_report_sums_both_tokens_without_dedup_drop(tmp_path):
         LiveOrder("o-n", "tok-no", "BUY_SHORT", Decimal("0.49"), Decimal("50")),
     ]
 
-    snap_y, snap_n = estimate_global_pair_score(yes_b, no_b, w, orders, ts_ms=NOW.timestamp() * 1000)
+    now_cur = datetime.now(timezone.utc)
+    snap_y, snap_n = estimate_global_pair_score(yes_b, no_b, w, orders, ts_ms=now_cur.timestamp() * 1000)
     condition_total = snap_y.reward_usd + snap_n.reward_usd
 
     ledger = Ledger(tmp_path / "global_pair_report.db")

@@ -376,6 +376,12 @@ class LiveEngine:
         effective_budget = self.settings.total_budget
         try:
             bp = self.auth_client.get_buying_power()
+            try:
+                open_orders = self.auth_client.get_open_orders()
+                open_collateral = sum(o.price * o.qty_open for o in open_orders if o.side.startswith("BUY"))
+                bp += open_collateral
+            except Exception:
+                pass
             if bp > Decimal("0"):
                 fee_buffer = max(Decimal("3.00"), bp * Decimal("0.05"))
                 effective_budget = min(self.settings.total_budget, max(Decimal("0"), bp - fee_buffer))
