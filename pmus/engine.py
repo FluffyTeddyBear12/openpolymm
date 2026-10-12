@@ -377,7 +377,7 @@ class LiveEngine:
         try:
             bp = self.auth_client.get_buying_power()
             if bp > Decimal("0"):
-                fee_buffer = Decimal("0.75")
+                fee_buffer = max(Decimal("3.00"), bp * Decimal("0.05"))
                 effective_budget = min(self.settings.total_budget, max(Decimal("0"), bp - fee_buffer))
         except Exception as exc:
             self.logger.warning("Could not fetch buying power for allocation: %s", exc)
