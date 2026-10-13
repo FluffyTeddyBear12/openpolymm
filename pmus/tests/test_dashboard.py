@@ -327,9 +327,10 @@ def test_resolve_market_title_success(monkeypatch):
 
 def test_sync_ledger_from_vps_missing_key(tmp_path):
     target = tmp_path / "ledger.db"
-    success, msg = sync_ledger_from_vps(target)
-    assert isinstance(success, bool)
-    assert isinstance(msg, str)
+    with patch("pmus.dashboard.Path.exists", return_value=False):
+        success, msg = sync_ledger_from_vps(target)
+    assert success is False
+    assert "SSH key not found" in msg
 
 
 def test_get_official_daily_earnings_not_global():

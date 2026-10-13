@@ -306,9 +306,34 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
+    import shutil
+
+    try:
+        sat_target = target_path.parent / "certainty_ledger.db"
+        sat_temp = sat_target.with_suffix(".tmp")
+        sat_cmd = [
+            "scp",
+            "-C",
+            "-i",
+            str(key_path),
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=10",
+            "ubuntu@52.16.177.132:/home/ubuntu/polymarket_bot/pmus/data/certainty_ledger.db",
+            str(sat_temp),
+        ]
+        sat_res = subprocess.run(sat_cmd, capture_output=True, text=True, timeout=15)
+        if sat_res.returncode == 0 and sat_temp.exists():
+            shutil.copyfile(str(sat_temp), str(sat_target))
+            sat_temp.unlink(missing_ok=True)
+    except Exception:
+        pass
+
     temp_target = target_path.with_suffix(".tmp")
     cmd = [
         "scp",
+        "-C",
         "-i",
         str(key_path),
         "-o",
@@ -319,39 +344,18 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
         str(temp_target),
     ]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
         if res.returncode == 0:
-            import shutil
             shutil.copyfile(str(temp_target), str(target_path))
             try:
                 temp_target.unlink(missing_ok=True)
-            except Exception:
-                pass
-            try:
-                sat_target = target_path.parent / "certainty_ledger.db"
-                sat_temp = sat_target.with_suffix(".tmp")
-                sat_cmd = [
-                    "scp",
-                    "-i",
-                    str(key_path),
-                    "-o",
-                    "StrictHostKeyChecking=no",
-                    "-o",
-                    "ConnectTimeout=10",
-                    "ubuntu@52.16.177.132:/home/ubuntu/polymarket_bot/pmus/data/certainty_ledger.db",
-                    str(sat_temp),
-                ]
-                sat_res = subprocess.run(sat_cmd, capture_output=True, text=True, timeout=15)
-                if sat_res.returncode == 0 and sat_temp.exists():
-                    shutil.copyfile(str(sat_temp), str(sat_target))
-                    sat_temp.unlink(missing_ok=True)
             except Exception:
                 pass
             return True, "Synced successfully from Ireland VPS"
         err = res.stderr.strip() or res.stdout.strip() or f"Exit code {res.returncode}"
         return False, f"SCP failed: {err}"
     except subprocess.TimeoutExpired:
-        return False, "SCP timed out after 15 seconds"
+        return False, "SCP timed out after 45 seconds"
     except Exception as e:
         return False, f"Sync error: {e}"
 
