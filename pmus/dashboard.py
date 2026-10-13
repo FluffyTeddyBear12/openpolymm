@@ -94,7 +94,7 @@ def compute_kpis(
     max_collateral: Decimal | None = None,
 ) -> dict[str, Any]:
     fills = ledger.get_fills_since(since_ms)
-    lip_snaps = ledger.get_lip_snapshots_since(since_ms)
+    lip_stats = ledger.get_lip_stats(since_ms)
 
     total_volume = Decimal("0")
     maker_rebates = Decimal("0")
@@ -141,19 +141,10 @@ def compute_kpis(
                     if pos_qty < Decimal("0"):
                         avg_px = f.price
 
-    lip_reward_total = Decimal("0")
-    qualifying_seconds = 0
-    qualifying_bid_seconds = 0
-    qualifying_ask_seconds = 0
-
-    for s in lip_snaps:
-        if s.qualifies:
-            qualifying_seconds += 1
-        if s.bid_qualifies:
-            qualifying_bid_seconds += 1
-        if s.ask_qualifies:
-            qualifying_ask_seconds += 1
-        lip_reward_total += s.reward_usd
+    lip_reward_total = lip_stats["lip_reward_total"]
+    qualifying_seconds = lip_stats["qualifying_seconds"]
+    qualifying_bid_seconds = lip_stats["qualifying_bid_seconds"]
+    qualifying_ask_seconds = lip_stats["qualifying_ask_seconds"]
 
     collateral_cap = max_collateral if max_collateral is not None else Decimal("70.00")
     effective_balance = buying_power if buying_power is not None else Decimal("0")
@@ -176,13 +167,9 @@ def compute_kpis(
 
 def format_market_overview(ledger: Ledger, recent_ms: int = 0) -> list[dict[str, Any]]:
     open_orders = ledger.get_open_orders()
-    snaps = ledger.get_lip_snapshots_since(recent_ms)
-
-    latest_snaps: dict[str, LipSnapshot] = {}
-    for s in snaps:
-        curr = latest_snaps.get(s.slug)
-        if curr is None or s.ts_ms >= curr.ts_ms:
-            latest_snaps[s.slug] = s
+    latest_snaps = ledger.get_latest_lip_snapshots()
+    if recent_ms > 0:
+        latest_snaps = {k: s for k, s in latest_snaps.items() if s.ts_ms >= recent_ms}
 
     all_slugs = sorted(list({o.slug for o in open_orders} | set(latest_snaps.keys())))
     rows: list[dict[str, Any]] = []
@@ -340,6 +327,26 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
                 temp_target.unlink(missing_ok=True)
             except Exception:
                 pass
+            try:
+                sat_target = target_path.parent / "certainty_ledger.db"
+                sat_temp = sat_target.with_suffix(".tmp")
+                sat_cmd = [
+                    "scp",
+                    "-i",
+                    str(key_path),
+                    "-o",
+                    "StrictHostKeyChecking=no",
+                    "-o",
+                    "ConnectTimeout=10",
+                    "ubuntu@52.16.177.132:/home/ubuntu/polymarket_bot/pmus/data/certainty_ledger.db",
+                    str(sat_temp),
+                ]
+                sat_res = subprocess.run(sat_cmd, capture_output=True, text=True, timeout=15)
+                if sat_res.returncode == 0 and sat_temp.exists():
+                    shutil.copyfile(str(sat_temp), str(sat_target))
+                    sat_temp.unlink(missing_ok=True)
+            except Exception:
+                pass
             return True, "Synced successfully from Ireland VPS"
         err = res.stderr.strip() or res.stdout.strip() or f"Exit code {res.returncode}"
         return False, f"SCP failed: {err}"
@@ -349,12 +356,17 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
         return False, f"Sync error: {e}"
 
 
+@st.cache_resource
+def _get_clob_venue_client(settings: Settings) -> Any:
+    from pmus.clob_venue import ClobVenueClient
+    return ClobVenueClient(settings)
+
+
 @st.cache_data(ttl=15)
 def _get_live_buying_power(settings: Settings) -> Decimal:
     if settings.venue == "global" and settings.polygon_private_key:
         try:
-            from pmus.clob_venue import ClobVenueClient
-            client = ClobVenueClient(settings)
+            client = _get_clob_venue_client(settings)
             return client.get_buying_power()
         except Exception:
             return Decimal("0")
@@ -372,8 +384,7 @@ def _get_live_buying_power(settings: Settings) -> Decimal:
 def _get_official_daily_earnings(settings: Settings) -> Decimal | None:
     if settings.venue == "global" and settings.polygon_private_key:
         try:
-            from pmus.clob_venue import ClobVenueClient
-            client = ClobVenueClient(settings)
+            client = _get_clob_venue_client(settings)
             today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             results = client.client.get_total_earnings_for_user_for_day(today_str)
             if results:
@@ -391,8 +402,20 @@ def _get_official_daily_earnings(settings: Settings) -> Decimal | None:
     return None
 
 
-@st.fragment(run_every="2s")
+@st.fragment(run_every="10s")
 def render_live_hud(ledger: Ledger, settings: Settings) -> None:
+    st.markdown(
+        """
+        <style>
+        [data-stale="true"] {
+            opacity: 1 !important;
+            filter: none !important;
+            transition: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     empty = is_database_empty(ledger)
 
     if empty:
@@ -508,7 +531,125 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
         ]
         st.dataframe(pd.DataFrame(pos_data), width="stretch", hide_index=True)
 
-    st.caption(f"Last updated: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')} (auto-refreshing every 2s)")
+    st.caption(f"Last updated: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')} (auto-refreshing every 10s)")
+
+
+def classify_position_phase(expected_resolution: str | None, now: datetime | None = None) -> str:
+    if not expected_resolution:
+        return "Open"
+    try:
+        res_dt = datetime.fromisoformat(expected_resolution.replace("Z", "+00:00"))
+        if res_dt.tzinfo is None:
+            res_dt = res_dt.replace(tzinfo=timezone.utc)
+        now_dt = now or datetime.now(timezone.utc)
+        if res_dt <= now_dt:
+            return "In-Play / Awaiting Settlement"
+        return "Pre-Match / Open"
+    except Exception:
+        return "Open"
+
+
+@st.fragment(run_every="10s")
+def render_satellite_hud(settings: Settings) -> None:
+    from pmus.certainty_ledger import CertaintyLedger
+
+    db_path = settings.data_dir / "certainty_ledger.db"
+    sat_ledger = CertaintyLedger(db_path)
+    summary = sat_ledger.get_performance_summary()
+    open_trades = sat_ledger.get_open_trades()
+
+    bankroll_usd = 1000.0
+    allocated_capital = sum(float(t.get("size_usd", 0.0)) for t in open_trades)
+    virtual_cash = max(0.0, bankroll_usd - allocated_capital)
+
+    cb_active, rem_hours = sat_ledger.is_circuit_breaker_active(48.0)
+    if cb_active:
+        st.error(f"CIRCUIT BREAKER ACTIVE - Scans halted for next {rem_hours:.1f} hours due to a recorded loss.")
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.metric(
+            label="Virtual Cash / Bankroll",
+            value=f"${virtual_cash:,.2f}",
+            delta=f"Allocated: ${allocated_capital:,.2f} / ${bankroll_usd:,.0f}",
+            delta_color="off",
+            border=True,
+        )
+    with c2:
+        st.metric(
+            label="Win / Loss Record",
+            value=f"{summary['wins']}W - {summary['losses']}L",
+            delta=f"Win Rate: {summary['win_rate'] * 100:.1f}% ({summary['closed_trades']} closed)",
+            delta_color="normal" if summary['losses'] == 0 else "inverse",
+            border=True,
+        )
+    with c3:
+        pnl = summary["total_pnl"]
+        st.metric(
+            label="Total Realized PnL",
+            value=f"${pnl:+,.2f}",
+            delta=f"Avg Return: {summary.get('avg_return', 0.0) * 100:+.2f}% / trade",
+            delta_color="normal" if pnl >= 0 else "inverse",
+            border=True,
+        )
+    with c4:
+        st.metric(
+            label="Sharpe Ratio",
+            value=f"{summary['sharpe_ratio']:.2f}",
+            delta=f"Open Positions: {summary['open_trades']} / 30",
+            delta_color="off",
+            border=True,
+        )
+    with c5:
+        st.metric(
+            label="Circuit Breaker",
+            value="HALTED (48h)" if cb_active else "NORMAL",
+            delta=f"{rem_hours:.1f}h cooldown left" if cb_active else "Scanning active",
+            delta_color="inverse" if cb_active else "normal",
+            border=True,
+        )
+
+    st.markdown("### Active Paper Positions")
+    if open_trades:
+        pos_rows = []
+        for t in open_trades:
+            pos_rows.append({
+                "ID": t.get("id"),
+                "Phase": classify_position_phase(t.get("expected_resolution")),
+                "Market": t.get("market_slug", ""),
+                "Outcome": t.get("outcome", ""),
+                "Price": f"${float(t.get('entry_price', 0.0)):.4f}",
+                "Size": f"${float(t.get('size_usd', 0.0)):.2f}",
+                "Shares": f"{float(t.get('shares', 0.0)):.2f}",
+                "Entry Time": t.get("entry_timestamp", ""),
+                "Expiry": t.get("expected_resolution", ""),
+            })
+        df_open = pd.DataFrame(pos_rows)
+        st.dataframe(df_open, width="stretch", hide_index=True)
+    else:
+        st.markdown("_No active paper positions in Certainty Ledger._")
+
+    st.markdown("### Closed Trades Blotter")
+    all_trades = sat_ledger.get_all_trades()
+    closed_trades = [t for t in all_trades if t.get("status") not in ("PENDING", "FILLED")]
+    if closed_trades:
+        closed_rows = []
+        for t in sorted(closed_trades, key=lambda x: x.get("exit_timestamp") or "", reverse=True)[:50]:
+            pnl_val = float(t.get("pnl_usd", 0.0))
+            closed_rows.append({
+                "ID": t.get("id"),
+                "Status": t.get("status", ""),
+                "Market": t.get("market_slug", ""),
+                "Outcome": t.get("outcome", ""),
+                "Entry Px": f"${float(t.get('entry_price', 0.0)):.4f}",
+                "Exit Px": f"${float(t.get('exit_price', 0.0)):.4f}" if t.get("exit_price") is not None else "-",
+                "PnL ($)": f"${pnl_val:+,.4f}",
+                "Exit Time": t.get("exit_timestamp", ""),
+                "Notes": t.get("notes", ""),
+            })
+        st.dataframe(pd.DataFrame(closed_rows), width="stretch", hide_index=True)
+
+    st.caption(f"Last updated: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')} (auto-refreshing every 10s)")
 
 
 def main() -> None:
@@ -552,7 +693,11 @@ def main() -> None:
             short_addr = f"{addr[:6]}...{addr[-4:]}" if len(addr) > 10 else addr
             st.caption(f"Proxy: `{short_addr}`")
 
-    render_live_hud(ledger, settings)
+    tab_maker, tab_satellite = st.tabs(["Market Maker (Bot 1)", "Satellite Harvester (Bot 2)"])
+    with tab_maker:
+        render_live_hud(ledger, settings)
+    with tab_satellite:
+        render_satellite_hud(settings)
 
 
 if __name__ == "__main__" or (hasattr(st, "runtime") and st.runtime.exists()):

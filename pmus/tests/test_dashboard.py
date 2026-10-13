@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from pmus.config import Settings
 from pmus.dashboard import (
+    _get_clob_venue_client,
+    _get_live_buying_power,
     _get_official_daily_earnings,
     check_password,
     compute_kpis,
@@ -341,6 +343,7 @@ def test_get_official_daily_earnings_not_global():
 
 def test_get_official_daily_earnings_success():
     _get_official_daily_earnings.clear()
+    _get_clob_venue_client.clear()
     mock_clob = MagicMock()
     mock_clob.client.get_total_earnings_for_user_for_day.return_value = [
         {"earnings": "1.2345"},
@@ -355,6 +358,7 @@ def test_get_official_daily_earnings_success():
 
 def test_get_official_daily_earnings_dict_structure():
     _get_official_daily_earnings.clear()
+    _get_clob_venue_client.clear()
     mock_clob = MagicMock()
     mock_clob.client.get_total_earnings_for_user_for_day.return_value = {
         "earnings": "2.50"
@@ -368,6 +372,7 @@ def test_get_official_daily_earnings_dict_structure():
 
 def test_get_official_daily_earnings_exception_fallback():
     _get_official_daily_earnings.clear()
+    _get_clob_venue_client.clear()
     mock_clob = MagicMock()
     mock_clob.client.get_total_earnings_for_user_for_day.side_effect = RuntimeError("API error")
 
@@ -375,6 +380,29 @@ def test_get_official_daily_earnings_exception_fallback():
         settings = Settings(venue="global", polygon_private_key="0x123")
         res = _get_official_daily_earnings(settings)
         assert res is None
+
+
+def test_get_live_buying_power_cached_client():
+    _get_live_buying_power.clear()
+    _get_clob_venue_client.clear()
+    mock_clob = MagicMock()
+    mock_clob.get_buying_power.return_value = Decimal("45.67")
+
+    with patch("pmus.clob_venue.ClobVenueClient", return_value=mock_clob):
+        settings = Settings(venue="global", polygon_private_key="0x123")
+        bp = _get_live_buying_power(settings)
+        assert bp == Decimal("45.67")
+
+
+def test_get_clob_venue_client_caching():
+    _get_clob_venue_client.clear()
+    mock_clob = MagicMock()
+    with patch("pmus.clob_venue.ClobVenueClient", return_value=mock_clob) as mock_cls:
+        settings = Settings(venue="global", polygon_private_key="0xabc")
+        c1 = _get_clob_venue_client(settings)
+        c2 = _get_clob_venue_client(settings)
+        assert c1 is c2
+        assert mock_cls.call_count == 1
 
 
 def test_check_password_empty():
@@ -424,6 +452,19 @@ def test_check_password_invalid_submit():
         assert check_password(settings) is False
         assert session.get("authenticated") is not True
         mock_st.error.assert_called_with("Invalid password")
+
+
+def test_classify_position_phase():
+    from datetime import datetime, timezone
+    from pmus.dashboard import classify_position_phase
+
+    now = datetime(2026, 10, 13, 18, 0, 0, tzinfo=timezone.utc)
+    assert classify_position_phase("2026-10-13T15:00:00Z", now=now) == "In-Play / Awaiting Settlement"
+    assert classify_position_phase("2026-10-13T20:00:00Z", now=now) == "Pre-Match / Open"
+    assert classify_position_phase("", now=now) == "Open"
+    assert classify_position_phase(None, now=now) == "Open"
+    assert classify_position_phase("not-a-timestamp", now=now) == "Open"
+
 
 
 

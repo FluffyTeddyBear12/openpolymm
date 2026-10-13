@@ -192,15 +192,33 @@ def test_gate_expiry_and_apy():
         ts_ms=1000,
     )
 
-    # 30 days away: simple yield = (1 - 0.985)/0.985 = 1.52%, annualized = 1.52% * 365/30 = 18.5% < 25%
-    market_low_apy = {"endDate": (now + timedelta(days=30)).isoformat()}
-    ok, reason = SatelliteEngine.check_gates(market_low_apy, book, current_time=now)
+    # 30 days away (> 14 days) rejected unconditionally
+    market_long = {"endDate": (now + timedelta(days=30)).isoformat()}
+    ok, reason = SatelliteEngine.check_gates(market_long, book, current_time=now)
     assert ok is False
-    assert "APY" in reason
+    assert "exceeds horizon" in reason
 
-    # 3 days away (<= 7 days): passes regardless of APY
-    market_short = {"endDate": (now + timedelta(days=3)).isoformat()}
+    # 10 days away with low APY: simple yield = (1 - 0.985)/0.985 = 1.52%, annualized = 1.52% * 365/10 = 55% > 20%
+    # Test low APY at 12 days: price 0.985 -> 1.52% * 365/12 = 46%
+    # If price is 0.984 at 12 days: 1.62% * 365/12 = 49%
+    # 2 days away (<= 3 days): passes with short-dated band
+    market_short = {"endDate": (now + timedelta(days=2)).isoformat()}
     ok, _ = SatelliteEngine.check_gates(market_short, book, current_time=now)
+    assert ok is True
+
+
+def test_gate_calibrated_spread_and_depth():
+    now = datetime(2026, 10, 12, 12, 0, 0, tzinfo=timezone.utc)
+    market = {"endDate": (now + timedelta(days=2)).isoformat()}
+    # Spread exactly 0.025: 0.975 - 0.950 = 0.025 -> passes
+    # Depth: 0.95 * 300 = $285 >= $250 -> passes
+    book = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.950"), Decimal("300")),),
+        asks=(Level(Decimal("0.975"), Decimal("20")),),
+        ts_ms=1000,
+    )
+    ok, reason = SatelliteEngine.check_gates(market, book, current_time=now)
     assert ok is True
 
 
@@ -302,3 +320,88 @@ def test_circuit_breaker_halts_scan(temp_ledger):
     res = engine.run_once()
     assert res["status"] == "HALTED"
     assert "Circuit breaker active" in res["reason"]
+
+
+def test_monitor_positions_resolves_loss_via_clob_market_fallback_when_gamma_empty(temp_ledger):
+    engine = SatelliteEngine(ledger=temp_ledger, trade_mode="shadow")
+
+    trade_id = temp_ledger.record_entry(
+        trade_mode="shadow",
+        strategy_type="heavy_favorite",
+        condition_id="0xcond_fam_alv",
+        token_id="tok-alv",
+        market_slug="por-fam-alv-2026-10-12-spread-away-1pt5",
+        question="Spread: Alverca (+1.5)",
+        outcome="ALVERCA",
+        side="BUY",
+        entry_price=0.950,
+        size_usd=30.0,
+        shares=31.5789,
+    )
+
+    def fake_get(url, params=None, timeout=10.0):
+        resp = MagicMock()
+        resp.status_code = 200
+        if "/markets" in url and params and "slug" in params:
+            resp.json.return_value = []
+        elif "/markets/0xcond_fam_alv" in url:
+            resp.json.return_value = {
+                "condition_id": "0xcond_fam_alv",
+                "closed": True,
+                "tokens": [
+                    {"token_id": "tok-fam", "outcome": "Famalicao", "price": 1.0, "winner": True},
+                    {"token_id": "tok-alv", "outcome": "Alverca", "price": 0.0, "winner": False},
+                ],
+            }
+        else:
+            resp.status_code = 404
+        return resp
+
+    with patch.object(engine, "fetch_book", side_effect=RuntimeError("404 No orderbook")), patch(
+        "pmus.satellite_engine.requests.get", side_effect=fake_get
+    ):
+        engine.monitor_positions()
+
+    trade = temp_ledger.get_trade(trade_id)
+    assert trade["status"] == "RESOLVED_LOSS"
+    assert trade["exit_price"] == 0.0
+    assert trade["pnl_usd"] == -30.0
+    is_active, _ = temp_ledger.is_circuit_breaker_active(48.0)
+    assert is_active is True
+
+
+def test_gate_rejects_past_resolution_timestamp():
+    now = datetime(2026, 10, 13, 12, 0, 0, tzinfo=timezone.utc)
+    market_past = {"endDate": (now - timedelta(hours=3)).isoformat()}
+    book = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.965"), Decimal("1000")),),
+        asks=(Level(Decimal("0.975"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    ok, reason = SatelliteEngine.check_gates(market_past, book, current_time=now)
+    assert ok is False
+    assert "Resolution timestamp in the past" in reason
+
+
+def test_scan_parity_arbitrage_skips_when_max_positions_reached(temp_ledger):
+    engine = SatelliteEngine(ledger=temp_ledger, trade_mode="shadow", max_open_positions=1)
+    temp_ledger.record_entry(
+        "shadow", "heavy_favorite", "c1", "tok-1", "mkt-1", "q1", "YES", "BUY", 0.97, 30.0, 30.9278
+    )
+
+    fake_market = {
+        "conditionId": "0xparity1",
+        "slug": "binary-parity-mkt",
+        "question": "Will team win?",
+        "tokens": [
+            {"token_id": "tok-yes", "outcome": "YES"},
+            {"token_id": "tok-no", "outcome": "NO"},
+        ],
+    }
+
+    with patch.object(engine, "fetch_book") as mock_fetch:
+        entered = engine.scan_parity_arbitrage([fake_market])
+        assert entered == []
+        mock_fetch.assert_not_called()
+
