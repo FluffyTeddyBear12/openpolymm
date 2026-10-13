@@ -655,18 +655,12 @@ class SatelliteEngine:
                 self.logger.debug(f"Could not check resolution for trade {trade_id}: {e}")
 
     def run_once(self) -> dict[str, Any]:
+        self.monitor_positions()
+
         is_active, rem_hours = self.ledger.is_circuit_breaker_active(48.0)
         if is_active:
             self.logger.warning(f"Circuit breaker ACTIVE ({rem_hours:.1f} hours remaining). Halting scans.")
             return {"status": "HALTED", "reason": f"Circuit breaker active: {rem_hours:.1f}h remaining"}
-
-        self.monitor_positions()
-
-        # Re-check circuit breaker after position resolution
-        is_active, rem_hours = self.ledger.is_circuit_breaker_active(48.0)
-        if is_active:
-            self.logger.warning(f"Circuit breaker tripped after monitoring ({rem_hours:.1f}h remaining). Halting.")
-            return {"status": "HALTED", "reason": "Circuit breaker triggered"}
 
         markets = self.fetch_public_markets(limit=100)
         hf_trades = self.scan_heavy_favorites(markets)
