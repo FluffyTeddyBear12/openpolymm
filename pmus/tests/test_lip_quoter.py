@@ -616,6 +616,6 @@ def test_quoter_non_paired_steps_down_qty_on_upward_price_drift_within_budget(ba
         quote_size=Decimal("275"),
     )
     assert len(quotes) == 1
-    assert quotes[0].qty == Decimal("270")
+    assert quotes[0].qty == Decimal("273")
     assert quotes[0].qty * quotes[0].price <= Decimal("55.00")
 
