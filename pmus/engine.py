@@ -20,7 +20,7 @@ from pmus.venue import AuthenticatedClient, PublicGatewayClient
 
 MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
 
-CANDIDATE_BOOK_LIMIT = 60
+CANDIDATE_BOOK_LIMIT = 300
 FILL_LOOKBACK_SECONDS = 60
 FILL_WINDOW_SECONDS = 3600
 REALLOCATE_SECONDS = 1800
@@ -100,22 +100,46 @@ def allocate_markets(
     is_global = settings.venue == "global"
     if is_global and hasattr(client, "fetch_reward_conditions"):
         conditions = client.fetch_reward_conditions()
-        conditions.sort(key=lambda c: c.window.pool_usd, reverse=True)
+        max_contracts = Decimal(str(settings.max_contracts_per_market))
+        conditions.sort(
+            key=lambda c: (
+                c.window.target_size <= max_contracts,
+                c.window.pool_usd,
+                -c.window.target_size,
+            ),
+            reverse=True,
+        )
         active_windows: dict[str, IncentiveWindow] = {}
         for cond in conditions:
             active_windows[cond.yes.slug] = dataclasses.replace(cond.window, slug=cond.yes.slug)
             active_windows[cond.no.slug] = dataclasses.replace(cond.window, slug=cond.no.slug)
 
         candidate_books: dict[str, Book] = {}
-        for cond in conditions[: CANDIDATE_BOOK_LIMIT // 2]:
+        top_conditions = conditions[: CANDIDATE_BOOK_LIMIT // 2]
+        batch_books = None
+        if hasattr(client, "fetch_books_batch"):
             try:
-                yes_book = client.fetch_book(cond.yes.slug)
-                no_book = client.fetch_book(cond.no.slug)
+                res = client.fetch_books_batch([slug for cond in top_conditions for slug in (cond.yes.slug, cond.no.slug)])
+                if isinstance(res, dict):
+                    batch_books = res
             except Exception as e:
-                logger.debug("Failed to fetch candidate books for condition %s: %s", cond.condition_id, e)
-                continue
-            candidate_books[cond.yes.slug] = yes_book
-            candidate_books[cond.no.slug] = no_book
+                logger.debug("Failed to fetch candidate books batch: %s", e)
+
+        if batch_books is not None:
+            for cond in top_conditions:
+                if cond.yes.slug in batch_books and cond.no.slug in batch_books:
+                    candidate_books[cond.yes.slug] = batch_books[cond.yes.slug]
+                    candidate_books[cond.no.slug] = batch_books[cond.no.slug]
+        else:
+            for cond in top_conditions:
+                try:
+                    yes_book = client.fetch_book(cond.yes.slug)
+                    no_book = client.fetch_book(cond.no.slug)
+                except Exception as e:
+                    logger.debug("Failed to fetch candidate books for condition %s: %s", cond.condition_id, e)
+                    continue
+                candidate_books[cond.yes.slug] = yes_book
+                candidate_books[cond.no.slug] = no_book
 
         targets = allocate_conditions(
             conditions=conditions,
@@ -123,7 +147,7 @@ def allocate_markets(
             total_budget=budget,
             max_cost_per_condition=min(settings.max_per_market, settings.max_collateral_per_market),
             max_markets=settings.max_markets,
-            max_contracts=Decimal(str(settings.max_contracts_per_market)),
+            max_contracts=max_contracts,
             pair_preference=settings.pair_preference,
         )
         for target in targets:
@@ -365,24 +389,25 @@ class LiveEngine:
             while time.time() < end_time:
                 tick_start = time.time()
                 if tick_start >= next_realloc:
-                    self._cancel_targets(tick_start)
-                    self.prepare()
+                    self.prepare(is_realloc=True)
                     next_realloc = tick_start + REALLOCATE_SECONDS
                 period = self.tick(tick_start) if self.target_slugs else 30.0
                 time.sleep(max(0.1, period - (time.time() - tick_start)))
         finally:
             self.shutdown()
 
-    def prepare(self) -> None:
+    def prepare(self, is_realloc: bool = False) -> None:
+        old_targets = list(self.target_slugs)
         effective_budget = self.settings.total_budget
         try:
             bp = self.auth_client.get_buying_power()
-            try:
-                open_orders = self.auth_client.get_open_orders()
-                open_collateral = sum(o.price * o.qty_open for o in open_orders if o.side.startswith("BUY"))
-                bp += open_collateral
-            except Exception:
-                pass
+            if self.settings.venue != "global":
+                try:
+                    open_orders = self.auth_client.get_open_orders()
+                    open_collateral = sum(o.price * o.qty_open for o in open_orders if o.side.startswith("BUY"))
+                    bp += open_collateral
+                except Exception:
+                    pass
             if bp > Decimal("0"):
                 fee_buffer = max(Decimal("3.00"), bp * Decimal("0.05"))
                 effective_budget = min(self.settings.total_budget, max(Decimal("0"), bp - fee_buffer))
@@ -395,10 +420,20 @@ class LiveEngine:
         self.paired_slugs = alloc_res.paired_slugs
         self.condition_pairs = alloc_res.condition_pairs
         for slug in self.target_slugs:
-            self.market_states[slug] = "IDLE"
-        self.logger.info("Scoped startup cancel for target slugs: %s", self.target_slugs)
-        self.started_at = time.time()
-        self._cancel_targets(self.started_at)
+            if slug not in self.market_states:
+                self.market_states[slug] = "IDLE"
+
+        if not is_realloc:
+            self.logger.info("Scoped startup cancel for target slugs: %s", self.target_slugs)
+            self.started_at = time.time()
+            self._cancel_targets(self.started_at)
+        else:
+            dropped_slugs = [s for s in old_targets if s not in self.target_slugs]
+            if dropped_slugs:
+                self.logger.info("Scoped reallocation cancel for dropped slugs: %s", dropped_slugs)
+                self._cancel_targets(time.time(), slugs=dropped_slugs)
+                for s in dropped_slugs:
+                    self.market_states.pop(s, None)
 
     def shutdown(self) -> None:
         try:
@@ -452,6 +487,15 @@ class LiveEngine:
             return 10.0
         self.daily_loss_stop_tripped = False
 
+        batch_books: dict[str, Book] = {}
+        if hasattr(self.public_client, "fetch_books_batch") and self.target_slugs:
+            try:
+                res = self.public_client.fetch_books_batch(self.target_slugs)
+                if isinstance(res, dict):
+                    batch_books = res
+            except Exception as exc:
+                self.logger.debug("Batch book fetch failed in tick: %s", exc)
+
         pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] = {}
         for slug in self.target_slugs:
             if now_ts < self.slug_cooldown.get(slug, 0.0):
@@ -466,6 +510,7 @@ class LiveEngine:
                 buying_power,
                 realized_loss_today,
                 pair_inputs=pair_inputs,
+                book=batch_books.get(slug),
             )
 
         if self.condition_pairs:
@@ -526,11 +571,12 @@ class LiveEngine:
                 orders.setdefault(o.order_id, o)
         return list(orders.values())
 
-    def _cancel_targets(self, now_ts: float) -> None:
-        if not self.target_slugs:
+    def _cancel_targets(self, now_ts: float, slugs: list[str] | None = None) -> None:
+        target_slugs = slugs if slugs is not None else self.target_slugs
+        if not target_slugs:
             return
-        canceled = set(self.auth_client.cancel_all_scoped(self.target_slugs))
-        local = [o for slug in self.target_slugs for o in self.ledger.get_open_orders(slug)]
+        canceled = set(self.auth_client.cancel_all_scoped(target_slugs))
+        local = [o for slug in target_slugs for o in self.ledger.get_open_orders(slug)]
         leftover = [o for o in local if o.order_id not in canceled]
         if leftover:
             self.auth_client.cancel_orders_batch(leftover)
@@ -556,10 +602,12 @@ class LiveEngine:
         buying_power: Decimal,
         realized_loss_today: Decimal,
         pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] | None = None,
+        book: Book | None = None,
     ) -> None:
         window = self.active_windows.get(slug)
         try:
-            book = self.public_client.fetch_book(slug)
+            if book is None:
+                book = self.public_client.fetch_book(slug)
             market = self._market(slug)
             pos = live_positions.get(slug, Position(slug=slug, net_qty=Decimal("0"), avg_price=Decimal("0")))
             if abs(pos.net_qty) >= self.settings.max_contracts_per_market:

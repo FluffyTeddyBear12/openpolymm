@@ -76,7 +76,7 @@ def test_rank_markets_with_fixtures():
     )
     books = {target_slug: fake_book}
 
-    ranked = rank_markets(windows, books, now=datetime.now(timezone.utc), max_n=3, budget_per_market=Decimal("50.00"))
+    ranked = rank_markets(windows, books, now=datetime(2026, 10, 12, 12, 0, 0, tzinfo=timezone.utc), max_n=3, budget_per_market=Decimal("50.00"))
     assert target_slug in ranked
 
 def test_market_selector_diversifies_across_events():
@@ -245,7 +245,7 @@ def test_real_fixture_slugs_one_event():
         windows=test_windows,
         books=books,
         total_budget=Decimal("500.00"),
-        now=datetime.now(timezone.utc),
+        now=datetime(2026, 10, 12, 12, 0, 0, tzinfo=timezone.utc),
         max_markets=4,
         slug_to_event_map=slug_to_event,
     )

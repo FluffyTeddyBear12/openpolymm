@@ -154,11 +154,24 @@ def allocate_conditions(
     selected: list[ConditionTarget] = []
     remaining_budget = total_budget
     for target in candidates:
-        if len(selected) >= max_markets:
+        if len(selected) >= max_markets or remaining_budget <= Decimal("0"):
             break
         if target.cost <= remaining_budget:
             selected.append(target)
             remaining_budget -= target.cost
+        else:
+            cond = target.condition
+            resized = evaluate_condition(
+                cond=cond,
+                yes_book=books[cond.yes.slug],
+                no_book=books[cond.no.slug],
+                max_cost=min(max_cost_per_condition, remaining_budget),
+                max_contracts=max_contracts,
+                pair_preference=pair_preference,
+            )
+            if resized is not None and resized.cost <= remaining_budget:
+                selected.append(resized)
+                remaining_budget -= resized.cost
 
     return selected
 

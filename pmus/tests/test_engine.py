@@ -482,4 +482,191 @@ def test_live_engine_tick_records_lip_snapshots_condition_pairs():
     assert ledger.record_lip_snapshot.call_count == 2
 
 
+def test_allocate_markets_tiebreaks_by_smaller_target_size_and_uses_fetch_books_batch():
+    logger = logging.getLogger("test_engine_tiebreak")
+    cond_large_target = make_condition(cond_id="c_large_tgt", pool="100", target="200")
+    cond_small_target = make_condition(cond_id="c_small_tgt", pool="100", target="50")
+
+    book_yes_small = make_book([("0.48", "100")], [("0.52", "100")], slug="c_small_tgt-yes")
+    book_no_small = make_book([("0.48", "100")], [("0.52", "100")], slug="c_small_tgt-no")
+    book_yes_large = make_book([("0.48", "200")], [("0.52", "200")], slug="c_large_tgt-yes")
+    book_no_large = make_book([("0.48", "200")], [("0.52", "200")], slug="c_large_tgt-no")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond_large_target, cond_small_target]
+    client.fetch_books_batch.return_value = {
+        "c_small_tgt-yes": book_yes_small,
+        "c_small_tgt-no": book_no_small,
+        "c_large_tgt-yes": book_yes_large,
+        "c_large_tgt-no": book_no_large,
+    }
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=2,
+        max_contracts_per_market=100,
+    )
+
+    _, alloc = allocate_markets(settings, client, logger)
+    client.fetch_books_batch.assert_called_once()
+    assert alloc.selected_slugs == ["c_small_tgt-yes", "c_small_tgt-no"]
+
+
+def test_live_engine_prepare_reallocation_cancels_only_dropped_slugs():
+    logger = logging.getLogger("test_engine_realloc")
+    cond1 = make_condition(cond_id="c1", pool="200")
+    cond2 = make_condition(cond_id="c2", pool="150")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond1, cond2]
+    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    engine.prepare(is_realloc=False)
+    assert set(engine.target_slugs) == {"c1-yes", "c1-no", "c2-yes", "c2-no"}
+    auth_client.cancel_all_scoped.assert_called_once()
+    auth_client.cancel_all_scoped.reset_mock()
+
+    cond2_small = make_condition(cond_id="c2", pool="50")
+    client.fetch_reward_conditions.return_value = [cond1, cond2_small]
+    import dataclasses
+    engine.settings = dataclasses.replace(settings, total_budget=Decimal("100.00"))
+
+    engine.prepare(is_realloc=True)
+    assert set(engine.target_slugs) == {"c1-yes", "c1-no"}
+    auth_client.cancel_all_scoped.assert_called_once()
+    canceled_call_slugs = auth_client.cancel_all_scoped.call_args[0][0]
+    assert set(canceled_call_slugs) == {"c2-yes", "c2-no"}
+
+
+def test_allocate_markets_deprioritizes_conditions_exceeding_max_contracts():
+    logger = logging.getLogger("test_engine_feasible_sort")
+    cond_infeasible = make_condition(cond_id="c_infeasible", pool="500", target="500")
+    cond_feasible = make_condition(cond_id="c_feasible", pool="100", target="50")
+
+    book_yes = make_book([("0.48", "100")], [("0.52", "100")], slug="c_feasible-yes")
+    book_no = make_book([("0.48", "100")], [("0.52", "100")], slug="c_feasible-no")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond_infeasible, cond_feasible]
+    client.fetch_books_batch.return_value = {
+        "c_feasible-yes": book_yes,
+        "c_feasible-no": book_no,
+    }
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=2,
+        max_contracts_per_market=200,
+    )
+
+    _, alloc = allocate_markets(settings, client, logger)
+    client.fetch_books_batch.assert_called_once_with(
+        ["c_feasible-yes", "c_feasible-no", "c_infeasible-yes", "c_infeasible-no"]
+    )
+    assert alloc.selected_slugs == ["c_feasible-yes", "c_feasible-no"]
+
+
+def test_live_engine_tick_uses_fetch_books_batch_when_dict_returned():
+    logger = logging.getLogger("test_live_engine_batch_tick")
+    now = datetime(2026, 10, 12, 15, 0, tzinfo=timezone.utc)
+    w = IncentiveWindow(
+        slug="mkt-batch",
+        program_id="p-batch",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    market = Market(
+        slug="mkt-batch",
+        event_id="ev-batch",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will batch work?",
+    )
+    book = Book(
+        slug="mkt-batch",
+        bids=(Level(Decimal("0.48"), Decimal("100")),),
+        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        ts_ms=1000,
+    )
+
+    public_client = MagicMock()
+    public_client.fetch_books_batch.return_value = {"mkt-batch": book}
+    public_client.get_market.return_value = market
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.create_orders_batch.return_value = []
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = []
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    risk_mgr = MagicMock()
+    risk_mgr.is_kill_switch_active.return_value = False
+    risk_mgr.is_maintenance_active.return_value = False
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.target_slugs = ["mkt-batch"]
+    engine.active_windows = {"mkt-batch": w}
+
+    period = engine.tick(now.timestamp())
+    assert period == 1.0
+    public_client.fetch_books_batch.assert_called_once_with(["mkt-batch"])
+    public_client.fetch_book.assert_not_called()
 

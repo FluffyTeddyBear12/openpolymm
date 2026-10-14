@@ -261,3 +261,34 @@ def test_pair_preference_selects_two_sided_when_within_ratio():
     assert target_strict is not None
     assert target_strict.mode == "yes_only"
 
+
+def test_allocate_conditions_resizes_candidate_to_fit_remaining_budget():
+    cond1 = make_condition(cond_id="c1", pool="200", target="50")
+    cond2 = make_condition(cond_id="c2", pool="180", target="50")
+
+    books = {
+        cond1.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond1.yes.slug),
+        cond1.no.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond1.no.slug),
+        cond2.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond2.yes.slug),
+        cond2.no.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond2.no.slug),
+    }
+
+    targets = allocate_conditions(
+        conditions=[cond1, cond2],
+        books=books,
+        total_budget=Decimal("162"),
+        max_cost_per_condition=Decimal("82"),
+        max_markets=4,
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.7"),
+    )
+    assert len(targets) == 2
+    assert targets[0].condition.condition_id == "c1"
+    assert targets[0].mode == "two_sided"
+    assert targets[0].size == Decimal("85")
+    assert targets[0].cost == Decimal("81.60")
+    assert targets[1].condition.condition_id == "c2"
+    assert targets[1].mode == "two_sided"
+    assert targets[1].size == Decimal("80")
+    assert targets[1].cost == Decimal("76.80")
+

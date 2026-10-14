@@ -279,3 +279,37 @@ def test_fetch_reward_markets_output_unchanged():
     m_no, w_no = pairs[1]
     assert m_no.slug == "tok-no-u"
     assert w_no.slug == "tok-no-u"
+
+
+def test_fetch_sampling_markets_paginates_next_cursor_and_deduplicates(monkeypatch):
+    mock_clob = MagicMock()
+    mock_clob.get_sampling_markets.return_value = {
+        "data": [_make_sampling_market("0xp1", daily_rate=100)],
+        "next_cursor": "MTAwMA==",
+    }
+
+    calls = []
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append((url, params, timeout))
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {
+            "data": [
+                _make_sampling_market("0xp1", daily_rate=100),
+                _make_sampling_market("0xp2", daily_rate=250),
+            ],
+            "next_cursor": "LTE=",
+        }
+        return resp
+
+    monkeypatch.setattr("pmus.clob_venue.requests.get", fake_get)
+
+    client = ClobVenueClient(Settings(venue="global"), client=mock_clob)
+    conditions = client.fetch_reward_conditions()
+
+    assert len(calls) == 1
+    assert calls[0][1] == {"next_cursor": "MTAwMA=="}
+    assert [c.condition_id for c in conditions] == ["0xp1", "0xp2"]
+    assert [c.window.pool_usd for c in conditions] == [Decimal("100"), Decimal("250")]
+

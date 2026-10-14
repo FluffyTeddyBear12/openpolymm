@@ -190,7 +190,7 @@ class ClobVenueClient:
     def is_available(self) -> bool:
         return self.is_authenticated
 
-    def _fetch_sampling_markets(self) -> list[_SamplingMarket]:
+    def _fetch_sampling_markets(self, max_pages: int = 5) -> list[_SamplingMarket]:
         if hasattr(self.client, "get_sampling_markets"):
             try:
                 raw_resp = self.client.get_sampling_markets()
@@ -204,13 +204,38 @@ class ClobVenueClient:
             raw_resp = resp.json()
 
         if isinstance(raw_resp, dict):
-            raw_markets = raw_resp.get("data", [])
+            raw_markets = list(raw_resp.get("data", []))
+            next_cursor = raw_resp.get("next_cursor")
+            pages_left = max_pages - 1
+            while (
+                pages_left > 0
+                and isinstance(next_cursor, str)
+                and next_cursor
+                and next_cursor != "LTE="
+            ):
+                pages_left -= 1
+                try:
+                    resp = requests.get(
+                        f"{self.host}/sampling-markets",
+                        params={"next_cursor": next_cursor},
+                        timeout=10.0,
+                    )
+                    resp.raise_for_status()
+                    page_data = resp.json()
+                except Exception:
+                    break
+                if isinstance(page_data, dict):
+                    raw_markets.extend(page_data.get("data", []))
+                    next_cursor = page_data.get("next_cursor")
+                else:
+                    break
         elif isinstance(raw_resp, list):
             raw_markets = raw_resp
         else:
             raw_markets = []
 
         parsed: list[_SamplingMarket] = []
+        seen_conds: set[str] = set()
         for m in raw_markets:
             if not isinstance(m, dict):
                 continue
@@ -245,6 +270,11 @@ class ClobVenueClient:
             tokens = m.get("tokens", [])
             if not isinstance(tokens, list):
                 continue
+
+            if cond_id:
+                if cond_id in seen_conds:
+                    continue
+                seen_conds.add(cond_id)
 
             parsed.append(
                 _SamplingMarket(
@@ -377,11 +407,8 @@ class ClobVenueClient:
         return results
 
 
-    def fetch_book(self, token_id: str) -> Book:
-        resp = requests.get(f"{self.host}/book?token_id={token_id}", timeout=10.0)
-        resp.raise_for_status()
-        data = resp.json()
-
+    @staticmethod
+    def _parse_book_payload(token_id: str, data: Any) -> Book:
         def parse_level(item: Any) -> Level:
             if isinstance(item, dict):
                 return Level(
@@ -402,7 +429,10 @@ class ClobVenueClient:
         asks.sort(key=lambda lvl: lvl.price)
 
         ts_raw = data.get("timestamp") if isinstance(data, dict) else None
-        ts_ms = int(ts_raw) if ts_raw is not None else int(time.time() * 1000)
+        try:
+            ts_ms = int(ts_raw) if ts_raw is not None else int(time.time() * 1000)
+        except Exception:
+            ts_ms = int(time.time() * 1000)
 
         return Book(
             slug=token_id,
@@ -410,6 +440,50 @@ class ClobVenueClient:
             asks=tuple(asks),
             ts_ms=ts_ms,
         )
+
+    def fetch_book(self, token_id: str) -> Book:
+        resp = requests.get(f"{self.host}/book?token_id={token_id}", timeout=10.0)
+        resp.raise_for_status()
+        return self._parse_book_payload(token_id, resp.json())
+
+    def fetch_books_batch(self, token_ids: list[str], chunk_size: int = 100) -> dict[str, Book]:
+        if not token_ids:
+            return {}
+        results: dict[str, Book] = {}
+        for i in range(0, len(token_ids), chunk_size):
+            chunk = token_ids[i : i + chunk_size]
+            payload = [{"token_id": tid} for tid in chunk]
+            batch_data = None
+            try:
+                resp = requests.post(f"{self.host}/books", json=payload, timeout=15.0)
+                resp.raise_for_status()
+                batch_data = resp.json()
+            except Exception as exc:
+                logger.warning("Batch books fetch failed (%s); falling back to single fetch", exc)
+
+            missing: list[str] = []
+            if isinstance(batch_data, list):
+                for item in batch_data:
+                    if isinstance(item, dict):
+                        tid = str(item.get("asset_id") or item.get("token_id") or "").strip()
+                        if tid:
+                            try:
+                                results[tid] = self._parse_book_payload(tid, item)
+                            except Exception as parse_exc:
+                                logger.warning("Failed to parse book payload for %s: %s", tid, parse_exc)
+                for tid in chunk:
+                    if tid not in results:
+                        missing.append(tid)
+            else:
+                missing = list(chunk)
+
+            for tid in missing:
+                try:
+                    results[tid] = self.fetch_book(tid)
+                except Exception as exc:
+                    logger.warning("Fallback fetch_book failed for %s: %s", tid, exc)
+
+        return results
 
     def fetch_bbo(self, token_id: str) -> tuple[Level | None, Level | None]:
         book = self.fetch_book(token_id)
@@ -453,6 +527,12 @@ class ClobVenueClient:
             )
             resp = self.client.create_and_post_order(args)
             if isinstance(resp, dict):
+                err_msg = str(resp.get("errorMsg") or resp.get("error") or "").strip()
+                success_flag = resp.get("success")
+                status_str = str(resp.get("status") or "").strip().lower()
+                if err_msg or (success_flag is False) or (status_str in ("killed", "canceled", "cancelled", "unmatched", "rejected")):
+                    logger.warning("Order for %s %s @ %s rejected by exchange: %r", quote.slug, quote.side, quote.price, resp)
+                    continue
                 order_id = str(resp.get("orderID") or resp.get("order_id") or resp.get("id") or "")
             elif hasattr(resp, "orderID"):
                 order_id = str(resp.orderID)

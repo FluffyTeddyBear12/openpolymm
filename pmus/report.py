@@ -61,7 +61,8 @@ def generate_report(
     windows_map = {}
     if client is not None:
         try:
-            for w in client.fetch_incentives(status="active", page_size=200):
+            page_size = 0 if is_global else 200
+            for w in client.fetch_incentives(status="active", page_size=page_size):
                 windows_map[w.slug] = w
         except Exception:
             pass

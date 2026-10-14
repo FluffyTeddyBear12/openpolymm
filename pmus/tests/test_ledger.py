@@ -80,3 +80,65 @@ def test_ledger_realized_loss_today(ledger):
     loss = ledger.get_realized_loss_today(now)
     assert loss == Decimal("1.00")
 
+
+def test_ledger_lip_stats_and_latest(ledger):
+    snap1 = LipSnapshot(
+        ts_ms=1000,
+        slug="mkt-1",
+        program_id="p1",
+        trader_bid_score=Decimal("10"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("5"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.0025"),
+        bid_qualifies=True,
+        ask_qualifies=False,
+    )
+    snap2 = LipSnapshot(
+        ts_ms=2000,
+        slug="mkt-1",
+        program_id="p1",
+        trader_bid_score=Decimal("15"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("10"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.0035"),
+        bid_qualifies=True,
+        ask_qualifies=True,
+    )
+    snap3 = LipSnapshot(
+        ts_ms=1500,
+        slug="mkt-2",
+        program_id="p2",
+        trader_bid_score=Decimal("0"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("0"),
+        total_ask_score=Decimal("100"),
+        qualifies=False,
+        reward_usd=Decimal("0"),
+        bid_qualifies=False,
+        ask_qualifies=False,
+    )
+    ledger.record_lip_snapshot(snap1)
+    ledger.record_lip_snapshot(snap2)
+    ledger.record_lip_snapshot(snap3)
+
+    stats = ledger.get_lip_stats(0)
+    assert stats["qualifying_seconds"] == 2
+    assert stats["qualifying_bid_seconds"] == 2
+    assert stats["qualifying_ask_seconds"] == 1
+    assert stats["lip_reward_total"] == Decimal("0.0060")
+
+    stats_recent = ledger.get_lip_stats(2000)
+    assert stats_recent["qualifying_seconds"] == 1
+    assert stats_recent["lip_reward_total"] == Decimal("0.0035")
+
+    latest = ledger.get_latest_lip_snapshots()
+    assert len(latest) == 2
+    assert latest["mkt-1"].ts_ms == 2000
+    assert latest["mkt-1"].reward_usd == Decimal("0.0035")
+    assert latest["mkt-2"].ts_ms == 1500
+
+

@@ -301,24 +301,22 @@ def test_sigterm_handler_raises_system_exit():
 def test_run_reallocates_markets_periodically(tmp_path, monkeypatch):
     eng = make_engine(tmp_path)
     monkeypatch.setattr(engine_mod, "REALLOCATE_SECONDS", 0)
-    calls = {"prepare": 0, "cancel": 0}
+    calls = {"prepare": 0, "realloc": 0}
 
-    def fake_prepare():
+    def fake_prepare(is_realloc: bool = False):
         calls["prepare"] += 1
+        if is_realloc:
+            calls["realloc"] += 1
         eng.target_slugs = ["tok"]
 
-    def fake_cancel(now_ts):
-        calls["cancel"] += 1
-
     monkeypatch.setattr(eng, "prepare", fake_prepare)
-    monkeypatch.setattr(eng, "_cancel_targets", fake_cancel)
     monkeypatch.setattr(eng, "tick", lambda now_ts: 0.1)
     monkeypatch.setattr(eng, "shutdown", lambda: None)
 
     eng.run(duration_seconds=1)
 
     assert calls["prepare"] >= 3
-    assert calls["cancel"] == calls["prepare"] - 1
+    assert calls["realloc"] == calls["prepare"] - 1
 
 
 def test_run_idles_without_ticking_when_no_markets_selected(tmp_path, monkeypatch):

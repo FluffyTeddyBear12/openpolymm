@@ -3,6 +3,7 @@ import sqlite3
 import time
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from pmus.models import LipSnapshot, LiveOrder, Position, Quote, ShadowFill
 
@@ -96,6 +97,8 @@ class Ledger:
                 )
                 """
             )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_lip_snapshots_ts ON lip_snapshots(ts_ms)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_lip_snapshots_slug_ts ON lip_snapshots(slug, ts_ms DESC)")
 
     def record_quote(self, quote: Quote, ts_ms: int) -> None:
         with self._get_connection() as conn:
@@ -275,6 +278,96 @@ class Ledger:
                 )
                 for r in rows
             ]
+
+    def get_lip_stats(self, since_ms: int = 0) -> dict[str, Any]:
+        with self._get_connection() as conn:
+            cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
+            cols = [row["name"] for row in cursor.fetchall()]
+            has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
+
+            if has_side_cols:
+                query = """
+                    SELECT
+                        COALESCE(SUM(CAST(reward_usd AS NUMERIC)), 0) AS total_reward,
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS qual_sec,
+                        COALESCE(SUM(CASE WHEN bid_qualifies = 1 THEN 1 ELSE 0 END), 0) AS bid_qual_sec,
+                        COALESCE(SUM(CASE WHEN ask_qualifies = 1 THEN 1 ELSE 0 END), 0) AS ask_qual_sec
+                    FROM lip_snapshots
+                    WHERE ts_ms >= ?
+                """
+            else:
+                query = """
+                    SELECT
+                        COALESCE(SUM(CAST(reward_usd AS NUMERIC)), 0) AS total_reward,
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS qual_sec,
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS bid_qual_sec,
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS ask_qual_sec
+                    FROM lip_snapshots
+                    WHERE ts_ms >= ?
+                """
+
+            row = conn.execute(query, (since_ms,)).fetchone()
+            if row:
+                return {
+                    "lip_reward_total": Decimal(str(row["total_reward"])),
+                    "qualifying_seconds": int(row["qual_sec"]),
+                    "qualifying_bid_seconds": int(row["bid_qual_sec"]),
+                    "qualifying_ask_seconds": int(row["ask_qual_sec"]),
+                }
+            return {
+                "lip_reward_total": Decimal("0"),
+                "qualifying_seconds": 0,
+                "qualifying_bid_seconds": 0,
+                "qualifying_ask_seconds": 0,
+            }
+
+    def get_latest_lip_snapshots(self) -> dict[str, LipSnapshot]:
+        with self._get_connection() as conn:
+            cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
+            cols = [row["name"] for row in cursor.fetchall()]
+            has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
+
+            if has_side_cols:
+                query = """
+                    SELECT s.ts_ms, s.slug, s.program_id, s.trader_bid_score, s.total_bid_score,
+                           s.trader_ask_score, s.total_ask_score, s.qualifies, s.reward_usd,
+                           s.bid_qualifies, s.ask_qualifies
+                    FROM lip_snapshots s
+                    INNER JOIN (
+                        SELECT slug, MAX(ts_ms) AS max_ts
+                        FROM lip_snapshots
+                        GROUP BY slug
+                    ) m ON s.slug = m.slug AND s.ts_ms = m.max_ts
+                """
+            else:
+                query = """
+                    SELECT s.ts_ms, s.slug, s.program_id, s.trader_bid_score, s.total_bid_score,
+                           s.trader_ask_score, s.total_ask_score, s.qualifies, s.reward_usd
+                    FROM lip_snapshots s
+                    INNER JOIN (
+                        SELECT slug, MAX(ts_ms) AS max_ts
+                        FROM lip_snapshots
+                        GROUP BY slug
+                    ) m ON s.slug = m.slug AND s.ts_ms = m.max_ts
+                """
+
+            rows = conn.execute(query).fetchall()
+            result: dict[str, LipSnapshot] = {}
+            for r in rows:
+                result[r["slug"]] = LipSnapshot(
+                    ts_ms=r["ts_ms"],
+                    slug=r["slug"],
+                    program_id=r["program_id"],
+                    trader_bid_score=Decimal(str(r["trader_bid_score"])),
+                    total_bid_score=Decimal(str(r["total_bid_score"])),
+                    trader_ask_score=Decimal(str(r["trader_ask_score"])),
+                    total_ask_score=Decimal(str(r["total_ask_score"])),
+                    qualifies=bool(r["qualifies"]),
+                    reward_usd=Decimal(str(r["reward_usd"])),
+                    bid_qualifies=bool(r["bid_qualifies"]) if has_side_cols else bool(r["qualifies"]),
+                    ask_qualifies=bool(r["ask_qualifies"]) if has_side_cols else bool(r["qualifies"]),
+                )
+            return result
 
     def get_realized_loss_today(self, now: datetime) -> Decimal:
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)

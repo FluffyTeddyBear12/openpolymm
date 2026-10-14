@@ -287,3 +287,79 @@ def test_clob_venue_close_position_safe():
     ord_wide = client.close_position_safe("tok-p", pos_long, bbo=bbo_wide, max_loss_cents=Decimal("0.02"))
     assert ord_wide is not None
     assert ord_wide.price == Decimal("0.50")
+
+
+def test_clob_venue_fetch_books_batch():
+    mock_clob = MagicMock()
+    settings = Settings(venue="global", clob_host="https://clob.polymarket.com")
+    client = ClobVenueClient(settings, client=mock_clob)
+
+    fake_batch_resp = [
+        {
+            "asset_id": "tok-1",
+            "timestamp": 1700000000000,
+            "bids": [{"price": "0.45", "size": "100"}],
+            "asks": [{"price": "0.55", "size": "100"}],
+        }
+    ]
+
+    fake_single_resp = {
+        "asset_id": "tok-2",
+        "timestamp": 1700000000000,
+        "bids": [{"price": "0.40", "size": "50"}],
+        "asks": [{"price": "0.60", "size": "50"}],
+    }
+
+    with patch("requests.post") as mock_post, patch("requests.get") as mock_get:
+        mock_post_resp = MagicMock()
+        mock_post_resp.json.return_value = fake_batch_resp
+        mock_post_resp.raise_for_status = MagicMock()
+        mock_post.return_value = mock_post_resp
+
+        mock_get_resp = MagicMock()
+        mock_get_resp.json.return_value = fake_single_resp
+        mock_get_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_get_resp
+
+        books = client.fetch_books_batch(["tok-1", "tok-2"])
+
+        mock_post.assert_called_once_with(
+            "https://clob.polymarket.com/books",
+            json=[{"token_id": "tok-1"}, {"token_id": "tok-2"}],
+            timeout=15.0,
+        )
+        # tok-2 was missing from batch response, so fetch_book fallback was called
+        mock_get.assert_called_once_with("https://clob.polymarket.com/book?token_id=tok-2", timeout=10.0)
+
+        assert "tok-1" in books
+        assert "tok-2" in books
+        assert books["tok-1"].bids[0].price == Decimal("0.45")
+        assert books["tok-2"].bids[0].price == Decimal("0.40")
+
+
+def test_clob_venue_create_orders_batch_rejections():
+    mock_clob = MagicMock()
+    settings = Settings(venue="global", polygon_private_key="dummy")
+    client = ClobVenueClient(settings, client=mock_clob)
+    client.is_authenticated = True
+
+    # 4 quotes: 1 rejected by errorMsg, 1 rejected by success=False, 1 rejected by status=killed, 1 accepted
+    quotes = [
+        Quote(slug="tok-err", side="BUY_LONG", price=Decimal("0.50"), qty=Decimal("100")),
+        Quote(slug="tok-fail", side="BUY_LONG", price=Decimal("0.50"), qty=Decimal("100")),
+        Quote(slug="tok-killed", side="BUY_LONG", price=Decimal("0.50"), qty=Decimal("100")),
+        Quote(slug="tok-ok", side="BUY_LONG", price=Decimal("0.50"), qty=Decimal("100")),
+    ]
+
+    mock_clob.create_and_post_order.side_effect = [
+        {"orderID": "0x1", "errorMsg": "balance too low"},
+        {"orderID": "0x2", "success": False, "error": "invalid size"},
+        {"orderID": "0x3", "status": "killed"},
+        {"orderID": "0x4", "status": "open", "success": True},
+    ]
+
+    live_orders = client.create_orders_batch(quotes)
+    assert len(live_orders) == 1
+    assert live_orders[0].order_id == "0x4"
+    assert live_orders[0].slug == "tok-ok"
+
