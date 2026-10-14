@@ -589,5 +589,33 @@ def test_paired_partial_fill_quotes_remaining_when_eligible(base_market):
     assert quotes_over == []
 
 
+def test_quoter_non_paired_steps_down_qty_on_upward_price_drift_within_budget(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("80"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    bids = (Level(Decimal("0.201"), Decimal("500")),)
+    asks = (Level(Decimal("0.210"), Decimal("500")),)
+    book = Book(slug="mkt-global", bids=bids, asks=asks, ts_ms=1000)
 
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=False,
+        quote_size=Decimal("275"),
+    )
+    assert len(quotes) == 1
+    assert quotes[0].qty == Decimal("270")
+    assert quotes[0].qty * quotes[0].price <= Decimal("55.00")
 
