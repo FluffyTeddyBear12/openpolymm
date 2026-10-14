@@ -65,3 +65,25 @@ def test_exceeds_max_collateral_per_market(risk_settings):
     res = rm.check_pre_submit(quotes, [], {}, Decimal("100.00"), Decimal("0"))
     assert res.allowed is False
     assert "Exceeds max collateral per market" in res.reason
+
+
+def test_sell_long_closing_position_does_not_exceed_contract_cap(tmp_path):
+    settings = Settings(
+        total_budget=Decimal("200.00"),
+        max_collateral=Decimal("200.00"),
+        max_collateral_per_market=Decimal("60.00"),
+        max_contracts_per_market=400,
+        daily_loss_stop=Decimal("10.00"),
+        max_open_orders=10,
+        data_dir=tmp_path / "data",
+    )
+    rm = RiskManager(settings)
+    q_sell = [Quote(slug="mkt-1", side="SELL_LONG", price=Decimal("0.171"), qty=Decimal("320"))]
+    res = rm.check_pre_submit(
+        new_quotes=q_sell,
+        open_orders=[],
+        positions={"mkt-1": Position("mkt-1", Decimal("320"), Decimal("0.171"))},
+        buying_power=Decimal("10.00"),
+        realized_loss_today=Decimal("0"),
+    )
+    assert res.allowed is True

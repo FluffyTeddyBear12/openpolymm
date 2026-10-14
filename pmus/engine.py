@@ -414,11 +414,21 @@ class LiveEngine:
         except Exception as exc:
             self.logger.warning("Could not fetch buying power for allocation: %s", exc)
         self.active_windows, alloc_res = allocate_markets(self.settings, self.public_client, self.logger, available_budget=effective_budget)
-        self.target_slugs = alloc_res.selected_slugs
-        self.side_budgets = alloc_res.side_budgets
-        self.side_qtys = alloc_res.side_qtys
+        self.target_slugs = list(alloc_res.selected_slugs)
+        self.side_budgets = dict(alloc_res.side_budgets)
+        self.side_qtys = dict(alloc_res.side_qtys)
         self.paired_slugs = alloc_res.paired_slugs
         self.condition_pairs = alloc_res.condition_pairs
+        try:
+            held_positions = self.auth_client.get_positions()
+            if isinstance(held_positions, list):
+                for p in held_positions:
+                    if p.net_qty >= Decimal("5") and p.slug in self.active_windows and p.slug not in self.target_slugs:
+                        self.target_slugs.append(p.slug)
+                        self.side_budgets.setdefault((p.slug, "bid"), Decimal("0"))
+                        self.side_budgets.setdefault((p.slug, "ask"), Decimal("0"))
+        except Exception:
+            pass
         for slug in self.target_slugs:
             if slug not in self.market_states:
                 self.market_states[slug] = "IDLE"

@@ -619,3 +619,55 @@ def test_quoter_non_paired_steps_down_qty_on_upward_price_drift_within_budget(ba
     assert quotes[0].qty == Decimal("273")
     assert quotes[0].qty * quotes[0].price <= Decimal("55.00")
 
+
+def test_global_non_paired_inventory_unwinds_at_breakeven_floor_and_on_wide_spread(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("80"),
+        max_spread=Decimal("0.035"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book_below_entry = Book(
+        slug="mkt-global",
+        bids=(Level(Decimal("0.149"), Decimal("100")),),
+        asks=(Level(Decimal("0.168"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes_breakeven = desired_quotes(
+        market=base_market,
+        book=book_below_entry,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("320"), avg_price=Decimal("0.171")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=False,
+        quote_size=Decimal("385"),
+    )
+    assert quotes_breakeven == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.171"), qty=Decimal("320"))
+    ]
+
+    book_wide = Book(
+        slug="mkt-global",
+        bids=(Level(Decimal("0.201"), Decimal("100")),),
+        asks=(Level(Decimal("0.420"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes_wide = desired_quotes(
+        market=base_market,
+        book=book_wide,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("200"), avg_price=Decimal("0.261")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=False,
+        quote_size=Decimal("230"),
+    )
+    assert quotes_wide == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.420"), qty=Decimal("200"))
+    ]

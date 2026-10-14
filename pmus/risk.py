@@ -122,7 +122,13 @@ class RiskManager:
 
         for q in new_quotes:
             pos = positions.get(q.slug, Position(q.slug, Decimal("0"), Decimal("0")))
-            if abs(pos.net_qty) + q.qty > self.settings.max_contracts_per_market:
+            if q.side == "SELL_LONG" and pos.net_qty > Decimal("0"):
+                projected_qty = abs(pos.net_qty - q.qty)
+            elif q.side == "BUY_SHORT" and pos.net_qty < Decimal("0"):
+                projected_qty = abs(pos.net_qty + q.qty)
+            else:
+                projected_qty = abs(pos.net_qty) + q.qty
+            if projected_qty > self.settings.max_contracts_per_market:
                 return RiskGateResult(
                     False,
                     f"Exceeds per-market contract cap for {q.slug}",

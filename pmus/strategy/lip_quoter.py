@@ -44,11 +44,12 @@ def desired_quotes(
     bid_price = (best_bid // market.tick) * market.tick
     ask_price = (best_ask // market.tick) * market.tick
 
+    net = position.net_qty if position is not None else Decimal("0")
     if window.max_spread is not None:
         if (ask_price - bid_price) > (Decimal("2") * window.max_spread):
-            return []
+            if not (is_global and not paired and net > Decimal("0")):
+                return []
 
-    net = position.net_qty if position is not None else Decimal("0")
     cap = max_contracts_cap if max_contracts_cap is not None else Decimal("6000")
 
     if net > Decimal("0"):
@@ -93,10 +94,12 @@ def desired_quotes(
                     quotes.append(Quote(slug=market.slug, side="BUY_LONG", price=price, qty=qty))
             return quotes
 
-        if quote_bid and global_rewards.reward_eligible(book, window.target_size):
+        spread_ok = window.max_spread is None or (ask_price - bid_price) <= (Decimal("2") * window.max_spread)
+        if spread_ok and quote_bid and global_rewards.reward_eligible(book, window.target_size):
             price = global_rewards.bid_price(book, window, market.tick)
             target_sz = quote_size if quote_size is not None else window.target_size
-            bid_qty = min(max(target_sz, market.min_qty), max_bid_contracts)
+            remaining = max(Decimal("0"), target_sz - max(Decimal("0"), net))
+            bid_qty = min(remaining, max_bid_contracts)
             if price is not None and price > Decimal("0") and budget > Decimal("0") and bid_qty * price > budget:
                 bid_qty = min(bid_qty, ((budget / price) // market.min_qty) * market.min_qty)
             if price is not None and bid_qty >= window.target_size:
@@ -104,8 +107,10 @@ def desired_quotes(
 
         if net > Decimal("0"):
             ask_qty = min(net, max_ask_contracts) // market.min_qty * market.min_qty
-            if ask_qty >= market.min_qty and ask_price > best_bid:
-                quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=ask_price, qty=ask_qty))
+            min_exit = (position.avg_price // market.tick) * market.tick if position is not None and position.avg_price > Decimal("0") else Decimal("0")
+            sell_price = max(ask_price, min_exit)
+            if ask_qty >= market.min_qty and sell_price > best_bid:
+                quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=sell_price, qty=ask_qty))
 
         return quotes
 
