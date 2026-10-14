@@ -33,6 +33,7 @@ class SatelliteEngine:
         bankroll_usd: float = 1000.0,
         order_size_usd: float = 30.0,
         max_open_positions: int = 30,
+        circuit_breaker_hours: float = 0.0,
     ) -> None:
         self.settings = settings or Settings.from_env()
         self.ledger = ledger or CertaintyLedger(self.settings.data_dir / "certainty_ledger.db")
@@ -43,6 +44,7 @@ class SatelliteEngine:
         self.bankroll_usd = bankroll_usd
         self.order_size_usd = order_size_usd
         self.max_open_positions = max_open_positions
+        self.circuit_breaker_hours = circuit_breaker_hours
         self.price_history_cache: dict[str, list[tuple[float, float]]] = {}
 
     @staticmethod
@@ -650,14 +652,14 @@ class SatelliteEngine:
                         self.logger.info(f"Trade {trade_id} ({outcome}) resolved WIN @ $1.00/share")
                     elif settled_px <= 0.01:
                         self.ledger.record_resolution(trade_id, outcome_won=False, payout_per_share=0.0, notes="Gamma resolved LOSS")
-                        self.logger.error(f"CIRCUIT BREAKER TRIGGERED: Trade {trade_id} resolved LOSS! Halting scans for 48h.")
+                        self.logger.error(f"Trade {trade_id} ({outcome}) resolved LOSS @ $0.00/share")
             except Exception as e:
                 self.logger.debug(f"Could not check resolution for trade {trade_id}: {e}")
 
     def run_once(self) -> dict[str, Any]:
         self.monitor_positions()
 
-        is_active, rem_hours = self.ledger.is_circuit_breaker_active(48.0)
+        is_active, rem_hours = self.ledger.is_circuit_breaker_active(self.circuit_breaker_hours)
         if is_active:
             self.logger.warning(f"Circuit breaker ACTIVE ({rem_hours:.1f} hours remaining). Halting scans.")
             return {"status": "HALTED", "reason": f"Circuit breaker active: {rem_hours:.1f}h remaining"}
@@ -683,10 +685,10 @@ class SatelliteEngine:
             self.logger.info("Satellite Engine stopped by operator.")
 
     @staticmethod
-    def format_status(ledger: CertaintyLedger, bankroll_usd: float = 1000.0) -> str:
+    def format_status(ledger: CertaintyLedger, bankroll_usd: float = 1000.0, circuit_breaker_hours: float = 0.0) -> str:
         summary = ledger.get_performance_summary()
-        cb_active, rem_hours = ledger.is_circuit_breaker_active(48.0)
-        cb_status = f"ACTIVE ({rem_hours:.1f} hours remaining)" if cb_active else "Inactive (Normal)"
+        cb_active, rem_hours = ledger.is_circuit_breaker_active(circuit_breaker_hours)
+        cb_status = f"ACTIVE ({rem_hours:.1f} hours remaining)" if cb_active else "Disabled (Continuous Sampling)"
 
         open_trades = ledger.get_open_trades()
         allocated_capital = sum(float(t["size_usd"]) for t in open_trades)

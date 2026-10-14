@@ -566,7 +566,7 @@ def render_satellite_hud(settings: Settings) -> None:
     allocated_capital = sum(float(t.get("size_usd", 0.0)) for t in open_trades)
     virtual_cash = max(0.0, bankroll_usd - allocated_capital)
 
-    cb_active, rem_hours = sat_ledger.is_circuit_breaker_active(48.0)
+    cb_active, rem_hours = sat_ledger.is_circuit_breaker_active(0.0)
     if cb_active:
         st.error(f"CIRCUIT BREAKER ACTIVE - Scans halted for next {rem_hours:.1f} hours due to a recorded loss.")
 
@@ -607,8 +607,8 @@ def render_satellite_hud(settings: Settings) -> None:
     with c5:
         st.metric(
             label="Circuit Breaker",
-            value="HALTED (48h)" if cb_active else "NORMAL",
-            delta=f"{rem_hours:.1f}h cooldown left" if cb_active else "Scanning active",
+            value="HALTED (48h)" if cb_active else "DISABLED",
+            delta=f"{rem_hours:.1f}h cooldown left" if cb_active else "Continuous sampling",
             delta_color="inverse" if cb_active else "normal",
             border=True,
         )

@@ -212,7 +212,9 @@ class CertaintyLedger:
                     return None
             return None
 
-    def is_circuit_breaker_active(self, cooldown_hours: float = 48.0) -> tuple[bool, float]:
+    def is_circuit_breaker_active(self, cooldown_hours: float = 0.0) -> tuple[bool, float]:
+        if cooldown_hours <= 0.0:
+            return (False, 0.0)
         last_loss = self.get_last_loss_timestamp()
         if not last_loss:
             return (False, 0.0)

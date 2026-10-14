@@ -311,15 +311,21 @@ def test_secondary_clob_exit_trigger(temp_ledger):
 
 
 def test_circuit_breaker_halts_scan(temp_ledger):
-    engine = SatelliteEngine(ledger=temp_ledger, trade_mode="shadow")
+    engine_halted = SatelliteEngine(ledger=temp_ledger, trade_mode="shadow", circuit_breaker_hours=48.0)
 
-    # Record a resolved loss to trip circuit breaker
+    # Record a resolved loss to trip circuit breaker when enabled
     t = temp_ledger.record_entry("shadow", "heavy_favorite", "c1", "tok-1", "mkt-1", "q1", "YES", "BUY", 0.97, 10.0, 10.3)
     temp_ledger.record_resolution(t, outcome_won=False)
 
-    res = engine.run_once()
+    res = engine_halted.run_once()
     assert res["status"] == "HALTED"
     assert "Circuit breaker active" in res["reason"]
+
+    # Default engine has circuit breaker disabled (0.0h) and keeps scanning
+    engine_default = SatelliteEngine(ledger=temp_ledger, trade_mode="shadow")
+    with patch.object(engine_default, "fetch_public_markets", return_value=[]):
+        res_default = engine_default.run_once()
+    assert res_default["status"] == "OK"
 
 
 def test_monitor_positions_resolves_loss_via_clob_market_fallback_when_gamma_empty(temp_ledger):
