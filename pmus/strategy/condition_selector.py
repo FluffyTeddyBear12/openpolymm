@@ -120,6 +120,142 @@ def evaluate_condition(
     return max(surviving, key=lambda t: t.expected_reward_sec)
 
 
+WATERFILL_MIN_BUDGET = Decimal("500")
+WATERFILL_COST_TIERS: tuple[Decimal, ...] = (
+    Decimal("40"),
+    Decimal("75"),
+    Decimal("110"),
+    Decimal("160"),
+    Decimal("240"),
+    Decimal("360"),
+    Decimal("550"),
+    Decimal("850"),
+    Decimal("1300"),
+    Decimal("2000"),
+)
+
+
+def _rank_score(t: ConditionTarget, pair_preference: Decimal = Decimal("1.0")) -> Decimal:
+    weight = pair_preference if (t.mode == "two_sided" and pair_preference > Decimal("0")) else Decimal("1.0")
+    return t.expected_reward_sec / weight
+
+
+def _waterfill_conditions(
+    conditions: list[ConditionMarket],
+    books: dict[str, Book],
+    total_budget: Decimal,
+    max_cost_per_condition: Decimal,
+    max_markets: int,
+    max_contracts: Decimal,
+    pair_preference: Decimal = Decimal("1.0"),
+) -> list[ConditionTarget]:
+    max_cost = min(max_cost_per_condition, total_budget)
+    tiers = [t for t in WATERFILL_COST_TIERS if t < max_cost] + [max_cost]
+
+    cond_curves: dict[str, list[ConditionTarget]] = {}
+    unique_conditions: list[tuple[str, ConditionMarket]] = []
+    seen_keys: set[str] = set()
+
+    for cond in conditions:
+        key = cond.condition_id if cond.condition_id else cond.yes.slug
+        if key in seen_keys:
+            continue
+        if cond.yes.slug not in books or cond.no.slug not in books:
+            continue
+        seen_keys.add(key)
+        unique_conditions.append((key, cond))
+        yes_book = books[cond.yes.slug]
+        no_book = books[cond.no.slug]
+        pts: list[ConditionTarget] = []
+        last_cost = Decimal("0")
+        last_rew = Decimal("0")
+        for tier_cap in tiers:
+            t = evaluate_condition(
+                cond=cond,
+                yes_book=yes_book,
+                no_book=no_book,
+                max_cost=tier_cap,
+                max_contracts=max_contracts,
+                pair_preference=pair_preference,
+            )
+            if t is not None and t.cost > last_cost and t.expected_reward_sec > last_rew:
+                pts.append(t)
+                last_cost = t.cost
+                last_rew = t.expected_reward_sec
+        if pts:
+            cond_curves[key] = pts
+
+    chosen_idx: dict[str, int] = {key: -1 for key in cond_curves}
+    active_keys: set[str] = set()
+    remaining_budget = total_budget
+
+    while True:
+        best_key: str | None = None
+        best_eff = Decimal("-1")
+        best_d_cost = Decimal("0")
+        for key, pts in cond_curves.items():
+            idx = chosen_idx[key]
+            next_idx = idx + 1
+            if next_idx >= len(pts):
+                continue
+            if idx < 0 and len(active_keys) >= max_markets:
+                continue
+            cur_cost = pts[idx].cost if idx >= 0 else Decimal("0")
+            cur_rew = pts[idx].expected_reward_sec if idx >= 0 else Decimal("0")
+            d_cost = pts[next_idx].cost - cur_cost
+            d_rew = pts[next_idx].expected_reward_sec - cur_rew
+            if d_cost <= Decimal("0") or d_cost > remaining_budget:
+                continue
+            weight = (
+                pair_preference
+                if (pts[next_idx].mode == "two_sided" and pair_preference > Decimal("0"))
+                else Decimal("1.0")
+            )
+            eff = (d_rew / weight) / d_cost
+            if eff > best_eff:
+                best_eff = eff
+                best_key = key
+                best_d_cost = d_cost
+        if best_key is None:
+            break
+        chosen_idx[best_key] += 1
+        active_keys.add(best_key)
+        remaining_budget -= best_d_cost
+
+    selected: list[ConditionTarget] = [
+        pts[chosen_idx[key]] for key, pts in cond_curves.items() if chosen_idx[key] >= 0
+    ]
+
+    if remaining_budget > Decimal("0") and len(active_keys) < max_markets:
+        fallback_candidates: list[ConditionTarget] = []
+        for key, cond in unique_conditions:
+            if key in active_keys:
+                continue
+            resized = evaluate_condition(
+                cond=cond,
+                yes_book=books[cond.yes.slug],
+                no_book=books[cond.no.slug],
+                max_cost=min(max_cost, remaining_budget),
+                max_contracts=max_contracts,
+                pair_preference=pair_preference,
+            )
+            if resized is not None and resized.cost > Decimal("0"):
+                fallback_candidates.append(resized)
+        fallback_candidates.sort(
+            key=lambda t: _rank_score(t, pair_preference) / t.cost,
+            reverse=True,
+        )
+        for resized in fallback_candidates:
+            if len(selected) >= max_markets or remaining_budget <= Decimal("0"):
+                break
+            if resized.cost <= remaining_budget:
+                selected.append(resized)
+                remaining_budget -= resized.cost
+
+    selected.sort(key=lambda t: _rank_score(t, pair_preference), reverse=True)
+    return selected
+
+
 def allocate_conditions(
     conditions: list[ConditionMarket],
     books: dict[str, Book],
@@ -129,6 +265,16 @@ def allocate_conditions(
     max_contracts: Decimal,
     pair_preference: Decimal = Decimal("1.0"),
 ) -> list[ConditionTarget]:
+    if total_budget >= WATERFILL_MIN_BUDGET and max_markets > 1:
+        return _waterfill_conditions(
+            conditions=conditions,
+            books=books,
+            total_budget=total_budget,
+            max_cost_per_condition=max_cost_per_condition,
+            max_markets=max_markets,
+            max_contracts=max_contracts,
+            pair_preference=pair_preference,
+        )
     max_cost = min(max_cost_per_condition, total_budget)
     candidates: list[ConditionTarget] = []
     for cond in conditions:
@@ -145,11 +291,7 @@ def allocate_conditions(
         if target is not None:
             candidates.append(target)
 
-    def _rank_score(t: ConditionTarget) -> Decimal:
-        weight = pair_preference if (t.mode == "two_sided" and pair_preference > Decimal("0")) else Decimal("1.0")
-        return t.expected_reward_sec / weight
-
-    candidates.sort(key=_rank_score, reverse=True)
+    candidates.sort(key=lambda t: _rank_score(t, pair_preference), reverse=True)
 
     selected: list[ConditionTarget] = []
     remaining_budget = total_budget

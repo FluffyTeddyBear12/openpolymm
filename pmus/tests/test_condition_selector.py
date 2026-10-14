@@ -292,3 +292,47 @@ def test_allocate_conditions_resizes_candidate_to_fit_remaining_budget():
     assert targets[1].size == Decimal("80")
     assert targets[1].cost == Decimal("76.80")
 
+
+def test_allocate_conditions_waterfills_across_conditions_when_budget_at_least_500():
+    cond1 = make_condition(cond_id="c1", pool="100", target="50")
+    cond2 = make_condition(cond_id="c2", pool="100", target="50")
+
+    books = {
+        cond1.yes.slug: make_book([("0.48", "500")], [("0.52", "500")], slug=cond1.yes.slug),
+        cond1.no.slug: make_book([("0.48", "500")], [("0.52", "500")], slug=cond1.no.slug),
+        cond2.yes.slug: make_book([("0.48", "500")], [("0.52", "500")], slug=cond2.yes.slug),
+        cond2.no.slug: make_book([("0.48", "500")], [("0.52", "500")], slug=cond2.no.slug),
+    }
+
+    targets = allocate_conditions(
+        conditions=[cond1, cond2],
+        books=books,
+        total_budget=Decimal("600"),
+        max_cost_per_condition=Decimal("500"),
+        max_markets=4,
+        max_contracts=Decimal("1000"),
+    )
+    assert len(targets) == 2
+    assert all(Decimal("200") <= t.cost <= Decimal("360") for t in targets)
+
+    greedy_c1 = evaluate_condition(
+        cond1,
+        books[cond1.yes.slug],
+        books[cond1.no.slug],
+        Decimal("500"),
+        Decimal("1000"),
+    )
+    assert greedy_c1 is not None
+    greedy_c2 = evaluate_condition(
+        cond2,
+        books[cond2.yes.slug],
+        books[cond2.no.slug],
+        Decimal("600") - greedy_c1.cost,
+        Decimal("1000"),
+    )
+    assert greedy_c2 is not None
+    waterfill_reward = sum(t.expected_reward_sec for t in targets)
+    greedy_reward = greedy_c1.expected_reward_sec + greedy_c2.expected_reward_sec
+    assert waterfill_reward > greedy_reward
+
+

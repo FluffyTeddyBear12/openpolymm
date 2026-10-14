@@ -115,7 +115,12 @@ def allocate_markets(
             active_windows[cond.no.slug] = dataclasses.replace(cond.window, slug=cond.no.slug)
 
         candidate_books: dict[str, Book] = {}
-        top_conditions = conditions[: CANDIDATE_BOOK_LIMIT // 2]
+        book_limit = (
+            CANDIDATE_BOOK_LIMIT
+            if budget < Decimal("500")
+            else min(1200, max(CANDIDATE_BOOK_LIMIT, int(budget // Decimal("10"))))
+        )
+        top_conditions = conditions[: book_limit // 2]
         batch_books = None
         if hasattr(client, "fetch_books_batch"):
             try:

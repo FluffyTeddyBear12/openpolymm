@@ -670,3 +670,42 @@ def test_live_engine_tick_uses_fetch_books_batch_when_dict_returned():
     public_client.fetch_books_batch.assert_called_once_with(["mkt-batch"])
     public_client.fetch_book.assert_not_called()
 
+
+def test_allocate_markets_keeps_300_book_limit_under_500_and_expands_above_500():
+    logger = logging.getLogger("test_engine_book_limit")
+    conditions = [
+        make_condition(cond_id=f"c{i}", pool=str(1000 - i), target="50")
+        for i in range(400)
+    ]
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = list(conditions)
+    client.fetch_books_batch.return_value = {}
+
+    settings_under = Settings(
+        venue="global",
+        total_budget=Decimal("400.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=200,
+    )
+    allocate_markets(settings_under, client, logger)
+    slugs_under = client.fetch_books_batch.call_args[0][0]
+    assert len(slugs_under) == 300
+
+    client.fetch_reward_conditions.return_value = list(conditions)
+    client.fetch_books_batch.reset_mock()
+    settings_above = Settings(
+        venue="global",
+        total_budget=Decimal("6000.00"),
+        max_per_market=Decimal("300.00"),
+        max_collateral_per_market=Decimal("300.00"),
+        max_markets=20,
+        max_contracts_per_market=500,
+    )
+    allocate_markets(settings_above, client, logger)
+    slugs_above = client.fetch_books_batch.call_args[0][0]
+    assert len(slugs_above) == 600
+
+
