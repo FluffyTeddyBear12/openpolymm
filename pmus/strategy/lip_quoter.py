@@ -108,7 +108,11 @@ def desired_quotes(
         if net > Decimal("0"):
             ask_qty = min(net, max_ask_contracts) // market.min_qty * market.min_qty
             min_exit = (position.avg_price // market.tick) * market.tick if position is not None and position.avg_price > Decimal("0") else Decimal("0")
-            sell_price = max(ask_price, min_exit)
+            if window.max_spread is not None and (ask_price - bid_price) > window.max_spread and min_exit > Decimal("0"):
+                target_ask = min(ask_price, max(min_exit, bid_price + window.max_spread))
+                sell_price = (target_ask // market.tick) * market.tick
+            else:
+                sell_price = max(ask_price, min_exit)
             if ask_qty >= market.min_qty and sell_price > best_bid:
                 quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=sell_price, qty=ask_qty))
 

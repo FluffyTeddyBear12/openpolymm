@@ -669,5 +669,5 @@ def test_global_non_paired_inventory_unwinds_at_breakeven_floor_and_on_wide_spre
         quote_size=Decimal("230"),
     )
     assert quotes_wide == [
-        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.420"), qty=Decimal("200"))
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.261"), qty=Decimal("200"))
     ]
