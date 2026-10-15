@@ -377,7 +377,7 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
                 "ssh",
                 *ssh_opts,
                 "ubuntu@52.16.177.132",
-                "sqlite3 /home/ubuntu/polymarket_bot/pmus/data/ledger.db '.backup /tmp/ledger_sync.db' && sqlite3 /home/ubuntu/polymarket_bot/pmus/data/certainty_ledger.db '.backup /tmp/certainty_sync.db'",
+                "python3 -c \"import sqlite3; sqlite3.connect('/home/ubuntu/polymarket_bot/pmus/data/ledger.db').backup(sqlite3.connect('/tmp/ledger_sync.db')); sqlite3.connect('/home/ubuntu/polymarket_bot/pmus/data/certainty_ledger.db').backup(sqlite3.connect('/tmp/certainty_sync.db'))\"",
             ],
             capture_output=True,
             text=True,
