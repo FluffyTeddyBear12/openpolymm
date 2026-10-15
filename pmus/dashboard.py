@@ -87,6 +87,14 @@ def is_database_empty(ledger: Ledger) -> bool:
         return True
 
 
+def _fill_maker_rebate(f: ShadowFill) -> Decimal:
+    if f.fee < Decimal("0"):
+        return -f.fee
+    if f.is_maker and f.fee == Decimal("0") and Decimal("0") < f.price < Decimal("1") and f.qty > Decimal("0"):
+        return (Decimal("0.0125") * f.qty * f.price * (Decimal("1") - f.price)).quantize(Decimal("0.0001"))
+    return Decimal("0")
+
+
 def compute_kpis(
     ledger: Ledger,
     since_ms: int = 0,
@@ -103,9 +111,10 @@ def compute_kpis(
 
     for f in fills:
         total_volume += (f.price * f.qty)
-        if f.fee < Decimal("0"):
-            maker_rebates += (-f.fee)
-        else:
+        reb = _fill_maker_rebate(f)
+        if reb > Decimal("0"):
+            maker_rebates += reb
+        elif f.fee > Decimal("0"):
             taker_fees += f.fee
 
     market_fills: dict[str, list[ShadowFill]] = {}
@@ -212,13 +221,56 @@ def format_market_overview(ledger: Ledger, recent_ms: int = 0) -> list[dict[str,
     return rows
 
 
+def compute_maker_rebate_summary(ledger: Ledger, since_ms: int = 0) -> dict[str, Any]:
+    fills = ledger.get_fills_since(since_ms)
+    open_orders = ledger.get_open_orders()
+    market_rows = format_market_overview(ledger, recent_ms=since_ms)
+    current_rebates = sum((_fill_maker_rebate(f) for f in fills), Decimal("0.0000"))
+    maker_fills = [f for f in fills if f.is_maker or f.fee < Decimal("0")]
+    resting_potential = sum(
+        (
+            (Decimal("0.0125") * o.qty_open * o.price * (Decimal("1") - o.price)).quantize(Decimal("0.0001"))
+            for o in open_orders
+            if Decimal("0") < o.price < Decimal("1") and o.qty_open > Decimal("0")
+        ),
+        Decimal("0.0000"),
+    )
+    active_daily_lip = sum((r["est_reward_rate"] * Decimal("86400") for r in market_rows if r["status"] == "QUOTING"), Decimal("0.00"))
+    if len(maker_fills) >= 2:
+        ts_vals = [f.ts_ms for f in maker_fills if f.ts_ms > 0]
+        span_ms = max(ts_vals) - min(ts_vals) if len(ts_vals) >= 2 else 0
+        if span_ms >= 3_600_000:
+            pace = (current_rebates * Decimal("86400000") / Decimal(str(span_ms))).quantize(Decimal("0.0001"))
+            projected_daily_rebates = max(pace, resting_potential)
+        else:
+            projected_daily_rebates = current_rebates + resting_potential
+    else:
+        projected_daily_rebates = current_rebates + resting_potential
+    projected_monthly_rebates = (projected_daily_rebates * Decimal("30")).quantize(Decimal("0.01"))
+    projected_daily_profit = (active_daily_lip + projected_daily_rebates).quantize(Decimal("0.01"))
+    projected_monthly_profit = (projected_daily_profit * Decimal("30")).quantize(Decimal("0.01"))
+    return {
+        "current_maker_rebates": current_rebates,
+        "maker_fills_count": len(maker_fills),
+        "resting_rebate_potential": resting_potential,
+        "active_daily_lip": active_daily_lip,
+        "projected_daily_rebates": projected_daily_rebates,
+        "projected_monthly_rebates": projected_monthly_rebates,
+        "projected_daily_profit": projected_daily_profit,
+        "projected_monthly_profit": projected_monthly_profit,
+    }
+
+
 def format_fills_table(fills: list[ShadowFill], limit: int = 25) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for f in sorted(fills, key=lambda x: x.ts_ms, reverse=True)[:limit]:
         dt = datetime.fromtimestamp(f.ts_ms / 1000, tz=timezone.utc)
         ts_str = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+        reb = _fill_maker_rebate(f)
         if f.fee < Decimal("0"):
             fee_str = f"+${abs(f.fee):.4f}"
+        elif reb > Decimal("0"):
+            fee_str = f"+${reb:.4f}"
         else:
             fee_str = f"-${f.fee:.4f}"
         title = resolve_market_title(f.slug, fetch=False)
@@ -325,6 +377,8 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
         ]
         sat_res = subprocess.run(sat_cmd, capture_output=True, text=True, timeout=15)
         if sat_res.returncode == 0 and sat_temp.exists():
+            sat_target.with_name(sat_target.name + "-wal").unlink(missing_ok=True)
+            sat_target.with_name(sat_target.name + "-shm").unlink(missing_ok=True)
             shutil.copyfile(str(sat_temp), str(sat_target))
             sat_temp.unlink(missing_ok=True)
     except Exception:
@@ -346,6 +400,8 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
         if res.returncode == 0:
+            target_path.with_name(target_path.name + "-wal").unlink(missing_ok=True)
+            target_path.with_name(target_path.name + "-shm").unlink(missing_ok=True)
             shutil.copyfile(str(temp_target), str(target_path))
             try:
                 temp_target.unlink(missing_ok=True)
@@ -406,11 +462,109 @@ def _get_official_daily_earnings(settings: Settings) -> Decimal | None:
     return None
 
 
-@st.fragment(run_every="10s")
-def render_live_hud(ledger: Ledger, settings: Settings) -> None:
+def inject_ambient_theme() -> None:
     st.markdown(
         """
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+        html, body, [class*="css"] {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .stApp {
+            background-color: #0c0a09;
+            background-image:
+                radial-gradient(ellipse at 50% -5%, rgba(245, 158, 11, 0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 88% 35%, rgba(16, 185, 129, 0.11) 0%, transparent 48%),
+                radial-gradient(ellipse at 12% 80%, rgba(56, 189, 248, 0.08) 0%, transparent 52%),
+                linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 100% 100%, 64px 64px, 64px 64px;
+            background-attachment: fixed;
+            color: #f1f5f9;
+        }
+
+        [data-testid="stMetric"] {
+            background: linear-gradient(145deg, rgba(28, 25, 23, 0.78), rgba(16, 14, 13, 0.88)) !important;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(87, 83, 78, 0.45) !important;
+            border-radius: 16px !important;
+            padding: 18px 20px !important;
+            box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+            transition: border-color 0.25s ease, transform 0.2s ease;
+        }
+
+        [data-testid="stMetric"]:hover {
+            border-color: rgba(245, 158, 11, 0.5) !important;
+            transform: translateY(-2px);
+        }
+
+        [data-testid="stMetricLabel"] {
+            font-family: 'Plus Jakarta Sans', sans-serif !important;
+            font-size: 0.82rem !important;
+            font-weight: 600 !important;
+            letter-spacing: 0.02em !important;
+            text-transform: uppercase !important;
+            color: #94a3b8 !important;
+        }
+
+        [data-testid="stMetricValue"] {
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 1.65rem !important;
+            font-weight: 700 !important;
+            color: #f8fafc !important;
+            letter-spacing: -0.02em !important;
+        }
+
+        .nestpulse-hero {
+            background: linear-gradient(145deg, rgba(28, 25, 23, 0.75), rgba(18, 16, 15, 0.85));
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(87, 83, 78, 0.4);
+            border-radius: 18px;
+            padding: 16px 22px;
+            margin-bottom: 20px;
+            box-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.7);
+        }
+
+        .nestpulse-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(16, 185, 129, 0.2));
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.35);
+        }
+
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+            background: rgba(28, 25, 23, 0.5);
+            padding: 6px;
+            border-radius: 12px;
+            border: 1px solid rgba(87, 83, 78, 0.3);
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 8px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #94a3b8;
+            padding: 8px 16px;
+        }
+
+        .stTabs [aria-selected="true"] {
+            background: rgba(245, 158, 11, 0.15) !important;
+            color: #fbbf24 !important;
+        }
+
         [data-stale="true"] {
             opacity: 1 !important;
             filter: none !important;
@@ -420,6 +574,10 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+@st.fragment(run_every="10s")
+def render_live_hud(ledger: Ledger, settings: Settings) -> None:
     empty = is_database_empty(ledger)
 
     if empty:
@@ -432,16 +590,16 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.metric(
-            label="Balance / Collateral",
+            label="Available Cash",
             value=f"${kpis['balance_usd']:,.2f}",
-            delta=f"Cap: ${kpis['collateral_cap_usd']:,.2f}",
+            delta=f"Limit: ${kpis['collateral_cap_usd']:,.2f}",
             delta_color="off",
             border=True,
         )
     with c2:
         if official_rewards is not None and official_rewards > Decimal("0"):
             st.metric(
-                label="Accrued LIP Rewards",
+                label="Pool Rewards Earned",
                 value=f"${official_rewards:,.4f}",
                 delta=f"Est Yield: ${kpis['lip_reward_total']:,.4f}",
                 delta_color="off",
@@ -449,7 +607,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
             )
         else:
             st.metric(
-                label="Accrued LIP Rewards",
+                label="Pool Rewards Earned",
                 value=f"${kpis['lip_reward_total']:,.4f}",
                 delta="LIP Yield",
                 delta_color="off",
@@ -457,7 +615,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
             )
     with c3:
         st.metric(
-            label="Qualifying Seconds",
+            label="Active Scoring Time",
             value=f"{kpis['qualifying_seconds']:,}s",
             delta=f"Bid: {kpis['qualifying_bid_seconds']}s | Ask: {kpis['qualifying_ask_seconds']}s",
             delta_color="off",
@@ -465,7 +623,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
         )
     with c4:
         st.metric(
-            label="Total Fills & Volume",
+            label="Matched Orders",
             value=f"{kpis['total_fills']}",
             delta=f"${kpis['total_volume']:,.2f} Vol",
             delta_color="off",
@@ -474,14 +632,50 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
     with c5:
         pnl_val = kpis["realized_pnl"]
         st.metric(
-            label="Realized P&L & Rebates",
+            label="Net Exit Profit",
             value=f"${pnl_val:+,.4f}",
             delta=f"Rebates: +${kpis['maker_rebates']:,.4f}",
             delta_color="normal" if pnl_val != Decimal("0") else "off",
             border=True,
         )
 
-    st.markdown("### Market Quoting Overview")
+    st.markdown("#### Maker Rebates & Projected Income")
+    reb_summary = compute_maker_rebate_summary(ledger, since_ms=0)
+    r1, r2, r3, r4 = st.columns(4)
+    with r1:
+        st.metric(
+            label="Current Maker Rebates",
+            value=f"+${reb_summary['current_maker_rebates']:,.4f}",
+            delta=f"{reb_summary['maker_fills_count']} Maker Matches",
+            delta_color="off",
+            border=True,
+        )
+    with r2:
+        st.metric(
+            label="Resting Rebate Potential",
+            value=f"+${reb_summary['resting_rebate_potential']:,.4f}",
+            delta="Per Full Order Turnover",
+            delta_color="off",
+            border=True,
+        )
+    with r3:
+        st.metric(
+            label="Projected Rebate Profit",
+            value=f"+${reb_summary['projected_daily_rebates']:,.2f}/day",
+            delta=f"+${reb_summary['projected_monthly_rebates']:,.2f} / 30d",
+            delta_color="normal",
+            border=True,
+        )
+    with r4:
+        st.metric(
+            label="Projected Total Income",
+            value=f"+${reb_summary['projected_daily_profit']:,.2f}/day",
+            delta=f"+${reb_summary['projected_monthly_profit']:,.2f} / 30d (Pools + Rebates)",
+            delta_color="normal",
+            border=True,
+        )
+
+    st.markdown("#### Live Reward Pools")
     market_rows = format_market_overview(ledger, recent_ms=0)
     if market_rows:
         display_data = []
@@ -505,13 +699,14 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
                 "Ask Qty": f"{r['ask_qty']:,}",
                 "Target Size": f"{r['target_pool_size']:,.0f}",
                 "Est LIP Rate/s": f"${r['est_reward_rate']:.8f}",
+                "Daily Pace": f"${(r['est_reward_rate'] * Decimal('86400')):,.2f}/day",
             })
         df_markets = pd.DataFrame(display_data)
         st.dataframe(df_markets, width="stretch", hide_index=True)
     else:
         st.markdown("_No active quoting markets found._")
 
-    st.markdown("### Fills & Execution Blotter")
+    st.markdown("#### Recent Order Matches")
     fills = ledger.get_fills_since(0)
     blotter_rows = format_fills_table(fills)
     if blotter_rows:
@@ -522,7 +717,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
 
     active_positions = get_active_positions(ledger)
     if active_positions:
-        st.markdown("### Open Positions")
+        st.markdown("#### Held Shares (Auto-Unwinding)")
         pos_data = [
             {
                 "Title": resolve_market_title(p.slug),
@@ -613,7 +808,7 @@ def render_satellite_hud(settings: Settings) -> None:
             border=True,
         )
 
-    st.markdown("### Active Paper Positions")
+    st.markdown("#### Active High-Certainty Positions")
     if open_trades:
         pos_rows = []
         for t in open_trades:
@@ -633,7 +828,7 @@ def render_satellite_hud(settings: Settings) -> None:
     else:
         st.markdown("_No active paper positions in Certainty Ledger._")
 
-    st.markdown("### Closed Trades Blotter")
+    st.markdown("#### Settled Outcomes")
     all_trades = sat_ledger.get_all_trades()
     closed_trades = [t for t in all_trades if t.get("status") not in ("PENDING", "FILLED")]
     if closed_trades:
@@ -657,7 +852,8 @@ def render_satellite_hud(settings: Settings) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="PMUS Trading HUD", layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="NestPulse | Autonomous Yield Studio", layout="wide", initial_sidebar_state="collapsed")
+    inject_ambient_theme()
 
     settings = Settings.from_env()
     if not check_password(settings):
@@ -671,11 +867,23 @@ def main() -> None:
     db_path = settings.data_dir / "ledger.db"
     ledger = Ledger(db_path)
 
+    venue_badge = f"{settings.venue.upper()} | {settings.mode.upper()}"
     header_col, links_col = st.columns([3, 2])
     with header_col:
-        st.title("PMUS Trading HUD")
-        venue_badge = f"{settings.venue.upper()} | {settings.mode.upper()}"
-        st.caption(f"Venue Mode: **{venue_badge}** | Data: `{db_path.name}`")
+        st.markdown(
+            f"""
+            <div class="nestpulse-hero">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+                    <span style="font-size: 2.1rem; font-weight: 800; letter-spacing: -0.03em; color: #f8fafc; font-family: 'Plus Jakarta Sans', sans-serif;">NestPulse</span>
+                    <span class="nestpulse-pill">LIVE CLOB</span>
+                </div>
+                <div style="font-size: 0.92rem; color: #94a3b8; font-weight: 500;">
+                    Autonomous Reward Pool &amp; Certainty Studio &nbsp;•&nbsp; <span style="color: #cbd5e1;">Venue: {venue_badge}</span> &nbsp;•&nbsp; <span style="color: #64748b; font-family: 'JetBrains Mono', monospace;">{db_path.name}</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     with links_col:
         links = get_profile_links(settings.polymarket_proxy_address)
@@ -697,7 +905,7 @@ def main() -> None:
             short_addr = f"{addr[:6]}...{addr[-4:]}" if len(addr) > 10 else addr
             st.caption(f"Proxy: `{short_addr}`")
 
-    tab_maker, tab_satellite = st.tabs(["Market Maker (Bot 1)", "Satellite Harvester (Bot 2)"])
+    tab_maker, tab_satellite = st.tabs(["Reward Pools (Engine 1)", "Certainty Harvester (Engine 2)"])
     with tab_maker:
         render_live_hud(ledger, settings)
     with tab_satellite:

@@ -9,6 +9,7 @@ from pmus.dashboard import (
     _get_official_daily_earnings,
     check_password,
     compute_kpis,
+    compute_maker_rebate_summary,
     format_fills_table,
     format_market_overview,
     get_active_positions,
@@ -465,6 +466,100 @@ def test_classify_position_phase():
     assert classify_position_phase("", now=now) == "Open"
     assert classify_position_phase(None, now=now) == "Open"
     assert classify_position_phase("not-a-timestamp", now=now) == "Open"
+
+
+def test_compute_kpis_estimates_global_clob_maker_rebates_when_fee_zero(tmp_path):
+    ledger = Ledger(tmp_path / "rebates_kpi.db")
+    now_ms = 1_000_000
+
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f1",
+            order_id="o1",
+            slug="mkt-1",
+            side="BUY_LONG",
+            price=Decimal("0.40"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=now_ms,
+        )
+    )
+
+    kpis = compute_kpis(ledger, since_ms=0)
+    expected_rebate = Decimal("0.3000")
+    assert kpis["maker_rebates"] == expected_rebate
+    assert kpis["taker_fees"] == Decimal("0")
+    assert kpis["net_pnl"] == expected_rebate
+
+
+def test_compute_maker_rebate_summary_calculates_rebates_and_projections(tmp_path):
+    ledger = Ledger(tmp_path / "rebate_summary.db")
+    t0 = 10_000_000
+    t1 = t0 + 7_200_000
+
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f1",
+            order_id="o1",
+            slug="mkt-1",
+            side="BUY_LONG",
+            price=Decimal("0.50"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=t0,
+        )
+    )
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f2",
+            order_id="o2",
+            slug="mkt-1",
+            side="SELL_LONG",
+            price=Decimal("0.50"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=t1,
+        )
+    )
+
+    ledger.record_order(
+        LiveOrder(
+            order_id="o3",
+            slug="mkt-1",
+            side="BUY_LONG",
+            price=Decimal("0.40"),
+            qty_open=Decimal("200"),
+        )
+    )
+
+    ledger.record_lip_snapshot(
+        LipSnapshot(
+            ts_ms=t1,
+            slug="mkt-1",
+            program_id="p1",
+            trader_bid_score=Decimal("10"),
+            total_bid_score=Decimal("100"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("100"),
+            qualifies=True,
+            reward_usd=Decimal("0.0001"),
+            bid_qualifies=True,
+            ask_qualifies=False,
+        )
+    )
+
+    summary = compute_maker_rebate_summary(ledger, since_ms=0)
+    assert summary["current_maker_rebates"] == Decimal("0.6250")
+    assert summary["maker_fills_count"] == 2
+    assert summary["resting_rebate_potential"] == Decimal("0.6000")
+    assert summary["active_daily_lip"] == Decimal("8.64")
+    assert summary["projected_daily_rebates"] == Decimal("7.5000")
+    assert summary["projected_monthly_rebates"] == Decimal("225.00")
+    assert summary["projected_daily_profit"] == Decimal("16.14")
+    assert summary["projected_monthly_profit"] == Decimal("484.20")
 
 
 
