@@ -360,19 +360,40 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
 
     import shutil
 
+    ssh_opts = [
+        "-i",
+        str(key_path),
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "ConnectTimeout=10",
+    ]
+
+    try:
+        subprocess.run(
+            [
+                "ssh",
+                *ssh_opts,
+                "ubuntu@52.16.177.132",
+                "sqlite3 /home/ubuntu/polymarket_bot/pmus/data/ledger.db '.backup /tmp/ledger_sync.db' && sqlite3 /home/ubuntu/polymarket_bot/pmus/data/certainty_ledger.db '.backup /tmp/certainty_sync.db'",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except Exception:
+        pass
+
     try:
         sat_target = target_path.parent / "certainty_ledger.db"
         sat_temp = sat_target.with_suffix(".tmp")
         sat_cmd = [
             "scp",
             "-C",
-            "-i",
-            str(key_path),
-            "-o",
-            "StrictHostKeyChecking=no",
-            "-o",
-            "ConnectTimeout=10",
-            "ubuntu@52.16.177.132:/home/ubuntu/polymarket_bot/pmus/data/certainty_ledger.db",
+            *ssh_opts,
+            "ubuntu@52.16.177.132:/tmp/certainty_sync.db",
             str(sat_temp),
         ]
         sat_res = subprocess.run(sat_cmd, capture_output=True, text=True, timeout=15)
@@ -388,13 +409,8 @@ def sync_ledger_from_vps(target_path: Path | None = None) -> tuple[bool, str]:
     cmd = [
         "scp",
         "-C",
-        "-i",
-        str(key_path),
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "ConnectTimeout=10",
-        "ubuntu@52.16.177.132:/home/ubuntu/polymarket_bot/pmus/data/ledger.db",
+        *ssh_opts,
+        "ubuntu@52.16.177.132:/tmp/ledger_sync.db",
         str(temp_target),
     ]
     try:
