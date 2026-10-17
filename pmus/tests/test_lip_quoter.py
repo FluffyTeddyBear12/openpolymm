@@ -1337,6 +1337,62 @@ def test_global_live_unwind_non_scoring_steps_sell_long_into_scoring_band(base_m
         Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.145"), qty=Decimal("325"))
     ]
 
+    low_mid_book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.074"), Decimal("100")),),
+        asks=(Level(Decimal("0.114"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    assert desired_quotes(
+        market=base_market,
+        book=low_mid_book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("105"), avg_price=Decimal("0.1654")),
+        budget=Decimal("65.00"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    ) == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.166"), qty=Decimal("105"))]
+
+    zero_pool_win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="unwind",
+        pool_usd=Decimal("0"),
+        discount=Decimal("0"),
+        target_size=Decimal("5"),
+        max_spread=Decimal("0.04"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    assert desired_quotes(
+        market=base_market,
+        book=book,
+        window=zero_pool_win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("105"), avg_price=Decimal("0.1654")),
+        budget=Decimal("65.00"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    ) == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.166"), qty=Decimal("105"))]
+
+    deep_underwater_book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.271"), Decimal("100")),),
+        asks=(Level(Decimal("0.307"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    assert desired_quotes(
+        market=base_market,
+        book=deep_underwater_book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("5"), avg_price=Decimal("0.3986")),
+        budget=Decimal("65.00"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    ) == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.399"), qty=Decimal("5"))]
+
 
 def test_global_empty_bid_book_emits_sell_long_unwind():
     market = Market(

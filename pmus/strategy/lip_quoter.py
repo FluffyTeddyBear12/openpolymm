@@ -196,6 +196,9 @@ def desired_quotes(
                 and bid_budget <= Decimal("0")
                 and budget > Decimal("0")
                 and window.max_spread is not None
+                and window.pool_usd > Decimal("0")
+                and global_rewards.mid_in_reward_band(mid)
+                and ask_qty >= window.target_size
                 and min_exit > Decimal("0")
                 and (min_exit - mid) >= window.max_spread
             )
@@ -215,7 +218,12 @@ def desired_quotes(
                     // market.tick
                 ) * market.tick
                 target_unwind_ask = min(min_exit, max_scoring_ask)
-                sell_price = max(ask_price, loss_floor, target_unwind_ask)
+                candidate_sell = max(ask_price, loss_floor, target_unwind_ask)
+                sell_price = (
+                    candidate_sell
+                    if (candidate_sell - mid) < window.max_spread
+                    else max(ask_price, min_exit)
+                )
             elif window.max_spread is not None and (ask_price - bid_price) > window.max_spread and min_exit > Decimal("0"):
                 target_ask = max(min_exit, min(ask_price, bid_price + window.max_spread))
                 sell_price = (target_ask // market.tick) * market.tick
