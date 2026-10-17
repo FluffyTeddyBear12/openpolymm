@@ -612,3 +612,96 @@ def test_competitor_score_below_45_rejects_two_sided():
     )
     assert target is None
 
+
+def test_evaluate_and_allocate_conditions_skip_two_sided_when_leg_filled_at_target_size():
+    cond1 = make_condition(cond_id="c1", pool="300", target="50")
+    cond2 = make_condition(cond_id="c2", pool="200", target="50")
+    books = {
+        cond1.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond1.yes.slug),
+        cond1.no.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond1.no.slug),
+        cond2.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond2.yes.slug),
+        cond2.no.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond2.no.slug),
+    }
+
+    dust_positions = {
+        cond1.yes.slug: Position(slug=cond1.yes.slug, net_qty=Decimal("5"), avg_price=Decimal("0.40")),
+    }
+    target_dust = evaluate_condition(
+        cond=cond1,
+        yes_book=books[cond1.yes.slug],
+        no_book=books[cond1.no.slug],
+        max_cost=Decimal("100"),
+        max_contracts=Decimal("1000"),
+        pair_preference=Decimal("0.0"),
+        positions=dust_positions,
+    )
+    assert target_dust is not None
+    assert target_dust.mode == "two_sided"
+
+    filled_yes_positions = {
+        cond1.yes.slug: Position(slug=cond1.yes.slug, net_qty=Decimal("50"), avg_price=Decimal("0.40")),
+    }
+    target_filled_pair_only = evaluate_condition(
+        cond=cond1,
+        yes_book=books[cond1.yes.slug],
+        no_book=books[cond1.no.slug],
+        max_cost=Decimal("100"),
+        max_contracts=Decimal("1000"),
+        pair_preference=Decimal("0.0"),
+        positions=filled_yes_positions,
+    )
+    assert target_filled_pair_only is None
+
+    target_filled_single_fallback = evaluate_condition(
+        cond=cond1,
+        yes_book=books[cond1.yes.slug],
+        no_book=books[cond1.no.slug],
+        max_cost=Decimal("100"),
+        max_contracts=Decimal("1000"),
+        pair_preference=Decimal("1.0"),
+        positions=filled_yes_positions,
+    )
+    assert target_filled_single_fallback is not None
+    assert target_filled_single_fallback.mode == "no_only"
+
+    high_cost_yes_positions = {
+        cond1.yes.slug: Position(slug=cond1.yes.slug, net_qty=Decimal("50"), avg_price=Decimal("0.52")),
+    }
+    assert (
+        evaluate_condition(
+            cond=cond1,
+            yes_book=books[cond1.yes.slug],
+            no_book=books[cond1.no.slug],
+            max_cost=Decimal("100"),
+            max_contracts=Decimal("1000"),
+            pair_preference=Decimal("1.0"),
+            positions=high_cost_yes_positions,
+        )
+        is None
+    )
+
+    allocated = allocate_conditions(
+        conditions=[cond1, cond2],
+        books=books,
+        total_budget=Decimal("200"),
+        max_cost_per_condition=Decimal("100"),
+        max_markets=2,
+        max_contracts=Decimal("1000"),
+        pair_preference=Decimal("0.0"),
+        positions=filled_yes_positions,
+    )
+    assert [t.condition.condition_id for t in allocated] == ["c2"]
+    assert allocated[0].mode == "two_sided"
+
+    allocated_waterfill = allocate_conditions(
+        conditions=[cond1, cond2],
+        books=books,
+        total_budget=Decimal("600"),
+        max_cost_per_condition=Decimal("100"),
+        max_markets=2,
+        max_contracts=Decimal("1000"),
+        pair_preference=Decimal("0.0"),
+        positions=filled_yes_positions,
+    )
+    assert [t.condition.condition_id for t in allocated_waterfill] == ["c2"]
+    assert allocated_waterfill[0].mode == "two_sided"

@@ -91,16 +91,11 @@ def desired_quotes(
         )
         if paired:
             target_sz = quote_size if quote_size is not None else window.target_size
-            remaining = target_sz - net
-            if remaining >= window.target_size and net < market.min_qty:
+            if net < window.target_size and target_sz >= window.target_size:
+                remaining = max(window.target_size, target_sz - net)
                 price = global_rewards.bid_price(book, window, market.tick)
                 qty = min(remaining, max_bid_contracts)
-                budget_blocked = (
-                    budget > Decimal("0")
-                    and position is not None
-                    and position.avg_price > Decimal("0")
-                    and (net * position.avg_price >= budget)
-                )
+                budget_blocked = budget > Decimal("0") and adverse_freeze and (net * position.avg_price >= budget)
                 adverse_blocked = (
                     adverse_freeze
                     and price is not None
@@ -136,7 +131,10 @@ def desired_quotes(
                     budget_allows = budget <= Decimal("0") or held_cost < budget
                     if not adverse_blocked and budget_allows:
                         target_sz = quote_size if quote_size is not None else window.target_size
-                        remaining = max(Decimal("0"), target_sz - max(Decimal("0"), net))
+                        remaining = max(
+                            window.target_size if net < window.target_size else Decimal("0"),
+                            target_sz - max(Decimal("0"), net),
+                        )
                         bid_qty = min(remaining, max_bid_contracts)
                         if budget > Decimal("0") and bid_qty * price > avail_budget:
                             bid_qty = min(bid_qty, ((avail_budget / price) // market.min_qty) * market.min_qty)

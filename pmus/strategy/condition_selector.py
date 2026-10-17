@@ -52,14 +52,25 @@ def evaluate_condition(
     max_cost: Decimal,
     max_contracts: Decimal,
     pair_preference: Decimal = Decimal("1.0"),
+    positions: dict[str, Position] | None = None,
 ) -> ConditionTarget | None:
     window = cond.window
     lot = cond.yes.min_qty
     min_size = window.target_size
     surviving: list[ConditionTarget] = []
 
-    prices = global_rewards.pair_quote_prices(
-        yes_book, no_book, window, cond.yes.tick, cond.no.tick
+    yes_pos = (positions or {}).get(cond.yes.slug)
+    no_pos = (positions or {}).get(cond.no.slug)
+    yes_held = yes_pos.net_qty if yes_pos is not None else Decimal("0")
+    no_held = no_pos.net_qty if no_pos is not None else Decimal("0")
+    either_leg_filled = yes_held >= min_size or no_held >= min_size
+
+    prices = (
+        global_rewards.pair_quote_prices(
+            yes_book, no_book, window, cond.yes.tick, cond.no.tick
+        )
+        if not either_leg_filled
+        else None
     )
     if prices is not None:
         p_yes, p_no = prices
@@ -87,43 +98,59 @@ def evaluate_condition(
                 )
 
     if pair_preference > Decimal("0"):
-        p_yes = global_rewards.bid_price(yes_book, window, cond.yes.tick)
-        opp_no_bid = next((lvl.price for lvl in no_book.bids if lvl.qty >= min_size), no_book.bids[0].price) if no_book.bids else Decimal("0")
-        if p_yes is not None and p_yes >= SINGLE_SIDED_MIN_PRICE and (p_yes + opp_no_bid) < Decimal("1"):
-            size_yes = _single_size(max_cost, p_yes, min_size, lot, max_contracts)
-            cost_yes = size_yes * p_yes
-            reward_yes = global_rewards.expected_single_reward_sec(yes_book, no_book, window, p_yes, size_yes)
-            if size_yes > Decimal("0") and (reward_yes * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
-                surviving.append(
-                    ConditionTarget(
-                        condition=cond,
-                        mode="yes_only",
-                        size=size_yes,
-                        yes_price=p_yes,
-                        no_price=None,
-                        cost=cost_yes,
-                        expected_reward_sec=reward_yes,
+        if yes_held < min_size:
+            p_yes = global_rewards.bid_price(yes_book, window, cond.yes.tick)
+            opp_no_bid = next((lvl.price for lvl in no_book.bids if lvl.qty >= min_size), no_book.bids[0].price) if no_book.bids else Decimal("0")
+            if no_held > Decimal("0") and no_pos is not None and no_pos.avg_price > Decimal("0"):
+                opp_no_bid = max(opp_no_bid, no_pos.avg_price)
+            if (
+                p_yes is not None
+                and p_yes >= SINGLE_SIDED_MIN_PRICE
+                and (p_yes + opp_no_bid) < Decimal("1")
+                and not (no_held >= min_size and no_pos is not None and no_pos.avg_price > Decimal("0") and (p_yes + no_pos.avg_price) > PAIR_MAX_PRICE_SUM)
+            ):
+                size_yes = _single_size(max_cost, p_yes, min_size, lot, max_contracts)
+                cost_yes = size_yes * p_yes
+                reward_yes = global_rewards.expected_single_reward_sec(yes_book, no_book, window, p_yes, size_yes)
+                if size_yes > Decimal("0") and (reward_yes * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
+                    surviving.append(
+                        ConditionTarget(
+                            condition=cond,
+                            mode="yes_only",
+                            size=size_yes,
+                            yes_price=p_yes,
+                            no_price=None,
+                            cost=cost_yes,
+                            expected_reward_sec=reward_yes,
+                        )
                     )
-                )
 
-        p_no = global_rewards.bid_price(no_book, window, cond.no.tick)
-        opp_yes_bid = next((lvl.price for lvl in yes_book.bids if lvl.qty >= min_size), yes_book.bids[0].price) if yes_book.bids else Decimal("0")
-        if p_no is not None and p_no >= SINGLE_SIDED_MIN_PRICE and (p_no + opp_yes_bid) < Decimal("1"):
-            size_no = _single_size(max_cost, p_no, min_size, cond.no.min_qty, max_contracts)
-            cost_no = size_no * p_no
-            reward_no = global_rewards.expected_single_reward_sec(no_book, yes_book, window, p_no, size_no)
-            if size_no > Decimal("0") and (reward_no * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
-                surviving.append(
-                    ConditionTarget(
-                        condition=cond,
-                        mode="no_only",
-                        size=size_no,
-                        yes_price=None,
-                        no_price=p_no,
-                        cost=cost_no,
-                        expected_reward_sec=reward_no,
+        if no_held < min_size:
+            p_no = global_rewards.bid_price(no_book, window, cond.no.tick)
+            opp_yes_bid = next((lvl.price for lvl in yes_book.bids if lvl.qty >= min_size), yes_book.bids[0].price) if yes_book.bids else Decimal("0")
+            if yes_held > Decimal("0") and yes_pos is not None and yes_pos.avg_price > Decimal("0"):
+                opp_yes_bid = max(opp_yes_bid, yes_pos.avg_price)
+            if (
+                p_no is not None
+                and p_no >= SINGLE_SIDED_MIN_PRICE
+                and (p_no + opp_yes_bid) < Decimal("1")
+                and not (yes_held >= min_size and yes_pos is not None and yes_pos.avg_price > Decimal("0") and (p_no + yes_pos.avg_price) > PAIR_MAX_PRICE_SUM)
+            ):
+                size_no = _single_size(max_cost, p_no, min_size, cond.no.min_qty, max_contracts)
+                cost_no = size_no * p_no
+                reward_no = global_rewards.expected_single_reward_sec(no_book, yes_book, window, p_no, size_no)
+                if size_no > Decimal("0") and (reward_no * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
+                    surviving.append(
+                        ConditionTarget(
+                            condition=cond,
+                            mode="no_only",
+                            size=size_no,
+                            yes_price=None,
+                            no_price=p_no,
+                            cost=cost_no,
+                            expected_reward_sec=reward_no,
+                        )
                     )
-                )
 
     if not surviving:
         return None
@@ -209,6 +236,7 @@ def _waterfill_conditions(
                 max_cost=tier_cap,
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
+                positions=positions,
             )
             if t is not None and t.cost > last_cost and t.expected_reward_sec > last_rew:
                 pts.append(t)
@@ -274,6 +302,7 @@ def _waterfill_conditions(
                 max_cost=cand_max,
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
+                positions=positions,
             )
             if resized is not None and resized.cost > Decimal("0"):
                 fallback_candidates.append(resized)
@@ -329,6 +358,7 @@ def allocate_conditions(
             max_cost=cond_max_cost,
             max_contracts=max_contracts,
             pair_preference=pair_preference,
+            positions=positions,
         )
         if target is not None:
             candidates.append(target)
@@ -356,6 +386,7 @@ def allocate_conditions(
                 max_cost=cond_rem_cap,
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
+                positions=positions,
             )
             if resized is not None and resized.cost <= remaining_budget:
                 selected.append(resized)

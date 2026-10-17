@@ -577,7 +577,34 @@ def test_paired_partial_fill_quotes_remaining_when_eligible(base_market):
         quote_size=Decimal("100"),
     )
     assert quotes_partial == [
-        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.519"), qty=Decimal("30"))
+        Quote(slug=base_market.slug, side="BUY_LONG", price=Decimal("0.480"), qty=Decimal("70")),
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.519"), qty=Decimal("30")),
+    ]
+
+    win_65 = IncentiveWindow(
+        slug="mkt-pair",
+        program_id="p-pair",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("65"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    quotes_dust_5 = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win_65,
+        position=Position(slug="mkt-pair", net_qty=Decimal("5"), avg_price=Decimal("0.400")),
+        budget=Decimal("100.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("65"),
+    )
+    assert quotes_dust_5 == [
+        Quote(slug=base_market.slug, side="BUY_LONG", price=Decimal("0.480"), qty=Decimal("65")),
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.519"), qty=Decimal("5")),
     ]
 
     quotes_insufficient = desired_quotes(
@@ -1155,7 +1182,7 @@ def test_global_paired_leg_freezes_buy_long_when_holding_min_qty(base_market):
         asks=(Level(Decimal("0.36"), Decimal("100")),),
         ts_ms=1000,
     )
-    quotes = desired_quotes(
+    quotes_dust = desired_quotes(
         market=market_min5,
         book=book,
         window=win,
@@ -1165,9 +1192,24 @@ def test_global_paired_leg_freezes_buy_long_when_holding_min_qty(base_market):
         paired=True,
         quote_size=Decimal("100"),
     )
-    assert not any(q.side == "BUY_LONG" for q in quotes)
-    assert quotes == [
-        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.359"), qty=Decimal("10"))
+    assert quotes_dust == [
+        Quote(slug=base_market.slug, side="BUY_LONG", price=Decimal("0.340"), qty=Decimal("90")),
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.359"), qty=Decimal("10")),
+    ]
+
+    quotes_filled = desired_quotes(
+        market=market_min5,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("50"), avg_price=Decimal("0.35")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert not any(q.side == "BUY_LONG" for q in quotes_filled)
+    assert quotes_filled == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.359"), qty=Decimal("50"))
     ]
 
 
@@ -1261,9 +1303,4 @@ def test_global_sub_tick_avg_price_min_exit_rounds_up(base_market):
     assert quotes == [
         Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.455"), qty=Decimal("50"))
     ]
-
-
-
-
-
 

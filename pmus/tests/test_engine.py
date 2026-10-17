@@ -677,7 +677,7 @@ def test_allocate_markets_keeps_800_book_limit_under_500_and_expands_above_500()
     logger = logging.getLogger("test_engine_book_limit")
     conditions = [
         make_condition(cond_id=f"c{i}", pool=str(1000 - i), target="50")
-        for i in range(600)
+        for i in range(700)
     ]
 
     client = MagicMock()
@@ -694,7 +694,7 @@ def test_allocate_markets_keeps_800_book_limit_under_500_and_expands_above_500()
     )
     allocate_markets(settings_under, client, logger)
     slugs_under = client.fetch_books_batch.call_args[0][0]
-    assert len(slugs_under) == 800
+    assert len(slugs_under) == 1200
 
     client.fetch_reward_conditions.return_value = list(conditions)
     client.fetch_books_batch.reset_mock()
@@ -708,7 +708,7 @@ def test_allocate_markets_keeps_800_book_limit_under_500_and_expands_above_500()
     )
     allocate_markets(settings_above, client, logger)
     slugs_above = client.fetch_books_batch.call_args[0][0]
-    assert len(slugs_above) == 1000
+    assert len(slugs_above) == 1200
 
 
 def test_allocate_markets_prioritizes_affordable_pair_target_size_and_strips_open_orders():
@@ -1761,7 +1761,209 @@ def test_quote_market_runs_check_pre_submit_before_canceling_and_blocks_cancel_w
     engine.ledger.close_order.assert_not_called()
 
 
+def test_quote_market_sub_target_dust_neither_zeroes_bid_budget_nor_freezes_partner_leg():
+    from pmus.risk import RiskGateResult
+    logger = logging.getLogger("test_sub_target_dust_engine")
+    mkt_y = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    mkt_n = Market(slug="n1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    w_y = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("65"), Decimal("0.05"), datetime.now(timezone.utc), None, "active")
+    w_n = IncentiveWindow("n1", "p1", Decimal("100"), Decimal("0.30"), Decimal("65"), Decimal("0.05"), datetime.now(timezone.utc), None, "active")
+
+    client = MagicMock()
+    auth_client = MagicMock()
+    auth_client.create_orders_batch.return_value = []
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logger,
+    )
+    engine.markets["y1"] = mkt_y
+    engine.markets["n1"] = mkt_n
+    engine.active_windows["y1"] = w_y
+    engine.active_windows["n1"] = w_n
+    engine.paired_slugs = frozenset({"y1", "n1"})
+    engine.condition_pairs = (("y1", "n1"),)
+    engine.side_budgets[("y1", "bid")] = Decimal("50")
+    engine.side_qtys[("y1", "bid")] = Decimal("65")
+
+    resting_y = LiveOrder("o-y", "y1", "BUY_LONG", Decimal("0.47"), Decimal("65"))
+    engine.ledger.get_open_orders.side_effect = lambda slug=None: [resting_y] if slug == "y1" else []
+    book_y = Book("y1", (Level(Decimal("0.49"), Decimal("200")),), (Level(Decimal("0.51"), Decimal("200")),), 1000)
+
+    dust_y = Position("y1", Decimal("5"), Decimal("0.46"))
+    dust_n = Position("n1", Decimal("5"), Decimal("0.52"))
+
+    engine._quote_market(
+        slug="y1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[resting_y],
+        live_positions={"y1": dust_y, "n1": dust_n},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_y,
+    )
+
+    quotes_submitted = auth_client.create_orders_batch.call_args[0][0]
+    buy_q = next((q for q in quotes_submitted if q.side == "BUY_LONG"), None)
+    assert buy_q is not None
+    assert buy_q.price == Decimal("0.49")
+    assert buy_q.qty == Decimal("65")
 
 
+def test_live_engine_yield_collapse_early_reallocation():
+    from pmus.engine import REALLOCATE_SECONDS
+    from pmus.models import LipSnapshot
+    from pmus.strategy.market_selector import CandidateSide
 
+    assert REALLOCATE_SECONDS == 300
+
+    logger = logging.getLogger("test_yield_collapse")
+    now = datetime(2026, 10, 12, 15, 0, tzinfo=timezone.utc)
+    w = IncentiveWindow(
+        slug="c1-yes",
+        program_id="p-c1",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    yes_b = Book(slug="c1-yes", bids=(Level(Decimal("0.48"), Decimal("100")),), asks=(Level(Decimal("0.52"), Decimal("100")),), ts_ms=1000)
+    no_b = Book(slug="c1-no", bids=(Level(Decimal("0.48"), Decimal("100")),), asks=(Level(Decimal("0.52"), Decimal("100")),), ts_ms=1000)
+    market_y = Market(slug="c1-yes", event_id="c1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    market_n = Market(slug="c1-no", event_id="c1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+
+    public_client = MagicMock()
+    public_client.fetch_books_batch.return_value = {"c1-yes": yes_b, "c1-no": no_b}
+    public_client.get_market.side_effect = lambda slug: market_y if slug == "c1-yes" else market_n
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.create_orders_batch.return_value = []
+    auth_client.cancel_all_scoped.return_value = []
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = []
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    risk_mgr = MagicMock()
+    risk_mgr.is_kill_switch_active.return_value = False
+    risk_mgr.is_maintenance_active.return_value = False
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(venue="global", total_budget=Decimal("200.00"), max_per_market=Decimal("100.00"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+
+    cand_y = CandidateSide("c1-yes", "c1", "bid", Decimal("0.48"), Decimal("0"), Decimal("50"), Decimal("24"), Decimal("0.0005"), Decimal("0.00002"), "global", Decimal("200"), Decimal("86400"))
+    cand_n = CandidateSide("c1-no", "c1", "bid", Decimal("0.48"), Decimal("0"), Decimal("50"), Decimal("24"), Decimal("0.0005"), Decimal("0.00002"), "global", Decimal("200"), Decimal("86400"))
+    fake_alloc = AllocationResult(
+        candidates=[cand_y, cand_n],
+        selected_candidates=[cand_y, cand_n],
+        selected_slugs=["c1-yes", "c1-no"],
+        side_budgets={("c1-yes", "bid"): Decimal("24"), ("c1-no", "bid"): Decimal("24")},
+        side_qtys={("c1-yes", "bid"): Decimal("50"), ("c1-no", "bid"): Decimal("50")},
+        unfunded_reason=None,
+        paired_slugs=frozenset({"c1-yes", "c1-no"}),
+        condition_pairs=(("c1-yes", "c1-no"),),
+    )
+
+    with patch("pmus.engine.allocate_markets", return_value=({"c1-yes": w, "c1-no": w}, fake_alloc)):
+        engine.prepare(is_realloc=False)
+
+    assert engine.expected_portfolio_rate_sec == Decimal("0.0010")
+    t0 = 1000.0
+    engine.last_prepare_ts = t0
+
+    collapsed_snaps = [
+        LipSnapshot(
+            ts_ms=1000000,
+            slug="c1-yes",
+            program_id="p-c1",
+            trader_bid_score=Decimal("10"),
+            total_bid_score=Decimal("100"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("100"),
+            qualifies=True,
+            reward_usd=Decimal("0.0002"),
+        ),
+        LipSnapshot(
+            ts_ms=1000000,
+            slug="c1-no",
+            program_id="p-c1",
+            trader_bid_score=Decimal("10"),
+            total_bid_score=Decimal("100"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("100"),
+            qualifies=True,
+            reward_usd=Decimal("0.0002"),
+        ),
+    ]
+    healthy_snaps = [
+        LipSnapshot(
+            ts_ms=1000000,
+            slug="c1-yes",
+            program_id="p-c1",
+            trader_bid_score=Decimal("50"),
+            total_bid_score=Decimal("100"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("100"),
+            qualifies=True,
+            reward_usd=Decimal("0.0003"),
+        ),
+        LipSnapshot(
+            ts_ms=1000000,
+            slug="c1-no",
+            program_id="p-c1",
+            trader_bid_score=Decimal("50"),
+            total_bid_score=Decimal("100"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("100"),
+            qualifies=True,
+            reward_usd=Decimal("0.0003"),
+        ),
+    ]
+
+    with patch("pmus.engine.estimate_global_pair_score", return_value=collapsed_snaps), patch.object(engine, "prepare") as mock_prep:
+        for i in range(1, 20):
+            engine.tick(t0 + float(i))
+        mock_prep.assert_not_called()
+        assert engine.yield_collapse_streak == 19
+
+    with patch("pmus.engine.estimate_global_pair_score", return_value=healthy_snaps), patch.object(engine, "prepare") as mock_prep:
+        engine.tick(t0 + 85.0)
+        mock_prep.assert_not_called()
+        assert engine.yield_collapse_streak == 0
+
+    with patch("pmus.engine.estimate_global_pair_score", return_value=collapsed_snaps), patch.object(engine, "prepare") as mock_prep:
+        for i in range(14):
+            engine.tick(t0 + 90.0 + float(i))
+        mock_prep.assert_not_called()
+        assert engine.yield_collapse_streak == 14
+
+        engine.tick(t0 + 105.0)
+        mock_prep.assert_called_once_with(is_realloc=True)
+        assert engine.yield_collapse_streak == 0
 

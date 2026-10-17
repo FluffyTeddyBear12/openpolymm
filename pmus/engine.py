@@ -23,11 +23,14 @@ MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
 if not hasattr(LiveOrder, "remaining_qty"):
     setattr(LiveOrder, "remaining_qty", property(lambda self: self.qty_open))
 
-CANDIDATE_BOOK_LIMIT = 800
+CANDIDATE_BOOK_LIMIT = 1200
 FILL_LOOKBACK_SECONDS = 60
 FILL_WINDOW_SECONDS = 3600
 LOCAL_FILL_POSITION_TTL_SECONDS = 60.0
-REALLOCATE_SECONDS = 900
+REALLOCATE_SECONDS = 300
+YIELD_COLLAPSE_COOLDOWN_SECONDS = 90.0
+YIELD_COLLAPSE_RATIO = Decimal("0.55")
+YIELD_COLLAPSE_TICKS = 15
 
 def reconcile_quotes(
     current_orders: list[LiveOrder],
@@ -146,11 +149,7 @@ def allocate_markets(
         )
 
         candidate_books: dict[str, Book] = {}
-        book_limit = (
-            CANDIDATE_BOOK_LIMIT
-            if budget < Decimal("500")
-            else min(1200, max(CANDIDATE_BOOK_LIMIT, int(budget // Decimal("10"))))
-        )
+        book_limit = CANDIDATE_BOOK_LIMIT
         top_conditions = allocatable[: book_limit // 2]
         batch_books = None
         if hasattr(client, "fetch_books_batch"):
@@ -417,6 +416,9 @@ class LiveEngine:
         self.recent_cancels: dict[str, float] = {}
         self.slug_cooldown: dict[str, float] = {}
         self.local_fill_positions: dict[str, tuple[Position, float]] = {}
+        self.expected_portfolio_rate_sec: Decimal = Decimal("0")
+        self.last_prepare_ts: float = 0.0
+        self.yield_collapse_streak: int = 0
 
     def run(self, duration_seconds: int | None = None) -> None:
         if not self.auth_client.is_available:
@@ -430,14 +432,24 @@ class LiveEngine:
             end_time = float("inf")
 
         self.prepare()
-        next_realloc = time.time() + REALLOCATE_SECONDS
+        if self.last_prepare_ts <= 0.0:
+            self.last_prepare_ts = time.time()
         try:
             while time.time() < end_time:
                 tick_start = time.time()
-                if tick_start >= next_realloc:
+                paused = (
+                    self.kill_switch_active
+                    or self.daily_loss_stop_tripped
+                    or self.risk_manager.is_maintenance_active(
+                        datetime.fromtimestamp(tick_start, timezone.utc)
+                    )
+                )
+                if not paused and tick_start - self.last_prepare_ts >= REALLOCATE_SECONDS:
                     self.prepare(is_realloc=True)
-                    next_realloc = tick_start + REALLOCATE_SECONDS
-                period = self.tick(tick_start) if self.target_slugs else 30.0
+                    if self.last_prepare_ts < tick_start:
+                        self.last_prepare_ts = tick_start
+                now_ts = time.time()
+                period = self.tick(now_ts) if self.target_slugs else 30.0
                 time.sleep(max(0.1, period - (time.time() - tick_start)))
         finally:
             self.shutdown()
@@ -482,14 +494,28 @@ class LiveEngine:
                     pos_map = {}
                 pos_map[slug] = opt_pos
 
-        self.active_windows, alloc_res = allocate_markets(
-            self.settings,
-            self.public_client,
-            self.logger,
-            available_budget=effective_budget,
-            positions=pos_map,
-            open_orders=open_orders,
+        try:
+            self.active_windows, alloc_res = allocate_markets(
+                self.settings,
+                self.public_client,
+                self.logger,
+                available_budget=effective_budget,
+                positions=pos_map,
+                open_orders=open_orders,
+            )
+        except Exception as exc:
+            if is_realloc:
+                self.logger.warning("Reallocation failed, retaining current targets: %s", exc)
+                self.last_prepare_ts = time.time()
+                self.yield_collapse_streak = 0
+                return
+            raise
+        self.expected_portfolio_rate_sec = sum(
+            (c.expected_reward_sec for c in alloc_res.selected_candidates),
+            Decimal("0"),
         )
+        self.last_prepare_ts = time.time()
+        self.yield_collapse_streak = 0
         self.target_slugs = list(alloc_res.selected_slugs)
         self.side_budgets = dict(alloc_res.side_budgets)
         self.side_qtys = dict(alloc_res.side_qtys)
@@ -569,11 +595,13 @@ class LiveEngine:
             self.kill_switch_active = is_kill
             self.notifier.notify_kill_switch(is_kill)
         if is_kill:
+            self.yield_collapse_streak = 0
             self.logger.warning("Kill switch active! Canceling orders and pausing.")
             self._cancel_targets(now_ts)
             return 5.0
 
         if self.risk_manager.is_maintenance_active(now_dt):
+            self.yield_collapse_streak = 0
             self.logger.warning("Exchange weekly maintenance window active! Canceling orders and pausing.")
             self._cancel_targets(now_ts)
             return 10.0
@@ -584,6 +612,7 @@ class LiveEngine:
             positions = self.auth_client.get_positions()
             buying_power = self.auth_client.get_buying_power()
         except Exception as exc:
+            self.yield_collapse_streak = 0
             self.logger.warning("Exchange sync failed, skipping tick: %s", exc)
             return 1.0
 
@@ -599,6 +628,7 @@ class LiveEngine:
         baseline = getattr(self.settings, "daily_loss_baseline", Decimal("0"))
         realized_loss_today = max(Decimal("0"), raw_realized_loss_today - baseline)
         if realized_loss_today >= self.settings.daily_loss_stop:
+            self.yield_collapse_streak = 0
             if not self.daily_loss_stop_tripped:
                 self.daily_loss_stop_tripped = True
                 self.notifier.notify_daily_loss_stop(realized_loss_today, self.settings.daily_loss_stop)
@@ -624,9 +654,10 @@ class LiveEngine:
             except Exception as exc:
                 self.logger.debug("Batch book fetch failed in tick: %s", exc)
 
+        live_portfolio_rate_sec = Decimal("0")
         pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] = {}
         for slug in active_slugs:
-            self._quote_market(
+            mkt_rate = self._quote_market(
                 slug,
                 now_dt,
                 now_ts,
@@ -638,6 +669,7 @@ class LiveEngine:
                 pair_inputs=pair_inputs,
                 book=batch_books.get(slug),
             )
+            live_portfolio_rate_sec += mkt_rate
 
         if self.condition_pairs:
             for yes_slug, no_slug in self.condition_pairs:
@@ -646,6 +678,31 @@ class LiveEngine:
                     no_book, _, no_orders = pair_inputs[no_slug]
                     for snap in estimate_global_pair_score(yes_book, no_book, window, yes_orders + no_orders, ts_ms=now_ms):
                         self.ledger.record_lip_snapshot(snap)
+                        if snap.qualifies:
+                            live_portfolio_rate_sec += snap.reward_usd
+
+        if self.expected_portfolio_rate_sec > Decimal("0"):
+            if self.last_prepare_ts <= 0.0:
+                self.last_prepare_ts = now_ts
+            if len(active_slugs) == len(self.target_slugs):
+                if live_portfolio_rate_sec < (self.expected_portfolio_rate_sec * YIELD_COLLAPSE_RATIO):
+                    self.yield_collapse_streak += 1
+                else:
+                    self.yield_collapse_streak = 0
+            if (
+                self.yield_collapse_streak >= YIELD_COLLAPSE_TICKS
+                and (now_ts - self.last_prepare_ts) >= YIELD_COLLAPSE_COOLDOWN_SECONDS
+            ):
+                self.logger.info(
+                    "Yield collapse detected: live rate %s/s < 55%% of expected %s/s for %d ticks; triggering early reallocation",
+                    live_portfolio_rate_sec,
+                    self.expected_portfolio_rate_sec,
+                    self.yield_collapse_streak,
+                )
+                self.yield_collapse_streak = 0
+                self.last_prepare_ts = now_ts
+                self.prepare(is_realloc=True)
+
         return 1.0
 
     def _fill_window_start(self, now_ts: float) -> datetime:
@@ -746,7 +803,7 @@ class LiveEngine:
         realized_loss_today: Decimal,
         pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] | None = None,
         book: Book | None = None,
-    ) -> None:
+    ) -> Decimal:
         window = self.active_windows.get(slug)
         try:
             if book is None:
@@ -758,10 +815,14 @@ class LiveEngine:
             else:
                 self.market_states[slug] = "QUOTING"
 
-            min_qty = getattr(market, "min_qty", Decimal("0"))
+            inv_freeze_qty = (
+                window.target_size
+                if (self.settings.venue == "global" and window is not None)
+                else market.min_qty
+            )
             effective_bid_budget = (
                 Decimal("0")
-                if (isinstance(min_qty, Decimal) and pos.net_qty >= min_qty)
+                if pos.net_qty >= inv_freeze_qty
                 else self.side_budgets.get((slug, "bid"), Decimal("0"))
             )
 
@@ -805,30 +866,32 @@ class LiveEngine:
                         other_slug,
                         Position(slug=other_slug, net_qty=Decimal("0"), avg_price=Decimal("0")),
                     )
-                    other_mkt = self.markets.get(other_slug)
-                    raw_other_min = getattr(other_mkt, "min_qty", min_qty) if other_mkt is not None else min_qty
-                    other_min_qty = raw_other_min if isinstance(raw_other_min, Decimal) else Decimal("5")
+                    other_win = self.active_windows.get(other_slug) or window
+                    other_target_size = (
+                        other_win.target_size
+                        if other_win is not None
+                        else market.min_qty
+                    )
                     other_bids = [
                         o.price for o in exchange_open
                         if o.slug == other_slug
                         and o.side in ("BUY", "BUY_LONG")
                         and o.order_id not in self.recent_cancels
-                        and isinstance(o.price, Decimal)
                     ] or [
                         o.price for o in self.ledger.get_open_orders(other_slug)
-                        if o.side in ("BUY", "BUY_LONG") and isinstance(o.price, Decimal)
+                        if o.side in ("BUY", "BUY_LONG")
                     ]
-                    other_has_pos = other_pos.net_qty >= other_min_qty and other_pos.avg_price > Decimal("0")
-                    if other_has_pos:
+                    other_filled = other_pos.net_qty >= other_target_size
+                    if other_filled and other_pos.avg_price > Decimal("0"):
                         other_bids = list(other_bids) + [other_pos.avg_price]
                     existing_buy_prices = [
                         o.price for o in resting_on_slug
-                        if o.side in ("BUY", "BUY_LONG") and isinstance(o.price, Decimal)
+                        if o.side in ("BUY", "BUY_LONG")
                     ]
                     max_allowed: Decimal | None = None
                     if other_bids:
                         max_allowed = Decimal("0.98") - max(other_bids)
-                    if other_pos.net_qty >= other_min_qty and existing_buy_prices:
+                    if other_filled and existing_buy_prices:
                         freeze_cap = max(existing_buy_prices)
                         max_allowed = min(max_allowed, freeze_cap) if max_allowed is not None else freeze_cap
                     if max_allowed is not None:
@@ -891,7 +954,7 @@ class LiveEngine:
             if not risk_res.allowed:
                 self.logger.warning("Risk gate blocked submission on %s: %s", slug, risk_res.reason)
                 self.market_states[slug] = "PAUSED"
-                return
+                return Decimal("0")
 
             if to_cancel:
                 self.auth_client.cancel_orders_batch(to_cancel)
@@ -913,10 +976,15 @@ class LiveEngine:
             if slug in self.paired_slugs:
                 if pair_inputs is not None:
                     pair_inputs[slug] = (book, window, orders)
+                return Decimal("0")
             elif is_global:
-                self.ledger.record_lip_snapshot(estimate_global_lip_score(book, window, orders, ts_ms=now_ms))
+                snap = estimate_global_lip_score(book, window, orders, ts_ms=now_ms)
+                self.ledger.record_lip_snapshot(snap)
+                return snap.reward_usd if snap.qualifies else Decimal("0")
             else:
-                self.ledger.record_lip_snapshot(estimate_lip_score(book, window, orders, market.tick, ts_ms=now_ms))
+                snap = estimate_lip_score(book, window, orders, market.tick, ts_ms=now_ms)
+                self.ledger.record_lip_snapshot(snap)
+                return snap.reward_usd if snap.qualifies else Decimal("0")
         except Exception as exc:
             err_str = str(exc).lower()
             if "not enough balance" in err_str or "allowance" in err_str:
@@ -927,6 +995,7 @@ class LiveEngine:
                 self.slug_cooldown[slug] = now_ts + 30.0
             self.market_states[slug] = "PAUSED"
             self.logger.warning("Error processing %s: %s", slug, exc)
+            return Decimal("0")
 
     def handle_order_update(self, event: dict) -> None:
         now_ms = int(time.time() * 1000)
