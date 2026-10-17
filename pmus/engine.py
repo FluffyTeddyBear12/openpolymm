@@ -419,6 +419,7 @@ class LiveEngine:
         self.expected_portfolio_rate_sec: Decimal = Decimal("0")
         self.last_prepare_ts: float = 0.0
         self.yield_collapse_streak: int = 0
+        self.dead_unwind_slugs: set[str] = set()
 
     def run(self, duration_seconds: int | None = None) -> None:
         if not self.auth_client.is_available:
@@ -525,6 +526,8 @@ class LiveEngine:
             now_utc = datetime.now(timezone.utc)
             for p in pos_map.values():
                 if p.net_qty >= Decimal("5") and p.slug not in self.target_slugs:
+                    if p.slug in self.dead_unwind_slugs:
+                        continue
                     if p.slug not in self.active_windows:
                         try:
                             b = self.public_client.fetch_book(p.slug)
@@ -534,9 +537,11 @@ class LiveEngine:
                             best_ask = b.asks[0].price if b.asks else Decimal("0")
                             if best_bid <= Decimal("0.01") and best_ask <= Decimal("0.01"):
                                 continue
-                            if not b.bids:
-                                continue
-                        except Exception:
+                        except Exception as exc:
+                            status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                            msg = str(exc).lower().replace(p.slug.lower(), "")
+                            if status_code == 404 or "404" in msg or "not found" in msg:
+                                self.dead_unwind_slugs.add(p.slug)
                             continue
                         self.active_windows[p.slug] = IncentiveWindow(
                             slug=p.slug,
@@ -829,9 +834,14 @@ class LiveEngine:
             resting_on_slug = [
                 o for o in exchange_open if o.slug == slug and o.order_id not in self.recent_cancels
             ] or self.ledger.get_open_orders(slug)
+            orders_to_strip = (
+                resting_on_slug
+                if book.bids
+                else [o for o in resting_on_slug if o.side in ("BUY", "BUY_LONG")]
+            )
             quote_book = (
-                global_rewards.strip_orders_from_book(book, resting_on_slug)
-                if (self.settings.venue == "global" and resting_on_slug)
+                global_rewards.strip_orders_from_book(book, orders_to_strip)
+                if (self.settings.venue == "global" and orders_to_strip)
                 else book
             )
 
@@ -890,7 +900,7 @@ class LiveEngine:
                     ]
                     max_allowed: Decimal | None = None
                     if other_bids:
-                        max_allowed = Decimal("0.98") - max(other_bids)
+                        max_allowed = global_rewards.pair_max_sum(window) - max(other_bids)
                     if other_filled and existing_buy_prices:
                         freeze_cap = max(existing_buy_prices)
                         max_allowed = min(max_allowed, freeze_cap) if max_allowed is not None else freeze_cap

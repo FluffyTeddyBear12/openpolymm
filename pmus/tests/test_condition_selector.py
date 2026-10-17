@@ -460,8 +460,8 @@ def test_single_sided_tail_token_below_20c_blocked_while_two_sided_allowed():
     )
     assert target_paired is not None
     assert target_paired.mode == "two_sided"
-    assert target_paired.yes_price == Decimal("0.84")
-    assert target_paired.no_price == Decimal("0.14")
+    assert target_paired.yes_price == Decimal("0.83")
+    assert target_paired.no_price == Decimal("0.13")
     assert target_paired.no_price >= PAIR_LEG_MIN_PRICE
     assert target_paired.no_price < SINGLE_SIDED_MIN_PRICE
 

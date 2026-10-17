@@ -719,7 +719,7 @@ def test_allocate_markets_prioritizes_affordable_pair_target_size_and_strips_ope
     books = {
         cond_a.yes.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_a.yes.slug),
         cond_a.no.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_a.no.slug),
-        cond_b.yes.slug: make_book([("0.49", "50"), ("0.47", "200")], [("0.51", "250")], slug=cond_b.yes.slug),
+        cond_b.yes.slug: make_book([("0.49", "80"), ("0.47", "200")], [("0.51", "250")], slug=cond_b.yes.slug),
         cond_b.no.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_b.no.slug),
     }
 
@@ -737,7 +737,7 @@ def test_allocate_markets_prioritizes_affordable_pair_target_size_and_strips_ope
         pair_preference=Decimal("0"),
     )
 
-    open_orders = [LiveOrder("o-1", cond_b.yes.slug, "BUY_LONG", Decimal("0.49"), Decimal("50"))]
+    open_orders = [LiveOrder("o-1", cond_b.yes.slug, "BUY_LONG", Decimal("0.49"), Decimal("80"))]
 
     _, alloc_without_open = allocate_markets(settings, client, logger, available_budget=None, positions=None, open_orders=None)
     assert alloc_without_open.selected_slugs == [cond_b.yes.slug, cond_b.no.slug]
@@ -1600,7 +1600,7 @@ def test_quote_market_clamps_paired_bid_to_98c():
     from pmus.risk import RiskGateResult
     logger = logging.getLogger("test_quote_clamp")
     mkt = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
-    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.05"), datetime.now(timezone.utc), None, "active")
+    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.03"), datetime.now(timezone.utc), None, "active")
 
     client = MagicMock()
     auth_client = MagicMock()
@@ -1643,6 +1643,25 @@ def test_quote_market_clamps_paired_bid_to_98c():
     assert len(quotes_submitted) == 1
     assert quotes_submitted[0].price == Decimal("0.48")
     assert quotes_submitted[0].price + resting_no_order.price <= Decimal("0.98")
+
+    auth_client.create_orders_batch.reset_mock()
+    engine.active_windows["y1"] = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.045"), datetime.now(timezone.utc), None, "active")
+    engine._quote_market(
+        slug="y1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[resting_no_order],
+        live_positions={"y1": Position("y1", Decimal("0"), Decimal("0"))},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_y,
+    )
+    quotes_wide = auth_client.create_orders_batch.call_args[0][0]
+    assert len(quotes_wide) == 1
+    assert quotes_wide[0].price == Decimal("0.46")
+    assert quotes_wide[0].price + resting_no_order.price <= Decimal("0.96")
 
 
 def test_quote_market_clamps_and_freezes_unfilled_leg_when_partner_holds_inventory():
@@ -1693,8 +1712,8 @@ def test_quote_market_clamps_and_freezes_unfilled_leg_when_partner_holds_invento
 
     quotes_submitted = auth_client.create_orders_batch.call_args[0][0]
     assert len(quotes_submitted) == 1
-    assert quotes_submitted[0].price == Decimal("0.46")
-    assert quotes_submitted[0].price + pos_n.avg_price <= Decimal("0.98")
+    assert quotes_submitted[0].price == Decimal("0.44")
+    assert quotes_submitted[0].price + pos_n.avg_price <= Decimal("0.96")
 
     auth_client.create_orders_batch.reset_mock()
     resting_y = LiveOrder("o-y", "y1", "BUY_LONG", Decimal("0.43"), Decimal("50"))
@@ -1966,4 +1985,58 @@ def test_live_engine_yield_collapse_early_reallocation():
         engine.tick(t0 + 105.0)
         mock_prep.assert_called_once_with(is_realloc=True)
         assert engine.yield_collapse_streak == 0
+
+
+def test_prepare_caches_404_unwind_slugs_and_allows_ask_only_books():
+    logger = logging.getLogger("test_dead_unwind_404")
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    pos_404 = Position("slug-404", Decimal("65"), Decimal("0.20"))
+    pos_timeout_with_404 = Position("123404567", Decimal("65"), Decimal("0.20"))
+    pos_ask_only = Position("slug-ask-only", Decimal("65"), Decimal("0.22"))
+    auth_client.get_positions.return_value = [pos_404, pos_timeout_with_404, pos_ask_only]
+    auth_client.cancel_all_scoped.return_value = []
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = []
+    book_ask_only = Book("slug-ask-only", (), (Level(Decimal("0.12"), Decimal("100")),), 1000)
+
+    timeout_mode = {"is_404": False}
+
+    def fetch_book_dispatch(slug):
+        if slug == "slug-404":
+            raise RuntimeError("404 Client Error: Not Found for url")
+        if slug == "123404567":
+            if timeout_mode["is_404"]:
+                raise RuntimeError("404 Not Found for token_id=123404567")
+            raise RuntimeError("ReadTimeout for token_id=123404567")
+        return book_ask_only
+
+    client.fetch_book.side_effect = fetch_book_dispatch
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    with patch("pmus.engine.allocate_markets", return_value=({}, AllocationResult([], [], [], {}, {}, None, frozenset(), ()))):
+        engine.prepare()
+        assert "slug-404" in engine.dead_unwind_slugs
+        assert "123404567" not in engine.dead_unwind_slugs
+        assert "slug-404" not in engine.target_slugs
+        assert "slug-ask-only" in engine.target_slugs
+        assert "slug-ask-only" in engine.active_windows
+        assert client.fetch_book.call_count == 3
+
+        client.fetch_book.reset_mock()
+        engine.active_windows.clear()
+        timeout_mode["is_404"] = True
+        engine.prepare(is_realloc=True)
+        assert "123404567" in engine.dead_unwind_slugs
+        assert client.fetch_book.call_count == 2
 

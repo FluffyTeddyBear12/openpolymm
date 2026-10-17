@@ -15,8 +15,9 @@ REWARD_MID_HIGH = Decimal("0.90")
 SINGLE_SIDED_DIVISOR = Decimal("3")
 SECONDS_PER_DAY = Decimal("86400")
 MIN_DAILY_PAYOUT_USD = Decimal(os.getenv("PMUS_GLOBAL_MIN_DAILY_REWARD", "1.00"))
-MAX_CUSHION_SPREAD_RATIO = Decimal("0.55")
+MAX_CUSHION_SPREAD_RATIO = Decimal("0.60")
 PAIR_MAX_SUM = Decimal("0.98")
+WIDE_SPREAD_PAIR_MAX_SUM = Decimal("0.96")
 ZERO = Decimal("0")
 
 
@@ -83,9 +84,13 @@ def bid_price(book: Book, window: IncentiveWindow, tick: Decimal) -> Decimal | N
         ):
             price = candidate
             shield_target = Decimal("2") * window.target_size
+            is_cliff_top = (
+                len(qual_levels) >= 2
+                and (top_bid - (qual_levels[1].price // tick) * tick) >= (Decimal("2") * tick)
+            )
             if (
-                tick <= Decimal("0.001")
-                and sum((lvl.qty for lvl in book.bids if lvl.price > price), ZERO) < shield_target
+                (tick <= Decimal("0.001") or is_cliff_top)
+                and sum((lvl.qty for lvl in book.bids if lvl.price >= price), ZERO) < shield_target
             ):
                 for lvl in qual_levels[1:]:
                     lvl_px = (lvl.price // tick) * tick
@@ -98,8 +103,17 @@ def bid_price(book: Book, window: IncentiveWindow, tick: Decimal) -> Decimal | N
                         and abs(next_cand - mid) < window.max_spread
                     ):
                         price = next_cand
-                        if sum((lvl.qty for lvl in book.bids if lvl.price > price), ZERO) >= shield_target:
-                            break
+                    elif (
+                        is_cliff_top
+                        and ZERO < lvl_px < price
+                        and abs(lvl_px - mid) <= max_cushioned_dist
+                        and abs(lvl_px - mid) < window.max_spread
+                    ):
+                        price = lvl_px
+                    else:
+                        break
+                    if sum((b.qty for b in book.bids if b.price >= price), ZERO) >= shield_target:
+                        break
     if price <= ZERO or price >= book.asks[0].price or abs(price - mid) >= window.max_spread:
         return None
     return price
@@ -113,6 +127,12 @@ def expected_bid_reward_sec(book: Book, window: IncentiveWindow, price: Decimal,
     return reward_rate(window.pool_usd, ours, side_score(book.bids, mid, window.max_spread))
 
 
+def pair_max_sum(window: IncentiveWindow | None) -> Decimal:
+    if window is not None and window.max_spread is not None and window.max_spread >= Decimal("0.04"):
+        return WIDE_SPREAD_PAIR_MAX_SUM
+    return PAIR_MAX_SUM
+
+
 def pair_quote_prices(
     yes_book: Book,
     no_book: Book,
@@ -124,12 +144,13 @@ def pair_quote_prices(
     p_no = bid_price(no_book, window, no_tick)
     if p_yes is None or p_no is None or p_yes + p_no >= Decimal("1"):
         return None
-    if p_yes + p_no > PAIR_MAX_SUM and window.max_spread is not None:
+    target_max_sum = pair_max_sum(window)
+    if p_yes + p_no > target_max_sum and window.max_spread is not None:
         mid_yes = adjusted_mid(yes_book, window.target_size)
         mid_no = adjusted_mid(no_book, window.target_size)
         if mid_yes is not None and mid_no is not None:
             for _ in range(25):
-                if p_yes + p_no <= PAIR_MAX_SUM:
+                if p_yes + p_no <= target_max_sum:
                     break
                 cand_yes = p_yes - yes_tick
                 cand_no = p_no - no_tick

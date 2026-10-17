@@ -1304,3 +1304,88 @@ def test_global_sub_tick_avg_price_min_exit_rounds_up(base_market):
         Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.455"), qty=Decimal("50"))
     ]
 
+
+def test_global_live_unwind_non_scoring_steps_sell_long_into_scoring_band(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.045"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.088"), Decimal("100")),),
+        asks=(Level(Decimal("0.113"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("325"), avg_price=Decimal("0.1654")),
+        budget=Decimal("65.00"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    )
+    assert quotes == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.145"), qty=Decimal("325"))
+    ]
+
+
+def test_global_empty_bid_book_emits_sell_long_unwind():
+    market = Market(
+        slug="mkt-empty-bid",
+        event_id="ev-1",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    win = IncentiveWindow(
+        slug="mkt-empty-bid",
+        program_id="unwind",
+        pool_usd=Decimal("0"),
+        discount=Decimal("0"),
+        target_size=Decimal("5"),
+        max_spread=Decimal("0.04"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug="mkt-empty-bid",
+        bids=(),
+        asks=(Level(Decimal("0.12"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-empty-bid", net_qty=Decimal("65"), avg_price=Decimal("0.2104")),
+        budget=Decimal("0"),
+        is_global=True,
+    )
+    assert quotes == [
+        Quote(slug="mkt-empty-bid", side="SELL_LONG", price=Decimal("0.22"), qty=Decimal("65"))
+    ]
+
+    empty_book = Book(slug="mkt-empty-bid", bids=(), asks=(), ts_ms=1000)
+    quotes_no_asks = desired_quotes(
+        market=market,
+        book=empty_book,
+        window=win,
+        position=Position(slug="mkt-empty-bid", net_qty=Decimal("65"), avg_price=Decimal("0.22")),
+        budget=Decimal("0"),
+        is_global=True,
+    )
+    assert quotes_no_asks == [
+        Quote(slug="mkt-empty-bid", side="SELL_LONG", price=Decimal("0.22"), qty=Decimal("65"))
+    ]
+

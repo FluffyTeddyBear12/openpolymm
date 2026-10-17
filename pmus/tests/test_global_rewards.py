@@ -265,4 +265,26 @@ def test_bid_price_steps_behind_second_qualifying_level_when_top_level_thin():
     assert global_rewards.bid_price(b_milli_solo_thin, w, Decimal("0.001")) == Decimal("0.400")
 
 
+def test_bid_price_steps_back_on_cent_tick_with_045_max_spread_and_cliff_shield():
+    w = window(target="20", max_spread=Decimal("0.045"))
+    b_step = book([("0.68", "25")], [("0.71", "100")])
+    assert global_rewards.bid_price(b_step, w, Decimal("0.01")) == Decimal("0.67")
 
+    b_cliff = book([("0.66", "20"), ("0.64", "500")], [("0.67", "500")])
+    assert global_rewards.bid_price(b_cliff, w, Decimal("0.01")) == Decimal("0.64")
+
+
+def test_pair_quote_prices_caps_at_096_on_wide_spread_and_keeps_098_on_tight_spread():
+    w_wide = window(target="50", max_spread=Decimal("0.045"))
+    yes_b = book([("0.49", "200")], [("0.51", "100")])
+    no_b = book([("0.49", "200")], [("0.51", "100")])
+    prices_wide = global_rewards.pair_quote_prices(yes_b, no_b, w_wide, Decimal("0.01"), Decimal("0.01"))
+    assert prices_wide is not None
+    assert prices_wide[0] + prices_wide[1] <= Decimal("0.96")
+    assert prices_wide == (Decimal("0.48"), Decimal("0.48"))
+
+    w_tight = window(target="50", max_spread=Decimal("0.03"))
+    prices_tight = global_rewards.pair_quote_prices(yes_b, no_b, w_tight, Decimal("0.01"), Decimal("0.01"))
+    assert prices_tight is not None
+    assert prices_tight[0] + prices_tight[1] <= Decimal("0.98")
+    assert prices_tight == (Decimal("0.49"), Decimal("0.49"))
