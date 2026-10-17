@@ -49,12 +49,12 @@ def test_symmetric_pair_gives_approx_three_times_single_in_band():
     snap_single_y, snap_single_n = estimate_global_pair_score(yes_b, no_b, w, [o_yes], ts_ms=2000)
     single_total = snap_single_y.reward_usd + snap_single_n.reward_usd
 
-    expected_single = (Decimal("100") / Decimal("86400")) * (Decimal("1") / Decimal("7"))
+    expected_single = (Decimal("100") / Decimal("86400")) * (Decimal("1") / Decimal("5"))
     assert abs(single_total - expected_single) < Decimal("1e-20")
     assert abs(snap_single_y.reward_usd - expected_single) < Decimal("1e-20")
     assert snap_single_n.reward_usd == Decimal("0")
     assert abs(snap_single_y.trader_bid_score - Decimal("200") / Decimal("9")) < Decimal("1e-20")
-    assert abs(snap_single_y.total_bid_score - Decimal("600") / Decimal("9")) < Decimal("1e-20")
+    assert abs(snap_single_y.total_bid_score - Decimal("400") / Decimal("9")) < Decimal("1e-20")
     assert snap_single_n.trader_bid_score == Decimal("0")
     assert abs(snap_single_n.total_bid_score - Decimal("400") / Decimal("9")) < Decimal("1e-20")
     assert snap_single_y.qualifies is True
@@ -65,21 +65,21 @@ def test_symmetric_pair_gives_approx_three_times_single_in_band():
     snap_pair_y, snap_pair_n = estimate_global_pair_score(yes_b, no_b, w, [o_yes, o_no], ts_ms=2000)
     pair_total = snap_pair_y.reward_usd + snap_pair_n.reward_usd
 
-    expected_pair = (Decimal("100") / Decimal("86400")) * (Decimal("1") / Decimal("3"))
+    expected_pair = (Decimal("100") / Decimal("86400")) * (Decimal("1") / Decimal("2"))
     assert abs(pair_total - expected_pair) < Decimal("1e-20")
     assert abs(snap_pair_y.reward_usd - expected_pair / Decimal("2")) < Decimal("1e-20")
     assert abs(snap_pair_n.reward_usd - expected_pair / Decimal("2")) < Decimal("1e-20")
     assert abs(snap_pair_y.trader_bid_score - Decimal("200") / Decimal("9")) < Decimal("1e-20")
-    assert abs(snap_pair_y.total_bid_score - Decimal("600") / Decimal("9")) < Decimal("1e-20")
+    assert abs(snap_pair_y.total_bid_score - Decimal("400") / Decimal("9")) < Decimal("1e-20")
     assert abs(snap_pair_n.trader_bid_score - Decimal("200") / Decimal("9")) < Decimal("1e-20")
-    assert abs(snap_pair_n.total_bid_score - Decimal("600") / Decimal("9")) < Decimal("1e-20")
+    assert abs(snap_pair_n.total_bid_score - Decimal("400") / Decimal("9")) < Decimal("1e-20")
     assert snap_pair_y.qualifies is True
     assert snap_pair_y.bid_qualifies is True
     assert snap_pair_n.qualifies is True
     assert snap_pair_n.bid_qualifies is True
 
     ratio = pair_total / single_total
-    assert abs(ratio - Decimal("7") / Decimal("3")) < Decimal("1e-20")
+    assert abs(ratio - Decimal("5") / Decimal("2")) < Decimal("1e-20")
     assert Decimal("2") < ratio < Decimal("3.5")
 
 
@@ -107,7 +107,7 @@ def test_tail_market_single_zero_pair_positive():
     assert snap_pair_y.reward_usd > Decimal("0")
     assert snap_pair_n.reward_usd > Decimal("0")
 
-    expected_pair = (Decimal("100") / Decimal("86400")) * (Decimal("1") / Decimal("3"))
+    expected_pair = (Decimal("100") / Decimal("86400")) * (Decimal("1") / Decimal("2"))
     assert abs((snap_pair_y.reward_usd + snap_pair_n.reward_usd) - expected_pair) < Decimal("1e-20")
 
 
@@ -125,8 +125,8 @@ def test_reward_split_proportional():
     assert abs(snap_y.reward_usd - (Decimal("2") * snap_n.reward_usd)) < Decimal("1e-20")
 
     total_r = snap_y.reward_usd + snap_n.reward_usd
-    assert snap_y.reward_usd == (total_r * Decimal("2")) / Decimal("3")
-    assert snap_n.reward_usd == (total_r * Decimal("1")) / Decimal("3")
+    assert abs(snap_y.reward_usd - (total_r * Decimal("2")) / Decimal("3")) < Decimal("1e-20")
+    assert abs(snap_n.reward_usd - (total_r * Decimal("1")) / Decimal("3")) < Decimal("1e-20")
 
     snap_only_no_y, snap_only_no_n = estimate_global_pair_score(yes_b, no_b, w, [o_no])
     assert snap_only_no_y.reward_usd == Decimal("0")

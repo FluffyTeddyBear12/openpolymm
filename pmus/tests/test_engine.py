@@ -6,7 +6,9 @@ import pytest
 
 from pmus.config import Settings
 from pmus.engine import LiveEngine, allocate_markets, reconcile_quotes, update_position_from_fill
-from pmus.models import Book, ConditionMarket, IncentiveWindow, Level, LiveOrder, Market, Position, Quote
+from pmus.ledger import Ledger
+from pmus.models import Book, ConditionMarket, IncentiveWindow, Level, LiveOrder, Market, Position, Quote, ShadowFill
+from pmus.strategy.market_selector import AllocationResult
 from pmus.tests.test_condition_selector import make_book, make_condition
 
 def test_reconcile_quotes():
@@ -98,14 +100,14 @@ def test_allocate_markets_global_path_selects_both_tokens_and_sets_windows():
 
     yes_b = Book(
         slug="cond-123-yes",
-        bids=(Level(Decimal("0.48"), Decimal("100")),),
-        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        bids=(Level(Decimal("0.48"), Decimal("250")),),
+        asks=(Level(Decimal("0.52"), Decimal("250")),),
         ts_ms=1000,
     )
     no_b = Book(
         slug="cond-123-no",
-        bids=(Level(Decimal("0.47"), Decimal("100")),),
-        asks=(Level(Decimal("0.53"), Decimal("100")),),
+        bids=(Level(Decimal("0.47"), Decimal("250")),),
+        asks=(Level(Decimal("0.53"), Decimal("250")),),
         ts_ms=1000,
     )
 
@@ -144,7 +146,7 @@ def test_allocate_markets_respects_available_budget():
 
     client = MagicMock()
     client.fetch_reward_conditions.return_value = [cond1, cond2]
-    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+    client.fetch_book.return_value = make_book([("0.48", "250")], [("0.52", "250")])
 
     settings = Settings(
         venue="global",
@@ -173,7 +175,7 @@ def test_allocate_markets_sorts_conditions_by_pool_size_descending():
 
     client = MagicMock()
     client.fetch_reward_conditions.return_value = [cond_small, cond_large, cond_medium]
-    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+    client.fetch_book.return_value = make_book([("0.48", "250")], [("0.52", "250")])
 
     settings = Settings(
         venue="global",
@@ -229,14 +231,14 @@ def test_live_engine_prepare_stores_paired_and_passes_to_quoter():
 
     yes_b = Book(
         slug="cond-123-yes",
-        bids=(Level(Decimal("0.48"), Decimal("100")),),
-        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        bids=(Level(Decimal("0.48"), Decimal("250")),),
+        asks=(Level(Decimal("0.52"), Decimal("250")),),
         ts_ms=1000,
     )
     no_b = Book(
         slug="cond-123-no",
-        bids=(Level(Decimal("0.47"), Decimal("100")),),
-        asks=(Level(Decimal("0.53"), Decimal("100")),),
+        bids=(Level(Decimal("0.47"), Decimal("250")),),
+        asks=(Level(Decimal("0.53"), Decimal("250")),),
         ts_ms=1000,
     )
 
@@ -304,7 +306,7 @@ def test_live_engine_prepare_uses_buying_power_if_lower_than_budget():
 
     client = MagicMock()
     client.fetch_reward_conditions.return_value = [cond1, cond2]
-    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+    client.fetch_book.return_value = make_book([("0.48", "250")], [("0.52", "250")])
 
     auth_client = MagicMock()
     auth_client.is_available = True
@@ -487,10 +489,10 @@ def test_allocate_markets_tiebreaks_by_smaller_target_size_and_uses_fetch_books_
     cond_large_target = make_condition(cond_id="c_large_tgt", pool="100", target="200")
     cond_small_target = make_condition(cond_id="c_small_tgt", pool="100", target="50")
 
-    book_yes_small = make_book([("0.48", "100")], [("0.52", "100")], slug="c_small_tgt-yes")
-    book_no_small = make_book([("0.48", "100")], [("0.52", "100")], slug="c_small_tgt-no")
-    book_yes_large = make_book([("0.48", "200")], [("0.52", "200")], slug="c_large_tgt-yes")
-    book_no_large = make_book([("0.48", "200")], [("0.52", "200")], slug="c_large_tgt-no")
+    book_yes_small = make_book([("0.48", "250")], [("0.52", "250")], slug="c_small_tgt-yes")
+    book_no_small = make_book([("0.48", "250")], [("0.52", "250")], slug="c_small_tgt-no")
+    book_yes_large = make_book([("0.48", "500")], [("0.52", "500")], slug="c_large_tgt-yes")
+    book_no_large = make_book([("0.48", "500")], [("0.52", "500")], slug="c_large_tgt-no")
 
     client = MagicMock()
     client.fetch_reward_conditions.return_value = [cond_large_target, cond_small_target]
@@ -522,7 +524,7 @@ def test_live_engine_prepare_reallocation_cancels_only_dropped_slugs():
 
     client = MagicMock()
     client.fetch_reward_conditions.return_value = [cond1, cond2]
-    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+    client.fetch_book.return_value = make_book([("0.48", "250")], [("0.52", "250")])
 
     auth_client = MagicMock()
     auth_client.is_available = True
@@ -568,8 +570,8 @@ def test_allocate_markets_deprioritizes_conditions_exceeding_max_contracts():
     cond_infeasible = make_condition(cond_id="c_infeasible", pool="500", target="500")
     cond_feasible = make_condition(cond_id="c_feasible", pool="100", target="50")
 
-    book_yes = make_book([("0.48", "100")], [("0.52", "100")], slug="c_feasible-yes")
-    book_no = make_book([("0.48", "100")], [("0.52", "100")], slug="c_feasible-no")
+    book_yes = make_book([("0.48", "250")], [("0.52", "250")], slug="c_feasible-yes")
+    book_no = make_book([("0.48", "250")], [("0.52", "250")], slug="c_feasible-no")
 
     client = MagicMock()
     client.fetch_reward_conditions.return_value = [cond_infeasible, cond_feasible]
@@ -671,11 +673,11 @@ def test_live_engine_tick_uses_fetch_books_batch_when_dict_returned():
     public_client.fetch_book.assert_not_called()
 
 
-def test_allocate_markets_keeps_300_book_limit_under_500_and_expands_above_500():
+def test_allocate_markets_keeps_800_book_limit_under_500_and_expands_above_500():
     logger = logging.getLogger("test_engine_book_limit")
     conditions = [
         make_condition(cond_id=f"c{i}", pool=str(1000 - i), target="50")
-        for i in range(400)
+        for i in range(600)
     ]
 
     client = MagicMock()
@@ -692,13 +694,13 @@ def test_allocate_markets_keeps_300_book_limit_under_500_and_expands_above_500()
     )
     allocate_markets(settings_under, client, logger)
     slugs_under = client.fetch_books_batch.call_args[0][0]
-    assert len(slugs_under) == 300
+    assert len(slugs_under) == 800
 
     client.fetch_reward_conditions.return_value = list(conditions)
     client.fetch_books_batch.reset_mock()
     settings_above = Settings(
         venue="global",
-        total_budget=Decimal("6000.00"),
+        total_budget=Decimal("10000.00"),
         max_per_market=Decimal("300.00"),
         max_collateral_per_market=Decimal("300.00"),
         max_markets=20,
@@ -706,6 +708,1060 @@ def test_allocate_markets_keeps_300_book_limit_under_500_and_expands_above_500()
     )
     allocate_markets(settings_above, client, logger)
     slugs_above = client.fetch_books_batch.call_args[0][0]
-    assert len(slugs_above) == 600
+    assert len(slugs_above) == 1000
+
+
+def test_allocate_markets_prioritizes_affordable_pair_target_size_and_strips_open_orders():
+    logger = logging.getLogger("test_engine_prioritizes_affordable_and_strips")
+    cond_a = make_condition(cond_id="ca", pool="500", target="50", max_spread="0.06")
+    cond_b = make_condition(cond_id="cb", pool="200", target="40", max_spread="0.06")
+
+    books = {
+        cond_a.yes.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_a.yes.slug),
+        cond_a.no.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_a.no.slug),
+        cond_b.yes.slug: make_book([("0.49", "50"), ("0.47", "200")], [("0.51", "250")], slug=cond_b.yes.slug),
+        cond_b.no.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_b.no.slug),
+    }
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond_a, cond_b]
+    client.fetch_books_batch.return_value = dict(books)
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("40.00"),
+        max_per_market=Decimal("40.00"),
+        max_collateral_per_market=Decimal("40.00"),
+        max_markets=2,
+        max_contracts_per_market=100,
+        pair_preference=Decimal("0"),
+    )
+
+    open_orders = [LiveOrder("o-1", cond_b.yes.slug, "BUY_LONG", Decimal("0.49"), Decimal("50"))]
+
+    _, alloc_without_open = allocate_markets(settings, client, logger, available_budget=None, positions=None, open_orders=None)
+    assert alloc_without_open.selected_slugs == [cond_b.yes.slug, cond_b.no.slug]
+    assert alloc_without_open.side_qtys[(cond_b.yes.slug, "bid")] == Decimal("40")
+    assert alloc_without_open.side_budgets[(cond_b.yes.slug, "bid")] == Decimal("40") * Decimal("0.48")
+
+    client.fetch_reward_conditions.return_value = [cond_a, cond_b]
+    client.fetch_books_batch.return_value = dict(books)
+
+    _, alloc_with_open = allocate_markets(settings, client, logger, available_budget=None, positions=None, open_orders=open_orders)
+    assert alloc_with_open.selected_slugs == [cond_b.yes.slug, cond_b.no.slug]
+    assert alloc_with_open.side_qtys[(cond_b.yes.slug, "bid")] == Decimal("40")
+    assert alloc_with_open.side_budgets[(cond_b.yes.slug, "bid")] == Decimal("40") * Decimal("0.47")
+    assert alloc_with_open.side_budgets[(cond_b.no.slug, "bid")] == Decimal("40") * Decimal("0.47")
+
+
+
+def test_live_engine_prepare_passes_held_positions_and_sets_unwind_targets():
+    logger = logging.getLogger("test_engine_held_prepare")
+    cond_over = make_condition(cond_id="c_over", pool="200", target="50")
+    cond_clean = make_condition(cond_id="c_clean", pool="150", target="50")
+
+    books = {
+        cond_over.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond_over.yes.slug),
+        cond_over.no.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond_over.no.slug),
+        cond_clean.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond_clean.yes.slug),
+        cond_clean.no.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond_clean.no.slug),
+    }
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond_over, cond_clean]
+    client.fetch_books_batch.return_value = books
+
+    held_pos = Position(slug="c_over-no", net_qty=Decimal("540"), avg_price=Decimal("0.184"))
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("200.00")
+    auth_client.get_positions.return_value = [held_pos]
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("165.00"),
+        max_per_market=Decimal("55.00"),
+        max_collateral_per_market=Decimal("55.00"),
+        max_markets=2,
+        max_contracts_per_market=1000,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    engine.prepare(is_realloc=False)
+
+    assert "c_clean-yes" in engine.target_slugs
+    assert "c_clean-no" in engine.target_slugs
+    assert "c_over-no" in engine.target_slugs
+    assert engine.side_budgets[("c_over-no", "bid")] == Decimal("0")
+
+
+def test_live_engine_daily_loss_baseline_offsets_acknowledged_unwind_loss():
+    logger = logging.getLogger("test_daily_loss_baseline")
+    now = datetime(2026, 10, 15, 21, 5, tzinfo=timezone.utc)
+
+    book = Book(
+        slug="mkt-test",
+        bids=(Level(Decimal("0.48"), Decimal("100")),),
+        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    market = Market(
+        slug="mkt-test",
+        event_id="ev-test",
+        category="politics",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will test pass?",
+    )
+
+    public_client = MagicMock()
+    public_client.fetch_books_batch.return_value = {"mkt-test": book}
+    public_client.get_market.return_value = market
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("152.22")
+    auth_client.create_orders_batch.return_value = []
+    auth_client.cancel_all_scoped.return_value = []
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = []
+    ledger.get_realized_loss_today.return_value = Decimal("56.72")
+
+    risk_mgr = MagicMock()
+    risk_mgr.is_kill_switch_active.return_value = False
+    risk_mgr.is_maintenance_active.return_value = False
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(
+        venue="global",
+        daily_loss_stop=Decimal("15.00"),
+        daily_loss_baseline=Decimal("56.72"),
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("50.00"),
+        max_collateral_per_market=Decimal("50.00"),
+        max_markets=1,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.notifier = MagicMock()
+    engine.target_slugs = ["mkt-test"]
+
+    period = engine.tick(now.timestamp())
+    assert period == 1.0
+    assert not engine.daily_loss_stop_tripped
+    engine.notifier.notify_daily_loss_stop.assert_not_called()
+    assert risk_mgr.check_pre_submit.call_count == 1
+    assert risk_mgr.check_pre_submit.call_args.kwargs["realized_loss_today"] == Decimal("0.00")
+
+    ledger.get_realized_loss_today.return_value = Decimal("72.00")
+    period_tripped = engine.tick(now.timestamp())
+    assert period_tripped == 10.0
+    assert engine.daily_loss_stop_tripped
+    engine.notifier.notify_daily_loss_stop.assert_called_once_with(Decimal("15.28"), Decimal("15.00"))
+
+
+def test_live_engine_tick_overlays_new_fill_onto_stale_api_positions_preventing_double_buy(tmp_path):
+    logger = logging.getLogger("test_overlay_fill")
+    t0 = 1791596070.0
+    now = datetime.fromtimestamp(t0, timezone.utc)
+    w = IncentiveWindow(
+        slug="tok-1",
+        program_id="p-1",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("220"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    market = Market(
+        slug="tok-1",
+        event_id="ev-1",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will X occur?",
+    )
+    book = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.24"), Decimal("1000")),),
+        asks=(Level(Decimal("0.26"), Decimal("1000")),),
+        ts_ms=int(t0 * 1000),
+    )
+
+    public_client = MagicMock()
+    public_client.fetch_book.return_value = book
+    public_client.get_market.return_value = market
+    public_client.fetch_books_batch.return_value = {"tok-1": book}
+
+    fill = ShadowFill(
+        fill_id="f-1",
+        order_id="o-buy-1",
+        slug="tok-1",
+        side="BUY_LONG",
+        price=Decimal("0.25"),
+        qty=Decimal("220"),
+        fee=Decimal("0"),
+        is_maker=True,
+        ts_ms=int(t0 * 1000),
+    )
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = [fill]
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.create_orders_batch.return_value = []
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.invalidate_positions_cache = MagicMock()
+
+    ledger = Ledger(tmp_path / "test_overlay.db")
+
+    risk_mgr = MagicMock()
+    risk_mgr.is_kill_switch_active.return_value = False
+    risk_mgr.is_maintenance_active.return_value = False
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("55.00"),
+        max_collateral_per_market=Decimal("55.00"),
+        max_markets=1,
+        max_contracts_per_market=220,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.target_slugs = ["tok-1"]
+    engine.active_windows = {"tok-1": w}
+    engine.side_budgets = {("tok-1", "bid"): Decimal("55.00"), ("tok-1", "ask"): Decimal("55.00")}
+    engine.side_qtys = {("tok-1", "bid"): Decimal("220"), ("tok-1", "ask"): Decimal("220")}
+
+    period = engine.tick(t0)
+    assert period == 1.0
+
+    auth_client.invalidate_positions_cache.assert_called_once()
+    assert "tok-1" in engine.local_fill_positions
+    pos, fill_ts = engine.local_fill_positions["tok-1"]
+    assert pos.net_qty == Decimal("220")
+    assert pos.avg_price == Decimal("0.25")
+    assert fill_ts == t0
+
+    assert risk_mgr.check_pre_submit.call_count == 1
+    submitted_positions = risk_mgr.check_pre_submit.call_args.kwargs["positions"]
+    assert submitted_positions["tok-1"].net_qty == Decimal("220")
+    assert submitted_positions["tok-1"].avg_price == Decimal("0.25")
+
+    saved_pos = ledger.get_position("tok-1")
+    assert saved_pos.net_qty == Decimal("220")
+    assert saved_pos.avg_price == Decimal("0.25")
+
+    for call in auth_client.create_orders_batch.call_args_list:
+        quotes = call[0][0]
+        assert not any(q.side == "BUY_LONG" for q in quotes)
+
+    auth_client.create_orders_batch.reset_mock()
+    risk_mgr.check_pre_submit.reset_mock()
+
+    t1 = t0 + 10.0
+    period2 = engine.tick(t1)
+    assert period2 == 1.0
+    assert risk_mgr.check_pre_submit.call_count == 1
+    submitted_positions2 = risk_mgr.check_pre_submit.call_args.kwargs["positions"]
+    assert submitted_positions2["tok-1"].net_qty == Decimal("220")
+    for call in auth_client.create_orders_batch.call_args_list:
+        quotes = call[0][0]
+        assert not any(q.side == "BUY_LONG" for q in quotes)
+
+    auth_client.create_orders_batch.reset_mock()
+    risk_mgr.check_pre_submit.reset_mock()
+
+    t2 = t0 + 50.0
+    period3 = engine.tick(t2)
+    assert period3 == 1.0
+    assert risk_mgr.check_pre_submit.call_count == 1
+    submitted_positions3 = risk_mgr.check_pre_submit.call_args.kwargs["positions"]
+    assert submitted_positions3["tok-1"].net_qty == Decimal("220")
+    for call in auth_client.create_orders_batch.call_args_list:
+        quotes = call[0][0]
+        assert not any(q.side == "BUY_LONG" for q in quotes)
+
+
+def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(tmp_path):
+    logger = logging.getLogger("test_anti_chase")
+    t0 = 1791596070.0
+    now = datetime.fromtimestamp(t0, timezone.utc)
+    w = IncentiveWindow(
+        slug="tok-1",
+        program_id="p-1",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.04"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    market = Market(
+        slug="tok-1",
+        event_id="ev-1",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will X occur?",
+    )
+    book_up = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.46"), Decimal("100")),),
+        asks=(Level(Decimal("0.48"), Decimal("100")),),
+        ts_ms=int(t0 * 1000),
+    )
+    book_down = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.44"), Decimal("100")),),
+        asks=(Level(Decimal("0.46"), Decimal("100")),),
+        ts_ms=int(t0 * 1000),
+    )
+
+    ledger = Ledger(tmp_path / "test_anti_chase.db")
+    existing_order = LiveOrder("o-1", "tok-1", "BUY_LONG", Decimal("0.45"), Decimal("55"))
+    ledger.record_order(existing_order, status="OPEN", ts_ms=int(t0 * 1000))
+
+    public_client = MagicMock()
+    public_client.get_market.return_value = market
+    public_client.fetch_book.return_value = book_up
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = [existing_order]
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.cancel_orders_batch.return_value = []
+    auth_client.create_orders_batch.return_value = [
+        LiveOrder("o-new", "tok-1", "BUY_LONG", Decimal("0.44"), Decimal("55"))
+    ]
+
+    risk_mgr = MagicMock()
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("55.00"),
+        max_collateral_per_market=Decimal("55.00"),
+        max_markets=1,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.target_slugs = ["tok-1"]
+    engine.paired_slugs = {"tok-1"}
+    engine.active_windows = {"tok-1": w}
+    engine.side_budgets = {("tok-1", "bid"): Decimal("55.00"), ("tok-1", "ask"): Decimal("55.00")}
+    engine.side_qtys = {("tok-1", "bid"): Decimal("55"), ("tok-1", "ask"): Decimal("55")}
+
+    engine._quote_market(
+        slug="tok-1",
+        now_dt=now,
+        now_ts=t0,
+        now_ms=int(t0 * 1000),
+        exchange_open=[existing_order],
+        live_positions={},
+        buying_power=Decimal("500.00"),
+        realized_loss_today=Decimal("0"),
+        book=book_up,
+    )
+
+    auth_client.cancel_orders_batch.assert_not_called()
+    auth_client.create_orders_batch.assert_not_called()
+    assert [o.order_id for o in ledger.get_open_orders("tok-1")] == ["o-1"]
+
+    public_client.fetch_book.return_value = book_down
+    t1 = t0 + 1.0
+    now1 = datetime.fromtimestamp(t1, timezone.utc)
+
+    engine._quote_market(
+        slug="tok-1",
+        now_dt=now1,
+        now_ts=t1,
+        now_ms=int(t1 * 1000),
+        exchange_open=[existing_order],
+        live_positions={},
+        buying_power=Decimal("500.00"),
+        realized_loss_today=Decimal("0"),
+        book=book_down,
+    )
+
+    auth_client.cancel_orders_batch.assert_called_once()
+    canceled = auth_client.cancel_orders_batch.call_args[0][0]
+    assert any(o.order_id == "o-1" for o in canceled)
+
+    auth_client.create_orders_batch.assert_called_once()
+    created = auth_client.create_orders_batch.call_args[0][0]
+    assert any(q.side == "BUY_LONG" and q.price == Decimal("0.44") for q in created)
+
+    auth_client.cancel_orders_batch.reset_mock()
+    auth_client.create_orders_batch.reset_mock()
+
+    t2 = t1 + 1.0
+    now2 = datetime.fromtimestamp(t2, timezone.utc)
+    ledger.close_order("o-new", status="CANCELED", ts_ms=int(t2 * 1000))
+    order_drift = LiveOrder("o-drift", "tok-1", "BUY_LONG", Decimal("0.70"), Decimal("55"))
+    ledger.record_order(order_drift, status="OPEN", ts_ms=int(t2 * 1000))
+    book_drift = Book(
+        slug="tok-1",
+        bids=(
+            Level(Decimal("0.73"), Decimal("100")),
+            Level(Decimal("0.72"), Decimal("100")),
+        ),
+        asks=(Level(Decimal("0.74"), Decimal("100")),),
+        ts_ms=int(t2 * 1000),
+    )
+    public_client.fetch_book.return_value = book_drift
+    auth_client.create_orders_batch.return_value = [
+        LiveOrder("o-new-2", "tok-1", "BUY_LONG", Decimal("0.72"), Decimal("55"))
+    ]
+
+    engine._quote_market(
+        slug="tok-1",
+        now_dt=now2,
+        now_ts=t2,
+        now_ms=int(t2 * 1000),
+        exchange_open=[order_drift],
+        live_positions={},
+        buying_power=Decimal("500.00"),
+        realized_loss_today=Decimal("0"),
+        book=book_drift,
+    )
+
+    auth_client.cancel_orders_batch.assert_called_once()
+    canceled_drift = auth_client.cancel_orders_batch.call_args[0][0]
+    assert any(o.order_id == "o-drift" for o in canceled_drift)
+
+    auth_client.create_orders_batch.assert_called_once()
+    created_drift = auth_client.create_orders_batch.call_args[0][0]
+    assert any(q.side == "BUY_LONG" and q.price == Decimal("0.72") for q in created_drift)
+
+
+def test_live_engine_prepare_fee_buffer_global_vs_us(tmp_path):
+    logger = logging.getLogger("test_fee_buffer")
+    ledger = Ledger(tmp_path / "test_fee_buffer.db")
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = []
+    client.fetch_books_batch.return_value = {}
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_buying_power.return_value = Decimal("100.00")
+    auth_client.get_positions.return_value = []
+    auth_client.get_open_orders.return_value = []
+
+    risk_mgr = MagicMock()
+    risk_mgr.is_kill_switch_active.return_value = False
+    risk_mgr.is_maintenance_active.return_value = False
+
+    settings_global = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+    engine_global = LiveEngine(
+        settings=settings_global,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    with patch("pmus.engine.allocate_markets") as mock_alloc:
+        mock_alloc.return_value = ({}, MagicMock(selected_slugs=[], active_windows={}, condition_pairs=(), side_budgets={}, side_qtys={}, paired_slugs=frozenset()))
+        engine_global.prepare()
+        assert mock_alloc.call_args.kwargs["available_budget"] == Decimal("97.50")
+
+    settings_us = Settings(
+        venue="us",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+    engine_us = LiveEngine(
+        settings=settings_us,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    with patch("pmus.engine.allocate_markets") as mock_alloc:
+        mock_alloc.return_value = ({}, MagicMock(selected_slugs=[], active_windows={}, condition_pairs=(), side_budgets={}, side_qtys={}, paired_slugs=frozenset()))
+        engine_us.prepare()
+        assert mock_alloc.call_args.kwargs["available_budget"] == Decimal("95.00")
+
+
+def test_allocate_markets_scales_max_cost_per_condition_with_available_budget():
+    logger = logging.getLogger("test_alloc_scale")
+    conds = [
+        make_condition(cond_id=f"c{i}", pool=str(100 - i), target="50")
+        for i in range(3)
+    ]
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = conds
+    client.fetch_book.return_value = make_book([("0.48", "250")], [("0.52", "250")])
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("300.00"),
+        max_per_market=Decimal("55.00"),
+        max_collateral_per_market=Decimal("55.00"),
+        max_markets=6,
+        max_contracts_per_market=100,
+    )
+
+    _, alloc = allocate_markets(settings, client, logger, available_budget=Decimal("300.00"))
+    assert len(alloc.condition_pairs) == 3
+    total_deployed_cost = sum(alloc.side_budgets.values())
+    assert total_deployed_cost > Decimal("165.00")
+    assert total_deployed_cost == Decimal("288.00")
+    for (slug, side), qty in alloc.side_qtys.items():
+        assert qty == Decimal("100")
+
+    _, alloc_static = allocate_markets(settings, client, logger)
+    for (slug, side), qty in alloc_static.side_qtys.items():
+        assert qty == Decimal("55")
+
+
+def test_live_engine_uses_5s_cooldown_on_post_fill_balance_error(tmp_path):
+    logger = logging.getLogger("test_cooldown")
+    t0 = 1791596070.0
+    now = datetime.fromtimestamp(t0, timezone.utc)
+    w = IncentiveWindow(
+        slug="tok-1",
+        program_id="p-1",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.04"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    market = Market(
+        slug="tok-1",
+        event_id="ev-1",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will X occur?",
+    )
+    book = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.44"), Decimal("100")),),
+        asks=(Level(Decimal("0.46"), Decimal("100")),),
+        ts_ms=int(t0 * 1000),
+    )
+
+    ledger = Ledger(tmp_path / "test_cooldown.db")
+    public_client = MagicMock()
+    public_client.get_market.return_value = market
+    public_client.fetch_book.return_value = book
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.create_orders_batch.side_effect = Exception("400 Client Error: not enough balance / allowance")
+    auth_client.invalidate_positions_cache = MagicMock()
+
+    risk_mgr = MagicMock()
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("55.00"),
+        max_collateral_per_market=Decimal("55.00"),
+        max_markets=1,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.target_slugs = ["tok-1"]
+    engine.active_windows = {"tok-1": w}
+    engine.side_budgets = {("tok-1", "bid"): Decimal("55.00"), ("tok-1", "ask"): Decimal("55.00")}
+    engine.side_qtys = {("tok-1", "bid"): Decimal("55"), ("tok-1", "ask"): Decimal("55")}
+
+    engine._quote_market(
+        slug="tok-1",
+        now_dt=now,
+        now_ts=t0,
+        now_ms=int(t0 * 1000),
+        exchange_open=[],
+        live_positions={},
+        buying_power=Decimal("500.00"),
+        realized_loss_today=Decimal("0"),
+        book=book,
+    )
+
+    assert engine.slug_cooldown["tok-1"] == t0 + 5.0
+    auth_client.invalidate_positions_cache.assert_called_once()
+    assert engine.market_states["tok-1"] == "PAUSED"
+
+    auth_client.create_orders_batch.side_effect = Exception("500 Internal Server Error")
+    t1 = t0 + 10.0
+    now1 = datetime.fromtimestamp(t1, timezone.utc)
+
+    engine._quote_market(
+        slug="tok-1",
+        now_dt=now1,
+        now_ts=t1,
+        now_ms=int(t1 * 1000),
+        exchange_open=[],
+        live_positions={},
+        buying_power=Decimal("500.00"),
+        realized_loss_today=Decimal("0"),
+        book=book,
+    )
+
+    assert engine.slug_cooldown["tok-1"] == t1 + 30.0
+
+
+def test_live_engine_held_inventory_sets_bid_budget_zero(tmp_path):
+    logger = logging.getLogger("test_held_inv")
+    t0 = 1791596070.0
+    now = datetime.fromtimestamp(t0, timezone.utc)
+    w = IncentiveWindow(
+        slug="tok-1",
+        program_id="p-1",
+        pool_usd=Decimal("200.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.04"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    market = Market(
+        slug="tok-1",
+        event_id="ev-1",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+        question="Will X occur?",
+    )
+    book = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.44"), Decimal("100")),),
+        asks=(Level(Decimal("0.46"), Decimal("100")),),
+        ts_ms=int(t0 * 1000),
+    )
+
+    ledger = Ledger(tmp_path / "test_held_inv.db")
+    public_client = MagicMock()
+    public_client.get_market.return_value = market
+    public_client.fetch_book.return_value = book
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.create_orders_batch.return_value = []
+
+    risk_mgr = MagicMock()
+    risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("55.00"),
+        max_collateral_per_market=Decimal("55.00"),
+        max_markets=1,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_mgr,
+        logger=logger,
+    )
+    engine.target_slugs = ["tok-1"]
+    engine.active_windows = {"tok-1": w}
+    engine.side_budgets = {("tok-1", "bid"): Decimal("55.00"), ("tok-1", "ask"): Decimal("55.00")}
+    engine.side_qtys = {("tok-1", "bid"): Decimal("55"), ("tok-1", "ask"): Decimal("55")}
+
+    held_position = Position(slug="tok-1", net_qty=Decimal("50"), avg_price=Decimal("0.45"))
+
+    with patch("pmus.engine.desired_quotes") as mock_desired_quotes:
+        mock_desired_quotes.return_value = []
+        engine._quote_market(
+            slug="tok-1",
+            now_dt=now,
+            now_ts=t0,
+            now_ms=int(t0 * 1000),
+            exchange_open=[],
+            live_positions={"tok-1": held_position},
+            buying_power=Decimal("500.00"),
+            realized_loss_today=Decimal("0"),
+            book=book,
+        )
+        assert mock_desired_quotes.call_count == 1
+        call_kwargs = mock_desired_quotes.call_args.kwargs
+        assert call_kwargs["bid_budget"] == Decimal("0")
+
+
+def test_live_engine_prepare_realloc_cancels_downsized_kept_slugs():
+    logger = logging.getLogger("test_prepare_realloc_downsized")
+    cond = make_condition(cond_id="c1", pool="200", target="50")
+    books = {
+        cond.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond.yes.slug),
+        cond.no.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond.no.slug),
+    }
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond]
+    client.fetch_books_batch.return_value = books
+
+    open_order_70 = LiveOrder("o-70", cond.yes.slug, "BUY_LONG", Decimal("0.48"), Decimal("70"))
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("200.00")
+    auth_client.get_positions.return_value = []
+    auth_client.get_open_orders.return_value = [open_order_70]
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("50.00"),
+        max_collateral_per_market=Decimal("50.00"),
+        max_markets=2,
+        max_contracts_per_market=1000,
+    )
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = [open_order_70]
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    engine.target_slugs = [cond.yes.slug, cond.no.slug]
+    engine.side_qtys = {(cond.yes.slug, "bid"): Decimal("70"), (cond.no.slug, "bid"): Decimal("70")}
+    engine.market_states = {cond.yes.slug: "QUOTING", cond.no.slug: "QUOTING"}
+
+    downsized_alloc = AllocationResult(
+        candidates=[],
+        selected_candidates=[],
+        selected_slugs=[cond.yes.slug, cond.no.slug],
+        side_budgets={(cond.yes.slug, "bid"): Decimal("28.80"), (cond.no.slug, "bid"): Decimal("28.80")},
+        side_qtys={(cond.yes.slug, "bid"): Decimal("60"), (cond.no.slug, "bid"): Decimal("60")},
+        unfunded_reason=None,
+        paired_slugs=frozenset({cond.yes.slug, cond.no.slug}),
+        condition_pairs=((cond.yes.slug, cond.no.slug),),
+    )
+
+    with patch("pmus.engine.allocate_markets", return_value=({cond.yes.slug: cond.window, cond.no.slug: cond.window}, downsized_alloc)):
+        engine.prepare(is_realloc=True)
+
+    auth_client.cancel_all_scoped.assert_called_once_with([cond.yes.slug])
+
+
+def test_prepare_skips_dead_penny_and_empty_positions():
+    logger = logging.getLogger("test_dead_penny")
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    pos_empty = Position("slug-empty", Decimal("50"), Decimal("0.10"))
+    pos_dead = Position("slug-dead", Decimal("50"), Decimal("0.10"))
+    pos_active = Position("slug-active", Decimal("50"), Decimal("0.40"))
+    auth_client.get_positions.return_value = [pos_empty, pos_dead, pos_active]
+    auth_client.cancel_all_scoped.return_value = []
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = []
+    book_empty = Book("slug-empty", (), (), 1000)
+    book_dead = Book("slug-dead", (Level(Decimal("0.01"), Decimal("100")),), (Level(Decimal("0.01"), Decimal("100")),), 1000)
+    book_active = Book("slug-active", (Level(Decimal("0.40"), Decimal("100")),), (Level(Decimal("0.42"), Decimal("100")),), 1000)
+
+    def fetch_book_dispatch(slug):
+        if slug == "slug-empty":
+            return book_empty
+        if slug == "slug-dead":
+            return book_dead
+        return book_active
+
+    client.fetch_book.side_effect = fetch_book_dispatch
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    with patch("pmus.engine.allocate_markets", return_value=({}, AllocationResult([], [], [], {}, {}, None, frozenset(), ()))):
+        engine.prepare()
+
+    assert "slug-empty" not in engine.target_slugs
+    assert "slug-dead" not in engine.target_slugs
+    assert "slug-active" in engine.target_slugs
+
+
+def test_tick_fetches_books_batch_only_for_uncooled_slugs():
+    logger = logging.getLogger("test_tick_uncooled")
+    client = MagicMock()
+    client.fetch_books_batch.return_value = {}
+    auth_client = MagicMock()
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    engine.risk_manager.is_kill_switch_active.return_value = False
+    engine.risk_manager.is_maintenance_active.return_value = False
+    engine.ledger.get_realized_loss_today.return_value = Decimal("0")
+    engine.target_slugs = ["s-active", "s-cooled"]
+    engine.slug_cooldown["s-cooled"] = 2000.0
+
+    engine.tick(now_ts=1000.0)
+    client.fetch_books_batch.assert_called_once_with(["s-active"])
+
+
+def test_quote_market_clamps_paired_bid_to_98c():
+    from pmus.risk import RiskGateResult
+    logger = logging.getLogger("test_quote_clamp")
+    mkt = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.05"), datetime.now(timezone.utc), None, "active")
+
+    client = MagicMock()
+    auth_client = MagicMock()
+    auth_client.create_orders_batch.return_value = []
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logger,
+    )
+    engine.active_windows["y1"] = w
+    engine.paired_slugs = frozenset({"y1", "n1"})
+    engine.condition_pairs = (("y1", "n1"),)
+    engine.side_budgets[("y1", "bid")] = Decimal("50")
+    engine.side_qtys[("y1", "bid")] = Decimal("50")
+
+    resting_no_order = LiveOrder("o-no", "n1", "BUY_LONG", Decimal("0.50"), Decimal("50"))
+    book_y = Book("y1", (Level(Decimal("0.49"), Decimal("200")),), (Level(Decimal("0.51"), Decimal("200")),), 1000)
+
+    engine._quote_market(
+        slug="y1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[resting_no_order],
+        live_positions={"y1": Position("y1", Decimal("0"), Decimal("0"))},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_y,
+    )
+
+    quotes_submitted = auth_client.create_orders_batch.call_args[0][0]
+    assert len(quotes_submitted) == 1
+    assert quotes_submitted[0].price == Decimal("0.48")
+    assert quotes_submitted[0].price + resting_no_order.price <= Decimal("0.98")
+
+
+def test_quote_market_clamps_and_freezes_unfilled_leg_when_partner_holds_inventory():
+    from pmus.risk import RiskGateResult
+    logger = logging.getLogger("test_quote_freeze")
+    mkt_y = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    mkt_n = Market(slug="n1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.05"), datetime.now(timezone.utc), None, "active")
+
+    client = MagicMock()
+    auth_client = MagicMock()
+    auth_client.create_orders_batch.return_value = []
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logger,
+    )
+    engine.markets["y1"] = mkt_y
+    engine.markets["n1"] = mkt_n
+    engine.active_windows["y1"] = w
+    engine.paired_slugs = frozenset({"y1", "n1"})
+    engine.condition_pairs = (("y1", "n1"),)
+    engine.side_budgets[("y1", "bid")] = Decimal("50")
+    engine.side_qtys[("y1", "bid")] = Decimal("50")
+
+    pos_n = Position("n1", Decimal("50"), Decimal("0.52"))
+    book_y = Book("y1", (Level(Decimal("0.49"), Decimal("200")),), (Level(Decimal("0.51"), Decimal("200")),), 1000)
+
+    engine._quote_market(
+        slug="y1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[],
+        live_positions={"y1": Position("y1", Decimal("0"), Decimal("0")), "n1": pos_n},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_y,
+    )
+
+    quotes_submitted = auth_client.create_orders_batch.call_args[0][0]
+    assert len(quotes_submitted) == 1
+    assert quotes_submitted[0].price == Decimal("0.46")
+    assert quotes_submitted[0].price + pos_n.avg_price <= Decimal("0.98")
+
+    auth_client.create_orders_batch.reset_mock()
+    resting_y = LiveOrder("o-y", "y1", "BUY_LONG", Decimal("0.43"), Decimal("50"))
+    engine.ledger.get_open_orders.return_value = [resting_y]
+    engine._quote_market(
+        slug="y1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[resting_y],
+        live_positions={"y1": Position("y1", Decimal("0"), Decimal("0")), "n1": pos_n},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_y,
+    )
+    auth_client.create_orders_batch.assert_not_called()
+
+
+def test_quote_market_runs_check_pre_submit_before_canceling_and_blocks_cancel_when_disallowed():
+    from pmus.risk import RiskGateResult
+    logger = logging.getLogger("test_pre_cancel_risk")
+    mkt = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.05"), datetime.now(timezone.utc), None, "active")
+
+    client = MagicMock()
+    auth_client = MagicMock()
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(False, "Collateral exceeded")
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logger,
+    )
+    engine.active_windows["y1"] = w
+    engine.side_budgets[("y1", "bid")] = Decimal("50")
+    engine.side_qtys[("y1", "bid")] = Decimal("50")
+
+    old_order = LiveOrder("old-1", "y1", "BUY_LONG", Decimal("0.40"), Decimal("50"))
+    engine.ledger.get_open_orders.return_value = [old_order]
+    book_y = Book("y1", (Level(Decimal("0.48"), Decimal("200")),), (Level(Decimal("0.52"), Decimal("200")),), 1000)
+
+    engine._quote_market(
+        slug="y1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[old_order],
+        live_positions={"y1": Position("y1", Decimal("0"), Decimal("0"))},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_y,
+    )
+
+    auth_client.cancel_orders_batch.assert_not_called()
+    auth_client.create_orders_batch.assert_not_called()
+    assert engine.market_states["y1"] == "PAUSED"
+    engine.ledger.close_order.assert_not_called()
+
+
+
+
 
 

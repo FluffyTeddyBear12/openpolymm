@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from pmus.models import Book, IncentiveWindow, Level, LiveOrder
-from pmus.shadow import check_paper_fills, estimate_lip_score
+from pmus.shadow import check_paper_fills, estimate_global_pair_score, estimate_lip_score
 
 @pytest.fixture
 def window():
@@ -239,4 +239,42 @@ def test_lip_score_docs_30_discount_example():
     assert snap_d.trader_bid_score == Decimal("27")
     share_d = snap_d.trader_bid_score / snap_d.total_bid_score
     assert round(share_d, 3) == Decimal("0.019")
+
+
+def test_estimate_global_pair_score_strips_own_resting_orders_from_competitors():
+    now = datetime.now(timezone.utc)
+    win = IncentiveWindow(
+        slug="mkt-pair",
+        program_id="prog-1",
+        pool_usd=Decimal("86400.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=1),
+        status="active",
+    )
+    yes_book = Book(
+        slug="mkt-pair-yes",
+        bids=(Level(Decimal("0.48"), Decimal("100")),),
+        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    no_book = Book(
+        slug="mkt-pair-no",
+        bids=(Level(Decimal("0.48"), Decimal("100")),),
+        asks=(Level(Decimal("0.52"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    resting = [
+        LiveOrder("o-y", "mkt-pair-yes", "BUY_LONG", Decimal("0.48"), Decimal("50")),
+        LiveOrder("o-n", "mkt-pair-no", "BUY_LONG", Decimal("0.48"), Decimal("50")),
+    ]
+    snap_y, snap_n = estimate_global_pair_score(yes_book, no_book, win, resting, ts_ms=1000)
+    total_reward = snap_y.reward_usd + snap_n.reward_usd
+    assert total_reward == Decimal("0.50")
+    assert snap_y.reward_usd == Decimal("0.25")
+    assert snap_n.reward_usd == Decimal("0.25")
+    assert snap_y.total_bid_score == snap_y.trader_bid_score * Decimal("2")
+    assert snap_n.total_bid_score == snap_n.trader_bid_score * Decimal("2")
 

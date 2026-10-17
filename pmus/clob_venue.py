@@ -51,8 +51,45 @@ from pmus.models import (
 
 DATA_API_POSITIONS_URL = "https://data-api.polymarket.com/positions"
 POSITIONS_PAGE_SIZE = 500
+POSITIONS_CACHE_TTL_SEC = 15.0
+MIN_DAYS_TO_EXPIRY = timedelta(days=3)
+BUYING_POWER_CACHE_TTL_SEC = 5.0
+EXCLUDED_QUESTION_PATTERNS = (
+    "temperature in ",
+    "weather in ",
+    "highest temp",
+    "lowest temp",
+    "rain in ",
+    "snow in ",
+    "spread:",
+    "o/u ",
+    "quarterly earnings",
+    "beat earnings",
+    "views on day",
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_iso_ts(val: Any) -> datetime | None:
+    if isinstance(val, datetime):
+        if val.tzinfo is None:
+            return val.replace(tzinfo=timezone.utc)
+        return val
+    if not val or not isinstance(val, str):
+        return None
+    s = val.strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return None
 
 
 def _fee_usd(fee_rate_bps: Any, price: Decimal, qty: Decimal) -> Decimal:
@@ -115,6 +152,8 @@ class _SamplingMarket:
     target_size: Decimal
     max_spread: Decimal
     tokens: list[dict[str, Any]]
+    end_date: datetime | None = None
+    game_start_time: datetime | None = None
 
 
 class ClobVenueClient:
@@ -122,6 +161,11 @@ class ClobVenueClient:
         self.settings = settings
         self.host = settings.clob_host.rstrip("/")
         self._market_cache: dict[str, Market] = {}
+        self._positions_cache: list[Position] | None = None
+        self._positions_cache_ts: float = 0.0
+        self._buying_power_cache: Decimal | None = None
+        self._buying_power_cache_ts: float = 0.0
+        self._resolved_bp_sig_type: int | None = None
 
         if client is not None:
             self.client = client
@@ -190,7 +234,7 @@ class ClobVenueClient:
     def is_available(self) -> bool:
         return self.is_authenticated
 
-    def _fetch_sampling_markets(self, max_pages: int = 5) -> list[_SamplingMarket]:
+    def _fetch_sampling_markets(self, max_pages: int = 8) -> list[_SamplingMarket]:
         if hasattr(self.client, "get_sampling_markets"):
             try:
                 raw_resp = self.client.get_sampling_markets()
@@ -239,6 +283,8 @@ class ClobVenueClient:
         for m in raw_markets:
             if not isinstance(m, dict):
                 continue
+            if m.get("active") is False or m.get("closed") is True:
+                continue
             rewards = m.get("rewards")
             if not isinstance(rewards, dict):
                 continue
@@ -266,6 +312,17 @@ class ClobVenueClient:
             tick = Decimal(str(m.get("minimum_tick_size", "0.001")))
             min_qty = Decimal(str(m.get("minimum_order_size", "5")))
             question = str(m.get("question", ""))
+            q_lower = question.lower()
+            if any(pat in q_lower for pat in EXCLUDED_QUESTION_PATTERNS):
+                continue
+
+            end_date_raw = m.get("end_date_iso") or m.get("end_date") or m.get("game_end_time")
+            game_start_raw = m.get("game_start_time") or m.get("event_start_time") or m.get("start_date")
+            end_date_dt = _parse_iso_ts(end_date_raw)
+            game_start_dt = _parse_iso_ts(game_start_raw)
+            if end_date_dt is not None:
+                if (end_date_dt - datetime.now(timezone.utc)) < MIN_DAYS_TO_EXPIRY:
+                    continue
 
             tokens = m.get("tokens", [])
             if not isinstance(tokens, list):
@@ -287,6 +344,8 @@ class ClobVenueClient:
                     target_size=target_size,
                     max_spread=max_spread,
                     tokens=tokens,
+                    end_date=end_date_dt,
+                    game_start_time=game_start_dt,
                 )
             )
         return parsed
@@ -323,8 +382,9 @@ class ClobVenueClient:
                     target_size=pm.target_size,
                     max_spread=pm.max_spread,
                     start=now_utc - timedelta(hours=1),
-                    end=now_utc + timedelta(hours=23),
+                    end=pm.end_date or (now_utc + timedelta(hours=23)),
                     status="active",
+                    event_start_time=pm.game_start_time,
                 )
                 results.append((market, window))
                 if limit > 0 and len(results) >= limit:
@@ -387,8 +447,9 @@ class ClobVenueClient:
                 target_size=pm.target_size,
                 max_spread=pm.max_spread,
                 start=now_utc - timedelta(hours=1),
-                end=now_utc + timedelta(hours=23),
+                end=pm.end_date or (now_utc + timedelta(hours=23)),
                 status="active",
+                event_start_time=pm.game_start_time,
             )
 
             results.append(
@@ -446,7 +507,7 @@ class ClobVenueClient:
         resp.raise_for_status()
         return self._parse_book_payload(token_id, resp.json())
 
-    def fetch_books_batch(self, token_ids: list[str], chunk_size: int = 100) -> dict[str, Book]:
+    def fetch_books_batch(self, token_ids: list[str], chunk_size: int = 200) -> dict[str, Book]:
         if not token_ids:
             return {}
         results: dict[str, Book] = {}
@@ -471,9 +532,10 @@ class ClobVenueClient:
                                 results[tid] = self._parse_book_payload(tid, item)
                             except Exception as parse_exc:
                                 logger.warning("Failed to parse book payload for %s: %s", tid, parse_exc)
-                for tid in chunk:
-                    if tid not in results:
-                        missing.append(tid)
+                if len(token_ids) <= 20:
+                    for tid in chunk:
+                        if tid not in results:
+                            missing.append(tid)
             else:
                 missing = list(chunk)
 
@@ -554,6 +616,8 @@ class ClobVenueClient:
                     qty_open=quote.qty,
                 )
             )
+        if created:
+            self.invalidate_buying_power_cache()
         return created
 
     def cancel_orders(self, order_ids: list[str]) -> bool:
@@ -562,6 +626,7 @@ class ClobVenueClient:
         if not self.is_authenticated:
             raise RuntimeError("Polymarket Global client not authenticated")
         self.client.cancel_orders(order_ids)
+        self.invalidate_buying_power_cache()
         return True
 
     def cancel_orders_batch(self, orders: list[LiveOrder]) -> list[str]:
@@ -589,9 +654,11 @@ class ClobVenueClient:
                     self.client.cancel_market_orders(OrderMarketCancelParams(asset_id=slug))
                 else:
                     self.client.cancel_market_orders(asset_id=slug)
+            self.invalidate_buying_power_cache()
         except Exception as exc:
             logger.warning("Per-market cancel failed (%s); canceling all orders", exc)
             self.client.cancel_all()
+            self.invalidate_buying_power_cache()
 
     def get_open_orders(self, slugs: list[str] | None = None) -> list[LiveOrder]:
         if not self.is_authenticated:
@@ -645,10 +712,29 @@ class ClobVenueClient:
             )
         return results
 
+    def invalidate_buying_power_cache(self) -> None:
+        self._buying_power_cache = None
+        self._buying_power_cache_ts = 0.0
+
     def get_buying_power(self) -> Decimal:
         if not self.is_authenticated:
             return Decimal("0")
-        sig_candidates = [3, getattr(getattr(self.client, "builder", None), "sig_type", 2), 2, 1, 0]
+        now_mono = time.monotonic()
+        if (
+            self._buying_power_cache is not None
+            and (now_mono - self._buying_power_cache_ts) < BUYING_POWER_CACHE_TTL_SEC
+        ):
+            return self._buying_power_cache
+
+        if self._resolved_bp_sig_type is not None:
+            sig_candidates = [self._resolved_bp_sig_type]
+        else:
+            candidates = [3, getattr(getattr(self.client, "builder", None), "sig_type", 2), 2, 1, 0]
+            sig_candidates = []
+            for s in candidates:
+                if s is not None and s not in sig_candidates:
+                    sig_candidates.append(s)
+
         for sig in sig_candidates:
             try:
                 resp = self.client.get_balance_allowance(
@@ -662,9 +748,15 @@ class ClobVenueClient:
                     bal = str(resp)
                 val = Decimal(str(bal)) / Decimal("1000000")
                 if val > Decimal("0"):
+                    self._resolved_bp_sig_type = sig
+                    self._buying_power_cache = val
+                    self._buying_power_cache_ts = now_mono
                     return val
             except Exception:
                 continue
+
+        if self._buying_power_cache is not None:
+            return self._buying_power_cache
         return Decimal("0")
 
     def is_order_scoring(self, order_id: str) -> bool:
@@ -729,29 +821,47 @@ class ClobVenueClient:
     def close_position(self, token_id: str) -> None:
         self.cancel_all_scoped([token_id])
 
+    def invalidate_positions_cache(self) -> None:
+        self._positions_cache = None
+        self._positions_cache_ts = 0.0
+        self.invalidate_buying_power_cache()
+
     def get_positions(self) -> list[Position]:
         if not self.is_authenticated:
             return []
         proxy = self.settings.polymarket_proxy_address.strip()
         if not proxy:
             raise RuntimeError("POLYMARKET_PROXY_ADDRESS is required to read positions")
+        now_mono = time.monotonic()
+        if self._positions_cache is not None and (now_mono - self._positions_cache_ts) < POSITIONS_CACHE_TTL_SEC:
+            return list(self._positions_cache)
         positions: list[Position] = []
         offset = 0
-        while True:
-            resp = requests.get(
-                DATA_API_POSITIONS_URL,
-                params={"user": proxy, "sizeThreshold": 0, "limit": POSITIONS_PAGE_SIZE, "offset": offset},
-                timeout=10,
-            )
-            resp.raise_for_status()
-            page = resp.json()
-            if not page:
-                return positions
-            positions.extend(
-                Position(slug=str(p["asset"]), net_qty=Decimal(str(p["size"])), avg_price=Decimal(str(p["avgPrice"])))
-                for p in page
-            )
-            offset += len(page)
+        try:
+            while True:
+                resp = requests.get(
+                    DATA_API_POSITIONS_URL,
+                    params={"user": proxy, "sizeThreshold": 0, "limit": POSITIONS_PAGE_SIZE, "offset": offset},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                page = resp.json()
+                if not page:
+                    break
+                positions.extend(
+                    Position(slug=str(p["asset"]), net_qty=Decimal(str(p["size"])), avg_price=Decimal(str(p["avgPrice"])))
+                    for p in page
+                )
+                if len(page) < POSITIONS_PAGE_SIZE:
+                    break
+                offset += len(page)
+            self._positions_cache = list(positions)
+            self._positions_cache_ts = time.monotonic()
+            return positions
+        except Exception:
+            if self._positions_cache is not None:
+                return list(self._positions_cache)
+            raise
 
     def get_fills(self, since: datetime | None = None) -> list[ShadowFill]:
         if not self.is_authenticated:

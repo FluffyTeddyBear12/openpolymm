@@ -16,6 +16,8 @@ class Ledger:
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA synchronous = NORMAL")
         return conn
 
     def _init_db(self) -> None:
@@ -47,6 +49,7 @@ class Ledger:
                 )
                 """
             )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON orders (status)")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS fills (
@@ -62,6 +65,7 @@ class Ledger:
                 )
                 """
             )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_fills_ts ON fills (ts_ms)")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS lip_snapshots (
@@ -97,6 +101,83 @@ class Ledger:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lip_latest (
+                    slug TEXT PRIMARY KEY,
+                    ts_ms INTEGER NOT NULL,
+                    program_id TEXT NOT NULL,
+                    trader_bid_score TEXT NOT NULL,
+                    total_bid_score TEXT NOT NULL,
+                    trader_ask_score TEXT NOT NULL,
+                    total_ask_score TEXT NOT NULL,
+                    qualifies INTEGER NOT NULL,
+                    reward_usd TEXT NOT NULL,
+                    bid_qualifies INTEGER DEFAULT 0,
+                    ask_qualifies INTEGER DEFAULT 0
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS lip_stats_summary (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    total_reward TEXT NOT NULL DEFAULT '0',
+                    qual_sec INTEGER NOT NULL DEFAULT 0,
+                    bid_qual_sec INTEGER NOT NULL DEFAULT 0,
+                    ask_qual_sec INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+
+            summary_row = conn.execute("SELECT id FROM lip_stats_summary WHERE id = 1").fetchone()
+            if summary_row is None:
+                stats = conn.execute(
+                    """
+                    SELECT
+                        COALESCE(SUM(CAST(reward_usd AS NUMERIC)), 0) AS total_reward,
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS qual_sec,
+                        COALESCE(SUM(CASE WHEN bid_qualifies = 1 THEN 1 ELSE 0 END), 0) AS bid_qual_sec,
+                        COALESCE(SUM(CASE WHEN ask_qualifies = 1 THEN 1 ELSE 0 END), 0) AS ask_qual_sec
+                    FROM lip_snapshots
+                    """
+                ).fetchone()
+                total_reward = str(stats["total_reward"]) if stats else "0"
+                qual_sec = int(stats["qual_sec"]) if stats else 0
+                bid_qual_sec = int(stats["bid_qual_sec"]) if stats else 0
+                ask_qual_sec = int(stats["ask_qual_sec"]) if stats else 0
+                conn.execute(
+                    """
+                    INSERT INTO lip_stats_summary (id, total_reward, qual_sec, bid_qual_sec, ask_qual_sec)
+                    VALUES (1, ?, ?, ?, ?)
+                    """,
+                    (total_reward, qual_sec, bid_qual_sec, ask_qual_sec),
+                )
+
+            has_latest = conn.execute("SELECT 1 FROM lip_latest LIMIT 1").fetchone()
+            if has_latest is None:
+                has_snapshots = conn.execute("SELECT 1 FROM lip_snapshots LIMIT 1").fetchone()
+                if has_snapshots is not None:
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO lip_latest (
+                            slug, ts_ms, program_id, trader_bid_score, total_bid_score,
+                            trader_ask_score, total_ask_score, qualifies, reward_usd,
+                            bid_qualifies, ask_qualifies
+                        )
+                        SELECT
+                            s.slug, s.ts_ms, s.program_id, s.trader_bid_score, s.total_bid_score,
+                            s.trader_ask_score, s.total_ask_score, s.qualifies, s.reward_usd,
+                            COALESCE(s.bid_qualifies, s.qualifies), COALESCE(s.ask_qualifies, s.qualifies)
+                        FROM lip_snapshots s
+                        INNER JOIN (
+                            SELECT slug, MAX(ts_ms) AS max_ts
+                            FROM lip_snapshots
+                            GROUP BY slug
+                        ) m ON s.slug = m.slug AND s.ts_ms = m.max_ts
+                        """
+                    )
+
             conn.execute("CREATE INDEX IF NOT EXISTS idx_lip_snapshots_ts ON lip_snapshots(ts_ms)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_lip_snapshots_slug_ts ON lip_snapshots(slug, ts_ms DESC)")
 
@@ -190,6 +271,72 @@ class Ledger:
                     1 if snap.ask_qualifies else 0,
                 ),
             )
+            conn.execute(
+                """
+                INSERT INTO lip_latest (
+                    slug, ts_ms, program_id, trader_bid_score, total_bid_score,
+                    trader_ask_score, total_ask_score, qualifies, reward_usd,
+                    bid_qualifies, ask_qualifies
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(slug) DO UPDATE SET
+                    ts_ms = excluded.ts_ms,
+                    program_id = excluded.program_id,
+                    trader_bid_score = excluded.trader_bid_score,
+                    total_bid_score = excluded.total_bid_score,
+                    trader_ask_score = excluded.trader_ask_score,
+                    total_ask_score = excluded.total_ask_score,
+                    qualifies = excluded.qualifies,
+                    reward_usd = excluded.reward_usd,
+                    bid_qualifies = excluded.bid_qualifies,
+                    ask_qualifies = excluded.ask_qualifies
+                WHERE excluded.ts_ms >= lip_latest.ts_ms
+                """,
+                (
+                    snap.slug,
+                    snap.ts_ms,
+                    snap.program_id,
+                    str(snap.trader_bid_score),
+                    str(snap.total_bid_score),
+                    str(snap.trader_ask_score),
+                    str(snap.total_ask_score),
+                    1 if snap.qualifies else 0,
+                    str(snap.reward_usd),
+                    1 if snap.bid_qualifies else 0,
+                    1 if snap.ask_qualifies else 0,
+                ),
+            )
+            cur_row = conn.execute("SELECT total_reward FROM lip_stats_summary WHERE id = 1").fetchone()
+            if cur_row is not None:
+                new_total = str(Decimal(str(cur_row["total_reward"])) + snap.reward_usd)
+                conn.execute(
+                    """
+                    UPDATE lip_stats_summary
+                    SET total_reward = ?,
+                        qual_sec = qual_sec + ?,
+                        bid_qual_sec = bid_qual_sec + ?,
+                        ask_qual_sec = ask_qual_sec + ?
+                    WHERE id = 1
+                    """,
+                    (
+                        new_total,
+                        1 if snap.qualifies else 0,
+                        1 if snap.bid_qualifies else 0,
+                        1 if snap.ask_qualifies else 0,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO lip_stats_summary (id, total_reward, qual_sec, bid_qual_sec, ask_qual_sec)
+                    VALUES (1, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(snap.reward_usd),
+                        1 if snap.qualifies else 0,
+                        1 if snap.bid_qualifies else 0,
+                        1 if snap.ask_qualifies else 0,
+                    ),
+                )
 
     def get_position(self, slug: str) -> Position:
         with self._get_connection() as conn:
@@ -281,6 +428,24 @@ class Ledger:
 
     def get_lip_stats(self, since_ms: int = 0) -> dict[str, Any]:
         with self._get_connection() as conn:
+            if since_ms <= 0:
+                row = conn.execute(
+                    "SELECT total_reward, qual_sec, bid_qual_sec, ask_qual_sec FROM lip_stats_summary WHERE id = 1"
+                ).fetchone()
+                if row:
+                    return {
+                        "lip_reward_total": Decimal(str(row["total_reward"])),
+                        "qualifying_seconds": int(row["qual_sec"]),
+                        "qualifying_bid_seconds": int(row["bid_qual_sec"]),
+                        "qualifying_ask_seconds": int(row["ask_qual_sec"]),
+                    }
+                return {
+                    "lip_reward_total": Decimal("0"),
+                    "qualifying_seconds": 0,
+                    "qualifying_bid_seconds": 0,
+                    "qualifying_ask_seconds": 0,
+                }
+
             cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
             cols = [row["name"] for row in cursor.fetchall()]
             has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
@@ -323,35 +488,64 @@ class Ledger:
 
     def get_latest_lip_snapshots(self) -> dict[str, LipSnapshot]:
         with self._get_connection() as conn:
-            cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
-            cols = [row["name"] for row in cursor.fetchall()]
-            has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
-
-            if has_side_cols:
-                query = """
-                    SELECT s.ts_ms, s.slug, s.program_id, s.trader_bid_score, s.total_bid_score,
-                           s.trader_ask_score, s.total_ask_score, s.qualifies, s.reward_usd,
-                           s.bid_qualifies, s.ask_qualifies
-                    FROM lip_snapshots s
-                    INNER JOIN (
-                        SELECT slug, MAX(ts_ms) AS max_ts
-                        FROM lip_snapshots
-                        GROUP BY slug
-                    ) m ON s.slug = m.slug AND s.ts_ms = m.max_ts
+            rows = conn.execute(
                 """
-            else:
-                query = """
-                    SELECT s.ts_ms, s.slug, s.program_id, s.trader_bid_score, s.total_bid_score,
-                           s.trader_ask_score, s.total_ask_score, s.qualifies, s.reward_usd
-                    FROM lip_snapshots s
-                    INNER JOIN (
-                        SELECT slug, MAX(ts_ms) AS max_ts
-                        FROM lip_snapshots
-                        GROUP BY slug
-                    ) m ON s.slug = m.slug AND s.ts_ms = m.max_ts
+                SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
+                       trader_ask_score, total_ask_score, qualifies, reward_usd,
+                       bid_qualifies, ask_qualifies
+                FROM lip_latest
                 """
+            ).fetchall()
+            if not rows:
+                has_snapshots = conn.execute("SELECT 1 FROM lip_snapshots LIMIT 1").fetchone()
+                if has_snapshots:
+                    cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
+                    cols = [row["name"] for row in cursor.fetchall()]
+                    has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
 
-            rows = conn.execute(query).fetchall()
+                    if has_side_cols:
+                        query = """
+                            SELECT s.ts_ms, s.slug, s.program_id, s.trader_bid_score, s.total_bid_score,
+                                   s.trader_ask_score, s.total_ask_score, s.qualifies, s.reward_usd,
+                                   s.bid_qualifies, s.ask_qualifies
+                            FROM lip_snapshots s
+                            INNER JOIN (
+                                SELECT slug, MAX(ts_ms) AS max_ts
+                                FROM lip_snapshots
+                                GROUP BY slug
+                            ) m ON s.slug = m.slug AND s.ts_ms = m.max_ts
+                        """
+                    else:
+                        query = """
+                            SELECT s.ts_ms, s.slug, s.program_id, s.trader_bid_score, s.total_bid_score,
+                                   s.trader_ask_score, s.total_ask_score, s.qualifies, s.reward_usd
+                            FROM lip_snapshots s
+                            INNER JOIN (
+                                SELECT slug, MAX(ts_ms) AS max_ts
+                                FROM lip_snapshots
+                                GROUP BY slug
+                            ) m ON s.slug = m.slug AND s.ts_ms = m.max_ts
+                        """
+
+                    rows = conn.execute(query).fetchall()
+                    result: dict[str, LipSnapshot] = {}
+                    for r in rows:
+                        result[r["slug"]] = LipSnapshot(
+                            ts_ms=r["ts_ms"],
+                            slug=r["slug"],
+                            program_id=r["program_id"],
+                            trader_bid_score=Decimal(str(r["trader_bid_score"])),
+                            total_bid_score=Decimal(str(r["total_bid_score"])),
+                            trader_ask_score=Decimal(str(r["trader_ask_score"])),
+                            total_ask_score=Decimal(str(r["total_ask_score"])),
+                            qualifies=bool(r["qualifies"]),
+                            reward_usd=Decimal(str(r["reward_usd"])),
+                            bid_qualifies=bool(r["bid_qualifies"]) if has_side_cols else bool(r["qualifies"]),
+                            ask_qualifies=bool(r["ask_qualifies"]) if has_side_cols else bool(r["qualifies"]),
+                        )
+                    return result
+                return {}
+
             result: dict[str, LipSnapshot] = {}
             for r in rows:
                 result[r["slug"]] = LipSnapshot(
@@ -364,8 +558,8 @@ class Ledger:
                     total_ask_score=Decimal(str(r["total_ask_score"])),
                     qualifies=bool(r["qualifies"]),
                     reward_usd=Decimal(str(r["reward_usd"])),
-                    bid_qualifies=bool(r["bid_qualifies"]) if has_side_cols else bool(r["qualifies"]),
-                    ask_qualifies=bool(r["ask_qualifies"]) if has_side_cols else bool(r["qualifies"]),
+                    bid_qualifies=bool(r["bid_qualifies"]),
+                    ask_qualifies=bool(r["ask_qualifies"]),
                 )
             return result
 

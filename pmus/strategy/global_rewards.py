@@ -8,13 +8,15 @@ book scores S/3; outside that band only two-sided liquidity scores.
 import os
 from decimal import Decimal
 
-from pmus.models import Book, IncentiveWindow, Level
+from pmus.models import Book, IncentiveWindow, Level, LiveOrder
 
 REWARD_MID_LOW = Decimal("0.10")
 REWARD_MID_HIGH = Decimal("0.90")
 SINGLE_SIDED_DIVISOR = Decimal("3")
 SECONDS_PER_DAY = Decimal("86400")
 MIN_DAILY_PAYOUT_USD = Decimal(os.getenv("PMUS_GLOBAL_MIN_DAILY_REWARD", "1.00"))
+MAX_CUSHION_SPREAD_RATIO = Decimal("0.55")
+PAIR_MAX_SUM = Decimal("0.98")
 ZERO = Decimal("0")
 
 
@@ -58,11 +60,46 @@ def reward_rate(pool_usd: Decimal, ours: Decimal, competitors: Decimal) -> Decim
 
 
 def bid_price(book: Book, window: IncentiveWindow, tick: Decimal) -> Decimal | None:
-    """Price the bot posts: join the best bid on tick, only if it scores and does not cross."""
     mid = adjusted_mid(book, window.target_size)
-    if mid is None or window.max_spread is None:
+    if mid is None or window.max_spread is None or not book.asks:
         return None
-    price = (book.bids[0].price // tick) * tick
+    qual_levels = [lvl for lvl in book.bids if lvl.qty >= window.target_size]
+    if not qual_levels:
+        return None
+    top_lvl = qual_levels[0]
+    raw_top = top_lvl.price
+    top_bid = (raw_top // tick) * tick
+    price = top_bid
+    should_step_back = len(qual_levels) >= 2 or (
+        len(qual_levels) == 1 and top_lvl.qty < Decimal("2") * window.target_size
+    )
+    if should_step_back:
+        candidate = top_bid - tick
+        max_cushioned_dist = window.max_spread * MAX_CUSHION_SPREAD_RATIO
+        if (
+            ZERO < candidate < top_bid
+            and abs(candidate - mid) <= max_cushioned_dist
+            and abs(candidate - mid) < window.max_spread
+        ):
+            price = candidate
+            shield_target = Decimal("2") * window.target_size
+            if (
+                tick <= Decimal("0.001")
+                and sum((lvl.qty for lvl in book.bids if lvl.price > price), ZERO) < shield_target
+            ):
+                for lvl in qual_levels[1:]:
+                    lvl_px = (lvl.price // tick) * tick
+                    if lvl_px >= top_bid:
+                        continue
+                    next_cand = lvl_px - tick
+                    if (
+                        ZERO < next_cand < price
+                        and abs(next_cand - mid) <= max_cushioned_dist
+                        and abs(next_cand - mid) < window.max_spread
+                    ):
+                        price = next_cand
+                        if sum((lvl.qty for lvl in book.bids if lvl.price > price), ZERO) >= shield_target:
+                            break
     if price <= ZERO or price >= book.asks[0].price or abs(price - mid) >= window.max_spread:
         return None
     return price
@@ -86,6 +123,25 @@ def pair_quote_prices(
     p_yes = bid_price(yes_book, window, yes_tick)
     p_no = bid_price(no_book, window, no_tick)
     if p_yes is None or p_no is None or p_yes + p_no >= Decimal("1"):
+        return None
+    if p_yes + p_no > PAIR_MAX_SUM and window.max_spread is not None:
+        mid_yes = adjusted_mid(yes_book, window.target_size)
+        mid_no = adjusted_mid(no_book, window.target_size)
+        if mid_yes is not None and mid_no is not None:
+            for _ in range(25):
+                if p_yes + p_no <= PAIR_MAX_SUM:
+                    break
+                cand_yes = p_yes - yes_tick
+                cand_no = p_no - no_tick
+                yes_ok = cand_yes > ZERO and abs(cand_yes - mid_yes) < window.max_spread
+                no_ok = cand_no > ZERO and abs(cand_no - mid_no) < window.max_spread
+                if yes_ok and (not no_ok or abs(cand_yes - mid_yes) <= abs(cand_no - mid_no)):
+                    p_yes = cand_yes
+                elif no_ok:
+                    p_no = cand_no
+                else:
+                    break
+    if p_yes + p_no >= Decimal("1"):
         return None
     return (p_yes, p_no)
 
@@ -165,4 +221,43 @@ def expected_single_reward_sec(
     ours = s / SINGLE_SIDED_DIVISOR
     competitors = competitor_q(own_book, other_book, window)
     return reward_rate(window.pool_usd, ours, competitors)
+
+
+def strip_orders_from_book(book: Book, orders: list[LiveOrder]) -> Book:
+    """Return a copy of book with our own resting orders subtracted so reallocation neither steps behind our own bid nor double-counts our liquidity as competitors."""
+    if not orders:
+        return book
+    eps = Decimal("0.0001")
+    bid_deduct: dict[Decimal, Decimal] = {}
+    ask_deduct: dict[Decimal, Decimal] = {}
+    for o in orders:
+        if o.slug != book.slug or o.qty_open <= ZERO:
+            continue
+        if o.side in ("BUY_LONG", "BUY_SHORT"):
+            bid_deduct[o.price] = bid_deduct.get(o.price, ZERO) + o.qty_open
+        elif o.side in ("SELL_LONG", "SELL_SHORT"):
+            ask_deduct[o.price] = ask_deduct.get(o.price, ZERO) + o.qty_open
+    if not bid_deduct and not ask_deduct:
+        return book
+    new_bids: list[Level] = []
+    for lvl in book.bids:
+        rem = lvl.qty
+        for opx, oqty in list(bid_deduct.items()):
+            if oqty > ZERO and abs(lvl.price - opx) <= eps:
+                used = min(rem, oqty)
+                rem -= used
+                bid_deduct[opx] -= used
+        if rem > ZERO:
+            new_bids.append(Level(price=lvl.price, qty=rem))
+    new_asks: list[Level] = []
+    for lvl in book.asks:
+        rem = lvl.qty
+        for opx, oqty in list(ask_deduct.items()):
+            if oqty > ZERO and abs(lvl.price - opx) <= eps:
+                used = min(rem, oqty)
+                rem -= used
+                ask_deduct[opx] -= used
+        if rem > ZERO:
+            new_asks.append(Level(price=lvl.price, qty=rem))
+    return Book(slug=book.slug, bids=tuple(new_bids), asks=tuple(new_asks), ts_ms=book.ts_ms)
 

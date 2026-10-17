@@ -132,8 +132,8 @@ def test_gate_wide_spread_rejected():
     market = {"endDate": "2026-10-15T00:00:00Z"}
     book = Book(
         slug="tok-1",
-        bids=(Level(Decimal("0.95"), Decimal("1000")),),
-        asks=(Level(Decimal("0.98"), Decimal("100")),),
+        bids=(Level(Decimal("0.945"), Decimal("1000")),),
+        asks=(Level(Decimal("0.975"), Decimal("100")),),
         ts_ms=1000,
     )
     ok, reason = SatelliteEngine.check_gates(market, book)
@@ -143,22 +143,22 @@ def test_gate_wide_spread_rejected():
 
 def test_gate_thin_depth_rejected():
     market = {"endDate": "2026-10-15T00:00:00Z"}
-    # Bid depth 0.97 * 100 = $97 < $500
+    # Bid depth 0.97 * 100 = $97 < $250
     book_thin_bid = Book(
         slug="tok-1",
-        bids=(Level(Decimal("0.97"), Decimal("100")),),
-        asks=(Level(Decimal("0.98"), Decimal("100")),),
+        bids=(Level(Decimal("0.970"), Decimal("100")),),
+        asks=(Level(Decimal("0.975"), Decimal("100")),),
         ts_ms=1000,
     )
     ok, reason = SatelliteEngine.check_gates(market, book_thin_bid)
     assert ok is False
     assert "Bid depth" in reason
 
-    # Ask depth 0.98 * 10 = $9.80 < $15
+    # Ask depth 0.975 * 10 = $9.75 < $15
     book_thin_ask = Book(
         slug="tok-1",
-        bids=(Level(Decimal("0.97"), Decimal("1000")),),
-        asks=(Level(Decimal("0.98"), Decimal("10")),),
+        bids=(Level(Decimal("0.970"), Decimal("1000")),),
+        asks=(Level(Decimal("0.975"), Decimal("10")),),
         ts_ms=1000,
     )
     ok, reason = SatelliteEngine.check_gates(market, book_thin_ask)
@@ -187,8 +187,8 @@ def test_gate_expiry_and_apy():
     now = datetime(2026, 10, 12, 12, 0, 0, tzinfo=timezone.utc)
     book = Book(
         slug="tok-1",
-        bids=(Level(Decimal("0.975"), Decimal("1000")),),
-        asks=(Level(Decimal("0.985"), Decimal("100")),),
+        bids=(Level(Decimal("0.965"), Decimal("1000")),),
+        asks=(Level(Decimal("0.975"), Decimal("100")),),
         ts_ms=1000,
     )
 
@@ -198,9 +198,6 @@ def test_gate_expiry_and_apy():
     assert ok is False
     assert "exceeds horizon" in reason
 
-    # 10 days away with low APY: simple yield = (1 - 0.985)/0.985 = 1.52%, annualized = 1.52% * 365/10 = 55% > 20%
-    # Test low APY at 12 days: price 0.985 -> 1.52% * 365/12 = 46%
-    # If price is 0.984 at 12 days: 1.62% * 365/12 = 49%
     # 2 days away (<= 3 days): passes with short-dated band
     market_short = {"endDate": (now + timedelta(days=2)).isoformat()}
     ok, _ = SatelliteEngine.check_gates(market_short, book, current_time=now)
@@ -263,7 +260,7 @@ def test_satellite_engine_parity_arbitrage(temp_ledger):
         "endDate": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat(),
     }
 
-    # Ask Yes: 0.48, Ask No: 0.49 -> Sum = 0.97 < 1.00
+    # Ask Yes: 0.48, Ask No: 0.49 -> Sum = 0.97 <= 0.990
     book_yes = Book(
         "tok-yes",
         bids=(Level(Decimal("0.47"), Decimal("2000")),),
@@ -284,6 +281,7 @@ def test_satellite_engine_parity_arbitrage(temp_ledger):
     trades = temp_ledger.get_all_trades()
     assert len(trades) == 2
     assert all(t["strategy_type"] == "parity_arb" for t in trades)
+    assert trades[0]["shares"] == trades[1]["shares"]
 
 
 def test_secondary_clob_exit_trigger(temp_ledger):
@@ -293,7 +291,6 @@ def test_secondary_clob_exit_trigger(temp_ledger):
         "shadow", "heavy_favorite", "c1", "tok-1", "mkt-1", "q1", "YES", "BUY", 0.97, 15.0, 15.46
     )
 
-    # Secondary CLOB exit requires best_bid >= 0.992
     book_high_bid = Book(
         "tok-1",
         bids=(Level(Decimal("0.993"), Decimal("500")),),
@@ -410,4 +407,216 @@ def test_scan_parity_arbitrage_skips_when_max_positions_reached(temp_ledger):
         entered = engine.scan_parity_arbitrage([fake_market])
         assert entered == []
         mock_fetch.assert_not_called()
+
+
+def test_toxic_archetype_rejected():
+    now = datetime(2026, 10, 13, 12, 0, 0, tzinfo=timezone.utc)
+    book = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.960"), Decimal("1000")),),
+        asks=(Level(Decimal("0.970"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    for bad_slug in (
+        "bra-cha- bah-2026-10-15-exact-score-0-4",
+        "por-fam-alv-2026-10-12-spread-away-1pt5",
+        "btc-updown-15m-1776009600",
+        "arg-crdo- dyj-2026-10-13-first-half-total-1pt5",
+    ):
+        mkt = {"slug": bad_slug, "endDate": (now + timedelta(days=1)).isoformat()}
+        ok, reason = SatelliteEngine.check_gates(mkt, book, current_time=now)
+        assert ok is False
+        assert "Toxic market archetype" in reason
+
+
+def test_minimum_horizon_and_live_in_play_rejected():
+    now = datetime(2026, 10, 13, 12, 0, 0, tzinfo=timezone.utc)
+    book = Book(
+        slug="tok-1",
+        bids=(Level(Decimal("0.960"), Decimal("1000")),),
+        asks=(Level(Decimal("0.970"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    mkt_1h = {"slug": "clean-match", "endDate": (now + timedelta(hours=1)).isoformat()}
+    ok, reason = SatelliteEngine.check_gates(mkt_1h, book, current_time=now)
+    assert ok is False
+    assert "high-gamma window" in reason
+
+    mkt_live = {
+        "slug": "clean-match",
+        "endDate": (now + timedelta(days=1)).isoformat(),
+        "events": [{"live": True}],
+    }
+    ok_live, reason_live = SatelliteEngine.check_gates(mkt_live, book, current_time=now)
+    assert ok_live is False
+    assert "live in-play" in reason_live
+
+
+def test_event_correlation_deduplication(temp_ledger):
+    engine = SatelliteEngine(ledger=temp_ledger, trade_mode="shadow")
+    now = datetime.now(timezone.utc)
+    exp = (now + timedelta(days=1)).isoformat()
+
+    m1 = {
+        "conditionId": "c1",
+        "slug": "arg-crdo-dyj-2026-10-18-total-2pt5",
+        "question": "O/U 2.5",
+        "clobTokenIds": '["tok-1"]',
+        "outcomePrices": '["0.96"]',
+        "outcomes": '["UNDER"]',
+        "endDate": exp,
+    }
+    m2 = {
+        "conditionId": "c2",
+        "slug": "arg-crdo-dyj-2026-10-18-total-3pt5",
+        "question": "O/U 3.5",
+        "clobTokenIds": '["tok-2"]',
+        "outcomePrices": '["0.965"]',
+        "outcomes": '["UNDER"]',
+        "endDate": exp,
+    }
+    good_book = Book(
+        "tok",
+        bids=(Level(Decimal("0.955"), Decimal("1000")),),
+        asks=(Level(Decimal("0.965"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    with patch.object(engine, "fetch_book", return_value=good_book):
+        entered = engine.scan_heavy_favorites([m1, m2])
+    assert len(entered) == 1
+
+
+def test_parity_arb_loss_leg_excluded_from_circuit_breaker(temp_ledger):
+    t_win = temp_ledger.record_entry("shadow", "parity_arb", "c1", "tok-y", "m1", "q1", "YES", "BUY", 0.50, 10.0, 20.0)
+    t_loss = temp_ledger.record_entry("shadow", "parity_arb", "c1", "tok-n", "m1", "q1", "NO", "BUY", 0.48, 9.6, 20.0)
+    temp_ledger.record_resolution(t_win, outcome_won=True, payout_per_share=1.0)
+    temp_ledger.record_resolution(t_loss, outcome_won=False, payout_per_share=0.0)
+
+    is_active, _ = temp_ledger.is_circuit_breaker_active(48.0)
+    assert is_active is False
+
+
+def test_void_50_50_resolution_and_stop_loss_and_overdue_unwind(temp_ledger):
+    engine = SatelliteEngine(ledger=temp_ledger, trade_mode="shadow")
+    now = datetime.now(timezone.utc)
+
+    # 1. Void 0.50/0.50 resolution (like Trade #174)
+    t_void = temp_ledger.record_entry(
+        "shadow",
+        "heavy_favorite",
+        "c_void",
+        "tok-void",
+        "wta-match-void",
+        "Will player win?",
+        "NO",
+        "BUY",
+        0.960,
+        30.0,
+        31.25,
+        expected_resolution=(now - timedelta(hours=2)).isoformat(),
+    )
+
+    def fake_gamma_void(url, params=None, timeout=10.0):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = [
+            {
+                "closed": True,
+                "clobTokenIds": '["tok-other", "tok-void"]',
+                "outcomePrices": '["0.5", "0.5"]',
+            }
+        ]
+        return resp
+
+    with patch("pmus.satellite_engine.requests.get", side_effect=fake_gamma_void):
+        engine.monitor_positions()
+
+    settled_void = temp_ledger.get_trade(t_void)
+    assert settled_void["status"] == "RESOLVED_LOSS"
+    assert settled_void["exit_price"] == 0.5
+    assert round(settled_void["pnl_usd"], 4) == round((0.5 - 0.960) * 31.25, 4)
+
+    # 2. Stop-loss CLOB unwind when best_bid <= 0.88
+    t_sl = temp_ledger.record_entry(
+        "shadow",
+        "heavy_favorite",
+        "c_sl",
+        "tok-sl",
+        "mkt-sl",
+        "Will team win?",
+        "YES",
+        "BUY",
+        0.965,
+        30.0,
+        31.0881,
+        expected_resolution=(now + timedelta(hours=5)).isoformat(),
+    )
+    book_sl = Book(
+        "tok-sl",
+        bids=(Level(Decimal("0.720"), Decimal("500")),),
+        asks=(Level(Decimal("0.750"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    with patch.object(engine, "fetch_book", return_value=book_sl), patch.object(
+        engine, "_check_and_record_resolution", return_value=False
+    ):
+        engine.monitor_positions()
+
+    trade_sl = temp_ledger.get_trade(t_sl)
+    assert trade_sl["status"] == "EXITED_CLOB"
+    assert trade_sl["exit_price"] == 0.720
+    assert "Stop-loss" in trade_sl["notes"]
+
+    # 3. Overdue >36h time-stop unwind
+    t_overdue = temp_ledger.record_entry(
+        "shadow",
+        "heavy_favorite",
+        "c_over",
+        "tok-over",
+        "mkt-over",
+        "Will event resolve?",
+        "YES",
+        "BUY",
+        0.965,
+        30.0,
+        31.0881,
+        expected_resolution=(now - timedelta(hours=40)).isoformat(),
+    )
+    book_over = Book(
+        "tok-over",
+        bids=(Level(Decimal("0.910"), Decimal("500")),),
+        asks=(Level(Decimal("0.930"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    with patch.object(engine, "fetch_book", return_value=book_over), patch.object(
+        engine, "_check_and_record_resolution", return_value=False
+    ):
+        engine.monitor_positions()
+
+    trade_over = temp_ledger.get_trade(t_overdue)
+    assert trade_over["status"] == "EXITED_CLOB"
+    assert trade_over["exit_price"] == 0.910
+    assert "Overdue >36h" in trade_over["notes"]
+
+
+def test_fetch_public_markets_uses_ascending_false(temp_ledger):
+    engine = SatelliteEngine(ledger=temp_ledger, trade_mode="shadow")
+    captured_params = []
+
+    def fake_get(url, params=None, timeout=10.0):
+        if params:
+            captured_params.append(dict(params))
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = []
+        return resp
+
+    with patch("pmus.satellite_engine.requests.get", side_effect=fake_get):
+        engine.fetch_public_markets(limit=50)
+
+    assert len(captured_params) == 6
+    for p in captured_params:
+        assert p.get("ascending") == "false"
+        assert "descending" not in p
+
 

@@ -2,9 +2,15 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-from pmus.models import Book, ConditionMarket
+from pmus.models import Book, ConditionMarket, Position
 from pmus.strategy import global_rewards
 from pmus.strategy.market_selector import AllocationResult, CandidateSide
+
+SINGLE_SIDED_MIN_PRICE = Decimal("0.20")
+PAIR_LEG_MIN_PRICE = Decimal("0.10")
+PAIR_MIN_PRICE_SUM = Decimal("0.92")
+PAIR_MAX_PRICE_SUM = Decimal("0.98")
+MIN_COMPETITOR_SCORE = Decimal("45")
 
 
 @dataclass(frozen=True)
@@ -57,57 +63,67 @@ def evaluate_condition(
     )
     if prices is not None:
         p_yes, p_no = prices
-        size = global_rewards.pair_size(max_cost, p_yes, p_no, min_size, lot, max_contracts)
-        cost = size * (p_yes + p_no)
-        reward = global_rewards.expected_pair_reward_sec(yes_book, no_book, window, p_yes, p_no, size)
-        if size > Decimal("0") and (reward * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
-            surviving.append(
-                ConditionTarget(
-                    condition=cond,
-                    mode="two_sided",
-                    size=size,
-                    yes_price=p_yes,
-                    no_price=p_no,
-                    cost=cost,
-                    expected_reward_sec=reward,
+        comp_q = global_rewards.competitor_q(yes_book, no_book, window)
+        if (
+            p_yes >= PAIR_LEG_MIN_PRICE
+            and p_no >= PAIR_LEG_MIN_PRICE
+            and PAIR_MIN_PRICE_SUM <= (p_yes + p_no) <= PAIR_MAX_PRICE_SUM
+            and comp_q >= min(window.target_size, MIN_COMPETITOR_SCORE)
+        ):
+            size = global_rewards.pair_size(max_cost, p_yes, p_no, min_size, lot, max_contracts)
+            cost = size * (p_yes + p_no)
+            reward = global_rewards.expected_pair_reward_sec(yes_book, no_book, window, p_yes, p_no, size)
+            if size > Decimal("0") and (reward * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
+                surviving.append(
+                    ConditionTarget(
+                        condition=cond,
+                        mode="two_sided",
+                        size=size,
+                        yes_price=p_yes,
+                        no_price=p_no,
+                        cost=cost,
+                        expected_reward_sec=reward,
+                    )
                 )
-            )
 
-    p_yes = global_rewards.bid_price(yes_book, window, cond.yes.tick)
-    if p_yes is not None and p_yes > Decimal("0"):
-        size_yes = _single_size(max_cost, p_yes, min_size, lot, max_contracts)
-        cost_yes = size_yes * p_yes
-        reward_yes = global_rewards.expected_single_reward_sec(yes_book, no_book, window, p_yes, size_yes)
-        if size_yes > Decimal("0") and (reward_yes * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
-            surviving.append(
-                ConditionTarget(
-                    condition=cond,
-                    mode="yes_only",
-                    size=size_yes,
-                    yes_price=p_yes,
-                    no_price=None,
-                    cost=cost_yes,
-                    expected_reward_sec=reward_yes,
+    if pair_preference > Decimal("0"):
+        p_yes = global_rewards.bid_price(yes_book, window, cond.yes.tick)
+        opp_no_bid = next((lvl.price for lvl in no_book.bids if lvl.qty >= min_size), no_book.bids[0].price) if no_book.bids else Decimal("0")
+        if p_yes is not None and p_yes >= SINGLE_SIDED_MIN_PRICE and (p_yes + opp_no_bid) < Decimal("1"):
+            size_yes = _single_size(max_cost, p_yes, min_size, lot, max_contracts)
+            cost_yes = size_yes * p_yes
+            reward_yes = global_rewards.expected_single_reward_sec(yes_book, no_book, window, p_yes, size_yes)
+            if size_yes > Decimal("0") and (reward_yes * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
+                surviving.append(
+                    ConditionTarget(
+                        condition=cond,
+                        mode="yes_only",
+                        size=size_yes,
+                        yes_price=p_yes,
+                        no_price=None,
+                        cost=cost_yes,
+                        expected_reward_sec=reward_yes,
+                    )
                 )
-            )
 
-    p_no = global_rewards.bid_price(no_book, window, cond.no.tick)
-    if p_no is not None and p_no > Decimal("0"):
-        size_no = _single_size(max_cost, p_no, min_size, cond.no.min_qty, max_contracts)
-        cost_no = size_no * p_no
-        reward_no = global_rewards.expected_single_reward_sec(no_book, yes_book, window, p_no, size_no)
-        if size_no > Decimal("0") and (reward_no * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
-            surviving.append(
-                ConditionTarget(
-                    condition=cond,
-                    mode="no_only",
-                    size=size_no,
-                    yes_price=None,
-                    no_price=p_no,
-                    cost=cost_no,
-                    expected_reward_sec=reward_no,
+        p_no = global_rewards.bid_price(no_book, window, cond.no.tick)
+        opp_yes_bid = next((lvl.price for lvl in yes_book.bids if lvl.qty >= min_size), yes_book.bids[0].price) if yes_book.bids else Decimal("0")
+        if p_no is not None and p_no >= SINGLE_SIDED_MIN_PRICE and (p_no + opp_yes_bid) < Decimal("1"):
+            size_no = _single_size(max_cost, p_no, min_size, cond.no.min_qty, max_contracts)
+            cost_no = size_no * p_no
+            reward_no = global_rewards.expected_single_reward_sec(no_book, yes_book, window, p_no, size_no)
+            if size_no > Decimal("0") and (reward_no * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
+                surviving.append(
+                    ConditionTarget(
+                        condition=cond,
+                        mode="no_only",
+                        size=size_no,
+                        yes_price=None,
+                        no_price=p_no,
+                        cost=cost_no,
+                        expected_reward_sec=reward_no,
+                    )
                 )
-            )
 
     if not surviving:
         return None
@@ -140,6 +156,17 @@ def _rank_score(t: ConditionTarget, pair_preference: Decimal = Decimal("1.0")) -
     return t.expected_reward_sec / weight
 
 
+def _condition_held_cost(cond: ConditionMarket, positions: dict[str, Position] | None) -> Decimal:
+    if not positions:
+        return Decimal("0")
+    yes_pos = positions.get(cond.yes.slug)
+    no_pos = positions.get(cond.no.slug)
+    return (
+        (max(Decimal("0"), yes_pos.net_qty) * yes_pos.avg_price if yes_pos and yes_pos.avg_price > Decimal("0") else Decimal("0"))
+        + (max(Decimal("0"), no_pos.net_qty) * no_pos.avg_price if no_pos and no_pos.avg_price > Decimal("0") else Decimal("0"))
+    )
+
+
 def _waterfill_conditions(
     conditions: list[ConditionMarket],
     books: dict[str, Book],
@@ -148,9 +175,9 @@ def _waterfill_conditions(
     max_markets: int,
     max_contracts: Decimal,
     pair_preference: Decimal = Decimal("1.0"),
+    positions: dict[str, Position] | None = None,
 ) -> list[ConditionTarget]:
     max_cost = min(max_cost_per_condition, total_budget)
-    tiers = [t for t in WATERFILL_COST_TIERS if t < max_cost] + [max_cost]
 
     cond_curves: dict[str, list[ConditionTarget]] = {}
     unique_conditions: list[tuple[str, ConditionMarket]] = []
@@ -162,6 +189,10 @@ def _waterfill_conditions(
             continue
         if cond.yes.slug not in books or cond.no.slug not in books:
             continue
+        held_cost = _condition_held_cost(cond, positions)
+        cond_max_cost = max(Decimal("0"), max_cost - held_cost)
+        if cond_max_cost <= Decimal("0"):
+            continue
         seen_keys.add(key)
         unique_conditions.append((key, cond))
         yes_book = books[cond.yes.slug]
@@ -169,7 +200,8 @@ def _waterfill_conditions(
         pts: list[ConditionTarget] = []
         last_cost = Decimal("0")
         last_rew = Decimal("0")
-        for tier_cap in tiers:
+        cond_tiers = [t for t in WATERFILL_COST_TIERS if t < cond_max_cost] + [cond_max_cost]
+        for tier_cap in cond_tiers:
             t = evaluate_condition(
                 cond=cond,
                 yes_book=yes_book,
@@ -231,11 +263,15 @@ def _waterfill_conditions(
         for key, cond in unique_conditions:
             if key in active_keys:
                 continue
+            held_cost = _condition_held_cost(cond, positions)
+            cand_max = max(Decimal("0"), min(max_cost, remaining_budget) - held_cost)
+            if cand_max <= Decimal("0"):
+                continue
             resized = evaluate_condition(
                 cond=cond,
                 yes_book=books[cond.yes.slug],
                 no_book=books[cond.no.slug],
-                max_cost=min(max_cost, remaining_budget),
+                max_cost=cand_max,
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
             )
@@ -264,6 +300,7 @@ def allocate_conditions(
     max_markets: int,
     max_contracts: Decimal,
     pair_preference: Decimal = Decimal("1.0"),
+    positions: dict[str, Position] | None = None,
 ) -> list[ConditionTarget]:
     if total_budget >= WATERFILL_MIN_BUDGET and max_markets > 1:
         return _waterfill_conditions(
@@ -274,17 +311,22 @@ def allocate_conditions(
             max_markets=max_markets,
             max_contracts=max_contracts,
             pair_preference=pair_preference,
+            positions=positions,
         )
     max_cost = min(max_cost_per_condition, total_budget)
     candidates: list[ConditionTarget] = []
     for cond in conditions:
         if cond.yes.slug not in books or cond.no.slug not in books:
             continue
+        held_cost = _condition_held_cost(cond, positions)
+        cond_max_cost = max(Decimal("0"), max_cost - held_cost)
+        if cond_max_cost <= Decimal("0"):
+            continue
         target = evaluate_condition(
             cond=cond,
             yes_book=books[cond.yes.slug],
             no_book=books[cond.no.slug],
-            max_cost=max_cost,
+            max_cost=cond_max_cost,
             max_contracts=max_contracts,
             pair_preference=pair_preference,
         )
@@ -303,11 +345,15 @@ def allocate_conditions(
             remaining_budget -= target.cost
         else:
             cond = target.condition
+            held_cost = _condition_held_cost(cond, positions)
+            cond_rem_cap = max(Decimal("0"), min(max_cost_per_condition, remaining_budget) - held_cost)
+            if cond_rem_cap <= Decimal("0"):
+                continue
             resized = evaluate_condition(
                 cond=cond,
                 yes_book=books[cond.yes.slug],
                 no_book=books[cond.no.slug],
-                max_cost=min(max_cost_per_condition, remaining_budget),
+                max_cost=cond_rem_cap,
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
             )

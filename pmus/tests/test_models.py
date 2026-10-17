@@ -37,7 +37,7 @@ def test_settings_pair_preference(monkeypatch):
     from pmus.config import Settings
 
     s_default = Settings()
-    assert s_default.pair_preference == Decimal("1.0")
+    assert s_default.pair_preference == Decimal("0.0")
 
     monkeypatch.setenv("PMUS_PAIR_PREFERENCE", "0.85")
     s_env = Settings.from_env()

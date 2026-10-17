@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
 import logging
+import re
 import time
 from typing import Any
 import requests
@@ -22,6 +23,13 @@ logger = logging.getLogger("pmus.satellite")
 
 
 class SatelliteEngine:
+    TOXIC_SLUG_PATTERNS: tuple[str, ...] = (
+        "exact-score",
+        "spread-",
+        "updown",
+        "first-half-",
+    )
+
     def __init__(
         self,
         settings: Settings | None = None,
@@ -48,23 +56,72 @@ class SatelliteEngine:
         self.price_history_cache: dict[str, list[tuple[float, float]]] = {}
 
     @staticmethod
+    def is_toxic_archetype(market_slug: str) -> bool:
+        slug_low = (market_slug or "").lower()
+        return any(pat in slug_low for pat in SatelliteEngine.TOXIC_SLUG_PATTERNS)
+
+    @staticmethod
+    def extract_event_key(market_slug: str, market: dict[str, Any] | None = None) -> str:
+        if market:
+            evs = market.get("events") or []
+            if isinstance(evs, list) and evs and isinstance(evs[0], dict):
+                ev = evs[0]
+                if ev.get("parentEventId"):
+                    return f"parent:{ev['parentEventId']}"
+                if ev.get("gameId"):
+                    return f"game:{ev['gameId']}"
+        slug = (market_slug or "").strip().lower()
+        m = re.match(r"^([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-\d{4}-\d{2}-\d{2})", slug)
+        if m:
+            return m.group(1)
+        return re.sub(
+            r"-(total|team-total|spread|exact-score|more-markets|btts|first-half|handicap).*$",
+            "",
+            slug,
+        )
+
+    @staticmethod
+    def _parse_iso_dt(raw_val: Any) -> datetime | None:
+        if not raw_val:
+            return None
+        if isinstance(raw_val, datetime):
+            dt = raw_val
+        elif isinstance(raw_val, str):
+            try:
+                dt = datetime.fromisoformat(raw_val.replace("Z", "+00:00"))
+            except Exception:
+                return None
+        else:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    @staticmethod
     def check_gates(
         market: dict[str, Any],
         book: Book | dict[str, Any],
         price_history: list[tuple[float, float]] | None = None,
         current_time: datetime | None = None,
         require_heavy_favorite: bool = True,
+        min_ask_depth_usd: float = 15.0,
     ) -> tuple[bool, str]:
         """Microstructure Defense Filter:
+        0. Toxic archetype gate: reject exact-score, spread-, updown, first-half- on heavy favorites.
         1. Spread gate: best_ask - best_bid <= 0.025.
-        2. Depth floor: bid_depth_usd >= 250.0 and ask_depth_usd >= 15.0.
-        3. Price velocity: Price change in last 60s <= 0.02.
-        4. Expiry / APY gate & Horizon:
-           - If days to resolution <= 3: accept 0.940 <= best_ask <= 0.985
-           - If days to resolution <= 14: accept 0.960 <= best_ask <= 0.985 (with APY >= 20% if > 7d)
-           - If days to resolution > 14: reject unconditionally ("Resolution > 14 days exceeds horizon")
-        5. Price ceiling: Never buy above 0.985 (paying 0.99+ requires 100:1 win ratio).
+        2. Depth floor: near-touch bid_depth_usd (within 5c of best bid) >= 250.0 and executable ask_depth_usd >= min_ask_depth_usd.
+        3. Price velocity: Price change in last 180s <= 0.02.
+        4. Expiry / In-Play / Minimum Horizon & APY gate:
+           - Reject live in-play markets or past gameStartTime
+           - Require valid resolution timestamp with 2 hours <= time to resolution <= 14 days
+           - If days to resolution <= 3: accept 0.940 <= best_ask <= 0.975
+           - If days to resolution <= 14: accept 0.960 <= best_ask <= 0.975 (with APY >= 20% if > 7d)
+        5. Price ceiling: Never buy above 0.975 for heavy favorites (0.985 for parity legs).
         """
+        market_slug = str(market.get("slug") or "")
+        if require_heavy_favorite and SatelliteEngine.is_toxic_archetype(market_slug):
+            return False, f"Toxic market archetype rejected ({market_slug})"
+
         if isinstance(book, Book):
             bids = [(float(b.price), float(b.qty)) for b in book.bids]
             asks = [(float(a.price), float(a.qty)) for a in book.asks]
@@ -90,89 +147,91 @@ class SatelliteEngine:
         best_ask = asks[0][0]
 
         # Gate 5: Price ceiling
-        if best_ask > 0.985:
-            return False, f"Price {best_ask:.4f} > 0.985 ceiling"
+        ceiling = 0.975 if require_heavy_favorite else 0.985
+        if best_ask > ceiling:
+            return False, f"Price {best_ask:.4f} > {ceiling:.3f} ceiling"
 
         # Gate 1: Spread gate (calibrated <= 0.025)
         spread = best_ask - best_bid
         if round(spread, 6) > 0.025:
             return False, f"Spread {spread:.4f} > 0.025"
 
-        # Gate 2: Depth floor (bid >= $250.0, ask >= $15.0)
-        bid_depth_usd = sum(p * q for p, q in bids)
-        ask_depth_usd = sum(p * q for p, q in asks)
+        # Gate 2: Depth floor (near-touch bid >= $250.0, executable ask >= min_ask_depth_usd)
+        bid_depth_usd = sum(p * q for p, q in bids if p >= best_bid - 0.05)
+        ask_depth_usd = sum(p * q for p, q in asks if p <= ceiling)
         if round(bid_depth_usd, 2) < 250.0:
             return False, f"Bid depth ${bid_depth_usd:.2f} < $250.00"
-        if round(ask_depth_usd, 2) < 15.0:
-            return False, f"Ask depth ${ask_depth_usd:.2f} < $15.00"
+        if round(ask_depth_usd, 2) < min_ask_depth_usd:
+            return False, f"Ask depth ${ask_depth_usd:.2f} < ${min_ask_depth_usd:.2f}"
 
-        # Gate 3: Price velocity
+        # Gate 3: Price velocity (180s window)
         now_dt = current_time or datetime.now(timezone.utc)
         now_ts = now_dt.timestamp()
         if price_history:
-            recent_prices = [p for ts, p in price_history if now_ts - ts <= 60.0]
+            recent_prices = [p for ts, p in price_history if now_ts - ts <= 180.0]
             if recent_prices:
                 max_diff = max(abs(best_ask - p) for p in recent_prices)
                 if round(max_diff, 6) > 0.02:
-                    return False, f"Price velocity {max_diff:.4f} > 0.02 in last 60s"
+                    return False, f"Price velocity {max_diff:.4f} > 0.02 in last 180s"
 
-        # Gate 4: Expiry, Horizon & APY gate
+        # Gate 4: Expiry, In-Play, Minimum Horizon & APY gate
+        evs = market.get("events") or []
+        if isinstance(evs, list) and evs and isinstance(evs[0], dict) and evs[0].get("live") is True:
+            return False, "Market event is currently live in-play"
+
+        raw_start = market.get("gameStartTime") or market.get("eventStartTime")
+        start_dt = SatelliteEngine._parse_iso_dt(raw_start)
+        if start_dt is not None and now_dt >= start_dt:
+            return False, "Event gameStartTime already in the past (in-play)"
+
         raw_res = (
             market.get("endDate")
             or market.get("end_date_iso")
             or market.get("expected_resolution")
             or market.get("resolution_date")
         )
-        if raw_res:
-            res_dt = None
-            if isinstance(raw_res, datetime):
-                res_dt = raw_res
-            elif isinstance(raw_res, str):
-                try:
-                    iso_str = raw_res.replace("Z", "+00:00")
-                    res_dt = datetime.fromisoformat(iso_str)
-                except Exception:
-                    pass
+        if not raw_res:
+            return False, "Missing resolution timestamp"
 
-            if res_dt:
-                if res_dt.tzinfo is None:
-                    res_dt = res_dt.replace(tzinfo=timezone.utc)
-                days_to_res = (res_dt - now_dt).total_seconds() / 86400.0
+        res_dt = SatelliteEngine._parse_iso_dt(raw_res)
+        if res_dt is None:
+            return False, "Invalid resolution timestamp"
 
-                if days_to_res <= 0.0:
-                    return False, f"Resolution timestamp in the past ({days_to_res:.2f}d)"
+        days_to_res = (res_dt - now_dt).total_seconds() / 86400.0
 
-                # Unconditional rejection if > 14 days
-                if days_to_res > 14.0:
-                    return False, f"Resolution > 14 days ({days_to_res:.1f}d) exceeds horizon"
+        if days_to_res <= 0.0:
+            return False, f"Resolution timestamp in the past ({days_to_res:.2f}d)"
 
-                if require_heavy_favorite:
-                    if days_to_res <= 3.0:
-                        if not (0.940 <= best_ask <= 0.985):
-                            return False, f"Price {best_ask:.4f} outside short-dated band [0.940, 0.985]"
-                    elif days_to_res <= 14.0:
-                        if not (0.960 <= best_ask <= 0.985):
-                            return False, f"Price {best_ask:.4f} outside medium-dated band [0.960, 0.985]"
-                        if days_to_res > 7.0:
-                            if best_ask > 0:
-                                simple_yield = (1.0 - best_ask) / best_ask
-                                annualized_yield = simple_yield * (365.0 / days_to_res)
-                            else:
-                                annualized_yield = 0.0
-                            if round(annualized_yield, 4) < 0.20:
-                                return False, f"Resolution > 7 days ({days_to_res:.1f}d) and APY {annualized_yield*100:.1f}% < 20%"
+        if days_to_res < (2.0 / 24.0):
+            return False, f"Resolution < 2.0h away ({days_to_res * 24.0:.2f}h) in high-gamma window"
+
+        if days_to_res > 14.0:
+            return False, f"Resolution > 14 days ({days_to_res:.1f}d) exceeds horizon"
+
+        if require_heavy_favorite:
+            if days_to_res <= 3.0:
+                if not (0.940 <= best_ask <= 0.975):
+                    return False, f"Price {best_ask:.4f} outside short-dated band [0.940, 0.975]"
+            elif days_to_res <= 14.0:
+                if not (0.960 <= best_ask <= 0.975):
+                    return False, f"Price {best_ask:.4f} outside medium-dated band [0.960, 0.975]"
+                if days_to_res > 7.0:
+                    if best_ask > 0:
+                        simple_yield = (1.0 - best_ask) / best_ask
+                        annualized_yield = simple_yield * (365.0 / days_to_res)
+                    else:
+                        annualized_yield = 0.0
+                    if round(annualized_yield, 4) < 0.20:
+                        return False, f"Resolution > 7 days ({days_to_res:.1f}d) and APY {annualized_yield*100:.1f}% < 20%"
+        else:
+            if days_to_res > 7.0:
+                if best_ask > 0:
+                    simple_yield = (1.0 - best_ask) / best_ask
+                    annualized_yield = simple_yield * (365.0 / days_to_res)
                 else:
-                    if days_to_res > 7.0:
-                        if best_ask > 0:
-                            simple_yield = (1.0 - best_ask) / best_ask
-                            annualized_yield = simple_yield * (365.0 / days_to_res)
-                        else:
-                            annualized_yield = 0.0
-                            if round(annualized_yield, 4) < 0.20:
-                                return False, f"Resolution > 7 days ({days_to_res:.1f}d) and APY {annualized_yield*100:.1f}% < 20%"
-        elif require_heavy_favorite:
-            if not (0.960 <= best_ask <= 0.985):
-                return False, f"Price {best_ask:.4f} outside medium-dated band [0.960, 0.985]"
+                    annualized_yield = 0.0
+                if round(annualized_yield, 4) < 0.20:
+                    return False, f"Resolution > 7 days ({days_to_res:.1f}d) and APY {annualized_yield*100:.1f}% < 20%"
 
         return True, "All microstructure gates passed"
 
@@ -185,14 +244,14 @@ class SatelliteEngine:
 
             slices = [
                 # Volume slices (offsets: 0, 100, 200)
-                {"order": "volume24hr", "descending": "true", "limit": limit, "offset": 0, "active": "true", "closed": "false"},
-                {"order": "volume24hr", "descending": "true", "limit": limit, "offset": 100, "active": "true", "closed": "false"},
-                {"order": "volume24hr", "descending": "true", "limit": limit, "offset": 200, "active": "true", "closed": "false"},
+                {"order": "volume24hr", "ascending": "false", "limit": limit, "offset": 0, "active": "true", "closed": "false"},
+                {"order": "volume24hr", "ascending": "false", "limit": limit, "offset": 100, "active": "true", "closed": "false"},
+                {"order": "volume24hr", "ascending": "false", "limit": limit, "offset": 200, "active": "true", "closed": "false"},
                 # Liquidity slices (offsets: 0, 100)
-                {"order": "liquidity", "descending": "true", "limit": limit, "offset": 0, "active": "true", "closed": "false"},
-                {"order": "liquidity", "descending": "true", "limit": limit, "offset": 100, "active": "true", "closed": "false"},
+                {"order": "liquidity", "ascending": "false", "limit": limit, "offset": 0, "active": "true", "closed": "false"},
+                {"order": "liquidity", "ascending": "false", "limit": limit, "offset": 100, "active": "true", "closed": "false"},
                 # Short expiring slice (<= 3 days)
-                {"order": "volume24hr", "descending": "true", "limit": limit, "active": "true", "closed": "false", "end_date_min": now_iso, "end_date_max": short_max_iso},
+                {"order": "volume24hr", "ascending": "false", "limit": limit, "active": "true", "closed": "false", "end_date_min": now_iso, "end_date_max": short_max_iso},
             ]
 
             def _fetch_slice(params: dict[str, Any]) -> list[dict[str, Any]]:
@@ -273,8 +332,9 @@ class SatelliteEngine:
             self.logger.info(f"Max open positions reached ({len(open_trades)}/{self.max_open_positions}). Skipping scan.")
             return []
 
+        realized_pnl = float(self.ledger.get_performance_summary().get("total_pnl", 0.0))
         allocated_capital = sum(float(t["size_usd"]) for t in open_trades)
-        available_cash = max(0.0, self.bankroll_usd - allocated_capital)
+        available_cash = max(0.0, self.bankroll_usd + realized_pnl - allocated_capital)
         order_size = order_size_usd if order_size_usd is not None else self.order_size_usd
 
         if available_cash < order_size:
@@ -283,20 +343,26 @@ class SatelliteEngine:
 
         open_tokens = {str(t["token_id"]) for t in open_trades}
         slug_counts: dict[str, int] = {}
+        event_counts: dict[str, int] = {}
         for t in open_trades:
             s = str(t.get("market_slug", ""))
             slug_counts[s] = slug_counts.get(s, 0) + 1
+            ek = self.extract_event_key(s)
+            if ek:
+                event_counts[ek] = event_counts.get(ek, 0) + 1
 
         # 1. Pre-filter candidate tokens across markets using indicative Gamma price
-        # Candidate tokens must satisfy: 0.935 <= gamma_px <= 0.985
+        # Candidate tokens must satisfy: 0.935 <= gamma_px <= 0.975
         candidates: list[tuple[dict[str, Any], str, str, float]] = []
 
         for m in markets:
-            cond_id = str(m.get("conditionId") or m.get("condition_id") or "")
             market_slug = str(m.get("slug") or "")
-            question = str(m.get("question") or "")
-
-            if slug_counts.get(market_slug, 0) >= 4:
+            if self.is_toxic_archetype(market_slug):
+                continue
+            if slug_counts.get(market_slug, 0) >= 1:
+                continue
+            event_key = self.extract_event_key(market_slug, m)
+            if event_key and event_counts.get(event_key, 0) >= 1:
                 continue
 
             # Parse clobTokenIds and outcomePrices
@@ -353,8 +419,7 @@ class SatelliteEngine:
             for tok_id, outcome, gamma_px in tokens_to_eval:
                 if not tok_id or tok_id in open_tokens:
                     continue
-                # Pre-filter band: 0.935 <= gamma_px <= 0.985
-                if 0.935 <= gamma_px <= 0.985:
+                if 0.935 <= gamma_px <= 0.975:
                     candidates.append((m, tok_id, outcome, gamma_px))
 
         if not candidates:
@@ -386,14 +451,30 @@ class SatelliteEngine:
                 continue
 
             market_slug = str(m.get("slug") or "")
-            if slug_counts.get(market_slug, 0) >= 4:
+            if self.is_toxic_archetype(market_slug):
+                continue
+            if slug_counts.get(market_slug, 0) >= 1:
+                continue
+            event_key = self.extract_event_key(market_slug, m)
+            if event_key and event_counts.get(event_key, 0) >= 1:
                 continue
 
             best_ask = float(book.asks[0].price)
+            top_ask_usd = best_ask * float(book.asks[0].qty)
+            if round(top_ask_usd, 2) < min(15.0, order_size):
+                self.logger.debug(f"Rejected {market_slug} ({outcome}): Insufficient top-of-book ask liquidity (${top_ask_usd:.2f})")
+                continue
+
             self._record_price_history(tok_id, best_ask)
 
             history = self.price_history_cache.get(tok_id)
-            ok, reason = self.check_gates(m, book, price_history=history, require_heavy_favorite=True)
+            ok, reason = self.check_gates(
+                m,
+                book,
+                price_history=history,
+                require_heavy_favorite=True,
+                min_ask_depth_usd=max(15.0, order_size),
+            )
             if ok:
                 cond_id = str(m.get("conditionId") or m.get("condition_id") or "")
                 question = str(m.get("question") or "")
@@ -420,6 +501,8 @@ class SatelliteEngine:
                 available_cash -= order_size
                 current_open_count += 1
                 slug_counts[market_slug] = slug_counts.get(market_slug, 0) + 1
+                if event_key:
+                    event_counts[event_key] = event_counts.get(event_key, 0) + 1
                 self.logger.info(
                     f"Entered heavy favorite trade {trade_id} on {market_slug} ({outcome}) @ {best_ask:.4f} "
                     f"| Remaining Cash: ${available_cash:.2f}"
@@ -433,13 +516,14 @@ class SatelliteEngine:
         open_trades = self.ledger.get_open_trades()
         if len(open_trades) >= self.max_open_positions:
             return []
+        realized_pnl = float(self.ledger.get_performance_summary().get("total_pnl", 0.0))
         allocated_capital = sum(float(t["size_usd"]) for t in open_trades)
-        available_cash = max(0.0, self.bankroll_usd - allocated_capital)
+        available_cash = max(0.0, self.bankroll_usd + realized_pnl - allocated_capital)
         if available_cash < order_size_usd * 2:
             return []
 
         open_tokens = {str(t["token_id"]) for t in open_trades}
-        entered_ids = []
+        entered_ids: list[int] = []
 
         for m in markets:
             cond_id = str(m.get("conditionId") or m.get("condition_id") or "")
@@ -475,6 +559,11 @@ class SatelliteEngine:
             if len(tokens_list) < 2:
                 continue
 
+            if any(tok_id in open_tokens for tok_id, _ in tokens_list):
+                continue
+            if len(open_trades) + len(entered_ids) + len(tokens_list) > self.max_open_positions:
+                continue
+
             raw_op = m.get("outcomePrices")
             if raw_op is not None:
                 if isinstance(raw_op, str):
@@ -489,7 +578,7 @@ class SatelliteEngine:
                         parsed_prices = []
                     if len(parsed_prices) >= 2:
                         sum_op = sum(parsed_prices)
-                        if sum_op >= 1.01 or sum_op <= 0.0:
+                        if sum_op >= 0.995 or sum_op <= 0.0:
                             continue
 
             # Fetch books for all outcomes
@@ -504,14 +593,31 @@ class SatelliteEngine:
                 continue
 
             sum_asks = sum(float(books[tok_id].asks[0].price) for tok_id, _ in tokens_list)
-            if round(sum_asks, 6) < 1.00:
-                # Check gates for each leg (ignoring the 0.985 ceiling on low-price legs)
+            if round(sum_asks, 6) <= 0.990:
+                max_ask_px = max(float(books[tok_id].asks[0].price) for tok_id, _ in tokens_list)
+                if max_ask_px <= 0.0:
+                    continue
+                target_shares = round(order_size_usd / max_ask_px, 4)
+                total_set_cost = sum(
+                    round(target_shares * float(books[tok_id].asks[0].price), 4)
+                    for tok_id, _ in tokens_list
+                )
+                if total_set_cost > available_cash:
+                    continue
+
+                # Check gates for each leg
                 all_passed = True
                 for tok_id, _ in tokens_list:
                     b = books[tok_id]
-                    self._record_price_history(tok_id, float(b.asks[0].price))
+                    leg_ask_px = float(b.asks[0].price)
+                    leg_cost = round(target_shares * leg_ask_px, 4)
+                    self._record_price_history(tok_id, leg_ask_px)
                     ok, _ = self.check_gates(
-                        m, b, price_history=self.price_history_cache.get(tok_id), require_heavy_favorite=False
+                        m,
+                        b,
+                        price_history=self.price_history_cache.get(tok_id),
+                        require_heavy_favorite=False,
+                        min_ask_depth_usd=max(15.0, leg_cost),
                     )
                     if not ok:
                         all_passed = False
@@ -520,10 +626,8 @@ class SatelliteEngine:
                 if all_passed:
                     exp_res = str(m.get("endDate") or m.get("end_date_iso") or "")
                     for tok_id, out_name in tokens_list:
-                        if tok_id in open_tokens:
-                            continue
                         ask_px = float(books[tok_id].asks[0].price)
-                        shares = round(order_size_usd / ask_px, 4)
+                        leg_size_usd = round(target_shares * ask_px, 4)
                         tid = self.ledger.record_entry(
                             trade_mode=self.trade_mode,
                             strategy_type="parity_arb",
@@ -534,127 +638,183 @@ class SatelliteEngine:
                             outcome=out_name,
                             side="BUY",
                             entry_price=ask_px,
-                            size_usd=order_size_usd,
-                            shares=shares,
+                            size_usd=leg_size_usd,
+                            shares=target_shares,
                             expected_resolution=exp_res,
                             status="FILLED",
                             notes=f"Parity Arb sum_asks={sum_asks:.4f}",
                         )
                         open_tokens.add(tok_id)
                         entered_ids.append(tid)
+                        available_cash -= leg_size_usd
                     self.logger.info(f"Entered Parity Arb set on {market_slug}: sum_asks={sum_asks:.4f}")
 
         return entered_ids
 
-    def monitor_positions(self) -> None:
-        open_trades = self.ledger.get_open_trades()
-        if not open_trades:
-            return
+    def _check_and_record_resolution(self, t: dict[str, Any]) -> bool:
+        trade_id = t["id"]
+        tok_id = str(t["token_id"])
+        market_slug = t["market_slug"]
+        outcome = t["outcome"]
 
-        for t in open_trades:
-            trade_id = t["id"]
-            tok_id = str(t["token_id"])
-            market_slug = t["market_slug"]
-            outcome = t["outcome"]
-
-            # 1. Secondary CLOB Exit check: Lowered to 0.990
-            try:
-                book = self.fetch_book(tok_id)
-                if book.bids:
-                    best_bid = float(book.bids[0].price)
-                    if best_bid >= 0.990:
-                        self.ledger.record_clob_exit(
-                            trade_id=trade_id,
-                            exit_price=best_bid,
-                            notes=f"Secondary CLOB exit @ {best_bid:.4f} >= 0.990",
-                        )
-                        self.logger.info(f"Secondary CLOB exit executed for trade {trade_id} @ {best_bid:.4f}")
-                        continue
-            except Exception as e:
-                self.logger.debug(f"Could not fetch book for trade {trade_id}: {e}")
-
-            # 2. Resolution check via Gamma API: Map clobTokenIds to outcomePrices
-            try:
-                settled_px = None
-                url = f"{self.gamma_url}/markets"
-                resp = requests.get(url, params={"slug": market_slug}, timeout=10.0)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    m_data = data[0] if (isinstance(data, list) and data) else (data if isinstance(data, dict) else None)
-                    if m_data and (m_data.get("closed") or m_data.get("resolved")):
-                        clob_ids = m_data.get("clobTokenIds")
-                        if isinstance(clob_ids, str):
-                            try:
-                                clob_ids = json.loads(clob_ids)
-                            except Exception:
-                                clob_ids = []
-                        if not isinstance(clob_ids, list):
+        try:
+            settled_px: float | None = None
+            url = f"{self.gamma_url}/markets"
+            resp = requests.get(url, params={"slug": market_slug}, timeout=10.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                m_data = data[0] if (isinstance(data, list) and data) else (data if isinstance(data, dict) else None)
+                if m_data and (m_data.get("closed") or m_data.get("resolved")):
+                    clob_ids = m_data.get("clobTokenIds")
+                    if isinstance(clob_ids, str):
+                        try:
+                            clob_ids = json.loads(clob_ids)
+                        except Exception:
                             clob_ids = []
+                    if not isinstance(clob_ids, list):
+                        clob_ids = []
 
-                        outcome_prices = m_data.get("outcomePrices")
-                        if isinstance(outcome_prices, str):
-                            try:
-                                outcome_prices = json.loads(outcome_prices)
-                            except Exception:
-                                outcome_prices = []
-                        if not isinstance(outcome_prices, list):
+                    outcome_prices = m_data.get("outcomePrices")
+                    if isinstance(outcome_prices, str):
+                        try:
+                            outcome_prices = json.loads(outcome_prices)
+                        except Exception:
                             outcome_prices = []
+                    if not isinstance(outcome_prices, list):
+                        outcome_prices = []
 
-                        for idx, cid in enumerate(clob_ids):
-                            if str(cid) == tok_id:
-                                if idx < len(outcome_prices):
-                                    try:
-                                        settled_px = float(outcome_prices[idx])
-                                    except (ValueError, TypeError):
-                                        settled_px = None
-                                break
+                    for idx, cid in enumerate(clob_ids):
+                        if str(cid) == tok_id:
+                            if idx < len(outcome_prices):
+                                try:
+                                    settled_px = float(outcome_prices[idx])
+                                except (ValueError, TypeError):
+                                    settled_px = None
+                            break
 
-                        # Fallback to tokens array if clobTokenIds mapping did not find settled_px
-                        if settled_px is None:
-                            raw_tokens = m_data.get("tokens") or []
-                            if isinstance(raw_tokens, list):
-                                for tok in raw_tokens:
-                                    if isinstance(tok, dict) and str(tok.get("token_id")) == tok_id:
-                                        if tok.get("winner") is True:
-                                            settled_px = 1.0
-                                        elif tok.get("winner") is False:
-                                            settled_px = 0.0
-                                        else:
-                                            try:
-                                                settled_px = float(tok.get("price") or 0.0)
-                                            except (ValueError, TypeError):
-                                                settled_px = None
-                                        break
-
-                if settled_px is None and t.get("condition_id"):
-                    clob_m_url = f"{self.clob_url}/markets/{t['condition_id']}"
-                    c_resp = requests.get(clob_m_url, timeout=10.0)
-                    if c_resp.status_code == 200:
-                        c_data = c_resp.json()
-                        if isinstance(c_data, dict) and (
-                            c_data.get("closed")
-                            or c_data.get("resolved")
-                            or any(isinstance(tok, dict) and tok.get("winner") is True for tok in (c_data.get("tokens") or []))
-                        ):
-                            for tok in (c_data.get("tokens") or []):
+                    # Fallback to tokens array if clobTokenIds mapping did not find settled_px
+                    if settled_px is None:
+                        raw_tokens = m_data.get("tokens") or []
+                        if isinstance(raw_tokens, list):
+                            for tok in raw_tokens:
                                 if isinstance(tok, dict) and str(tok.get("token_id")) == tok_id:
                                     if tok.get("winner") is True:
                                         settled_px = 1.0
                                     elif tok.get("winner") is False:
                                         settled_px = 0.0
                                     elif tok.get("price") is not None:
-                                        settled_px = float(tok.get("price"))
+                                        try:
+                                            settled_px = float(tok.get("price"))
+                                        except (ValueError, TypeError):
+                                            settled_px = None
                                     break
 
-                if settled_px is not None:
-                    if settled_px >= 0.99:
-                        self.ledger.record_resolution(trade_id, outcome_won=True, payout_per_share=1.0, notes="Gamma resolved WIN")
-                        self.logger.info(f"Trade {trade_id} ({outcome}) resolved WIN @ $1.00/share")
-                    elif settled_px <= 0.01:
-                        self.ledger.record_resolution(trade_id, outcome_won=False, payout_per_share=0.0, notes="Gamma resolved LOSS")
-                        self.logger.error(f"Trade {trade_id} ({outcome}) resolved LOSS @ $0.00/share")
-            except Exception as e:
-                self.logger.debug(f"Could not check resolution for trade {trade_id}: {e}")
+            if settled_px is None and t.get("condition_id"):
+                clob_m_url = f"{self.clob_url}/markets/{t['condition_id']}"
+                c_resp = requests.get(clob_m_url, timeout=10.0)
+                if c_resp.status_code == 200:
+                    c_data = c_resp.json()
+                    if isinstance(c_data, dict) and (
+                        c_data.get("closed")
+                        or c_data.get("resolved")
+                        or any(isinstance(tok, dict) and tok.get("winner") is True for tok in (c_data.get("tokens") or []))
+                    ):
+                        for tok in (c_data.get("tokens") or []):
+                            if isinstance(tok, dict) and str(tok.get("token_id")) == tok_id:
+                                if tok.get("winner") is True:
+                                    settled_px = 1.0
+                                elif tok.get("winner") is False:
+                                    settled_px = 0.0
+                                elif tok.get("price") is not None:
+                                    try:
+                                        settled_px = float(tok.get("price"))
+                                    except (ValueError, TypeError):
+                                        settled_px = None
+                                break
+
+            if settled_px is not None:
+                if settled_px >= 0.99:
+                    self.ledger.record_resolution(trade_id, outcome_won=True, payout_per_share=1.0, notes="Gamma resolved WIN")
+                    self.logger.info(f"Trade {trade_id} ({outcome}) resolved WIN @ $1.00/share")
+                    return True
+                if settled_px <= 0.01:
+                    self.ledger.record_resolution(trade_id, outcome_won=False, payout_per_share=0.0, notes="Gamma resolved LOSS")
+                    self.logger.error(f"Trade {trade_id} ({outcome}) resolved LOSS @ $0.00/share")
+                    return True
+                if 0.01 < settled_px < 0.99:
+                    entry_px = float(t["entry_price"])
+                    self.ledger.record_resolution(
+                        trade_id,
+                        outcome_won=(settled_px >= entry_px),
+                        payout_per_share=settled_px,
+                        notes=f"Market resolved VOID/SPLIT @ ${settled_px:.4f}/share",
+                    )
+                    self.logger.warning(f"Trade {trade_id} ({outcome}) resolved VOID/SPLIT @ ${settled_px:.4f}/share")
+                    return True
+        except Exception as e:
+            self.logger.debug(f"Could not check resolution for trade {trade_id}: {e}")
+
+        return False
+
+    def monitor_positions(self) -> None:
+        open_trades = self.ledger.get_open_trades()
+        if not open_trades:
+            return
+
+        now_dt = datetime.now(timezone.utc)
+
+        for t in open_trades:
+            trade_id = t["id"]
+            tok_id = str(t["token_id"])
+            res_dt = self._parse_iso_dt(t.get("expected_resolution"))
+            is_past_expiry = res_dt is not None and now_dt >= res_dt
+
+            # 1. If past expected resolution, check official resolution first so $1.00 winners aren't sold at 0.990
+            if is_past_expiry and self._check_and_record_resolution(t):
+                continue
+
+            # 2. Secondary CLOB Exit / Stop-Loss / Overdue Unwind (skip individual leg exits on parity_arb)
+            if t.get("strategy_type") != "parity_arb":
+                try:
+                    book = self.fetch_book(tok_id)
+                    if book.bids:
+                        best_bid = float(book.bids[0].price)
+                        best_bid_qty = float(book.bids[0].qty)
+                        shares = float(t["shares"])
+                        entry_px = float(t["entry_price"])
+
+                        if best_bid >= 0.990 and best_bid_qty >= min(5.0, shares * 0.25):
+                            self.ledger.record_clob_exit(
+                                trade_id=trade_id,
+                                exit_price=best_bid,
+                                notes=f"Secondary CLOB exit @ {best_bid:.4f} >= 0.990",
+                            )
+                            self.logger.info(f"Secondary CLOB exit executed for trade {trade_id} @ {best_bid:.4f}")
+                            continue
+
+                        if 0.05 <= best_bid <= min(0.88, entry_px - 0.06):
+                            self.ledger.record_clob_exit(
+                                trade_id=trade_id,
+                                exit_price=best_bid,
+                                notes=f"Stop-loss CLOB unwind @ {best_bid:.4f}",
+                            )
+                            self.logger.warning(f"Stop-loss CLOB unwind executed for trade {trade_id} @ {best_bid:.4f}")
+                            continue
+
+                        if res_dt is not None and (now_dt - res_dt).total_seconds() > 36 * 3600 and best_bid > 0.01:
+                            self.ledger.record_clob_exit(
+                                trade_id=trade_id,
+                                exit_price=best_bid,
+                                notes=f"Overdue >36h CLOB unwind @ {best_bid:.4f}",
+                            )
+                            self.logger.warning(f"Overdue >36h CLOB unwind executed for trade {trade_id} @ {best_bid:.4f}")
+                            continue
+                except Exception as e:
+                    self.logger.debug(f"Could not fetch book for trade {trade_id}: {e}")
+
+            # 3. Resolution check for trades not yet past expected_resolution
+            if not is_past_expiry:
+                self._check_and_record_resolution(t)
 
     def run_once(self) -> dict[str, Any]:
         self.monitor_positions()
@@ -691,9 +851,11 @@ class SatelliteEngine:
         cb_status = f"ACTIVE ({rem_hours:.1f} hours remaining)" if cb_active else "Disabled (Continuous Sampling)"
 
         open_trades = ledger.get_open_trades()
+        realized_pnl = float(summary.get("total_pnl", 0.0))
+        effective_bankroll = bankroll_usd + realized_pnl
         allocated_capital = sum(float(t["size_usd"]) for t in open_trades)
-        available_cash = max(0.0, bankroll_usd - allocated_capital)
-        utilization_pct = (allocated_capital / bankroll_usd * 100.0) if bankroll_usd > 0 else 0.0
+        available_cash = max(0.0, effective_bankroll - allocated_capital)
+        utilization_pct = (allocated_capital / effective_bankroll * 100.0) if effective_bankroll > 0 else 0.0
 
         lines = [
             "=" * 55,

@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 
 from pmus.models import Book, IncentiveWindow, Level, Market, Position, Quote
+from pmus.strategy import global_rewards
 from pmus.strategy.lip_quoter import desired_quotes
 
 @pytest.fixture
@@ -393,7 +394,7 @@ def test_global_long_inventory_unwinds(base_market):
     ask_q = next((q for q in quotes if q.side == "SELL_LONG"), None)
     assert ask_q is not None
     assert ask_q.qty == Decimal("50")
-    assert ask_q.price == Decimal("0.060")
+    assert ask_q.price == Decimal("0.059")
 
 
 def test_quoter_paired_bids_in_tail_market(base_market):
@@ -439,7 +440,7 @@ def test_quoter_paired_bids_in_tail_market(base_market):
     assert quotes_paired[0].qty == Decimal("100")
 
 
-def test_quoter_paired_stops_bidding_and_emits_no_sell_long(base_market):
+def test_quoter_paired_stops_bidding_and_emits_sell_long_unwind(base_market):
     win = IncentiveWindow(
         slug="mkt-tail",
         program_id="p-tail",
@@ -465,7 +466,9 @@ def test_quoter_paired_stops_bidding_and_emits_no_sell_long(base_market):
         paired=True,
         quote_size=Decimal("100"),
     )
-    assert quotes_filled == []
+    assert quotes_filled == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.059"), qty=Decimal("100"))
+    ]
 
     quotes_overfilled = desired_quotes(
         market=base_market,
@@ -477,7 +480,9 @@ def test_quoter_paired_stops_bidding_and_emits_no_sell_long(base_market):
         paired=True,
         quote_size=Decimal("100"),
     )
-    assert quotes_overfilled == []
+    assert quotes_overfilled == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.059"), qty=Decimal("150"))
+    ]
 
 
 def test_quoter_non_paired_uses_quote_size(base_market):
@@ -538,6 +543,29 @@ def test_paired_partial_fill_quotes_remaining_when_eligible(base_market):
     asks = (Level(Decimal("0.520"), Decimal("500")),)
     book = Book(slug="mkt-pair", bids=bids, asks=asks, ts_ms=1000)
 
+    market_sub_min = Market(
+        slug=base_market.slug,
+        event_id=base_market.event_id,
+        category=base_market.category,
+        tick=base_market.tick,
+        min_qty=Decimal("50"),
+        active=base_market.active,
+        mutually_exclusive=base_market.mutually_exclusive,
+    )
+    quotes_sub_min = desired_quotes(
+        market=market_sub_min,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-pair", net_qty=Decimal("30"), avg_price=Decimal("0.480")),
+        budget=Decimal("100.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert quotes_sub_min == [
+        Quote(slug=base_market.slug, side="BUY_LONG", price=Decimal("0.480"), qty=Decimal("70"))
+    ]
+
     quotes_partial = desired_quotes(
         market=base_market,
         book=book,
@@ -548,9 +576,9 @@ def test_paired_partial_fill_quotes_remaining_when_eligible(base_market):
         paired=True,
         quote_size=Decimal("100"),
     )
-    assert len(quotes_partial) == 1
-    assert quotes_partial[0].side == "BUY_LONG"
-    assert quotes_partial[0].qty == Decimal("70")
+    assert quotes_partial == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.519"), qty=Decimal("30"))
+    ]
 
     quotes_insufficient = desired_quotes(
         market=base_market,
@@ -562,7 +590,9 @@ def test_paired_partial_fill_quotes_remaining_when_eligible(base_market):
         paired=True,
         quote_size=Decimal("100"),
     )
-    assert quotes_insufficient == []
+    assert quotes_insufficient == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.519"), qty=Decimal("70"))
+    ]
 
     quotes_exact = desired_quotes(
         market=base_market,
@@ -574,7 +604,9 @@ def test_paired_partial_fill_quotes_remaining_when_eligible(base_market):
         paired=True,
         quote_size=Decimal("100"),
     )
-    assert quotes_exact == []
+    assert quotes_exact == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.519"), qty=Decimal("100"))
+    ]
 
     quotes_over = desired_quotes(
         market=base_market,
@@ -586,7 +618,9 @@ def test_paired_partial_fill_quotes_remaining_when_eligible(base_market):
         paired=True,
         quote_size=Decimal("100"),
     )
-    assert quotes_over == []
+    assert quotes_over == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.519"), qty=Decimal("120"))
+    ]
 
 
 def test_quoter_non_paired_steps_down_qty_on_upward_price_drift_within_budget(base_market):
@@ -671,3 +705,565 @@ def test_global_non_paired_inventory_unwinds_at_breakeven_floor_and_on_wide_spre
     assert quotes_wide == [
         Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.261"), qty=Decimal("200"))
     ]
+
+
+def test_global_adverse_selection_freeze_blocks_buy_long_paired(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug="mkt-global",
+        bids=(Level(Decimal("0.180"), Decimal("500")),),
+        asks=(Level(Decimal("0.190"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("100"), avg_price=Decimal("0.200")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("200"),
+    )
+    assert not any(q.side == "BUY_LONG" for q in quotes)
+
+
+def test_global_adverse_selection_freeze_single_sided_preserves_unwind(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug="mkt-global",
+        bids=(Level(Decimal("0.180"), Decimal("500")),),
+        asks=(Level(Decimal("0.190"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("100"), avg_price=Decimal("0.200")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=False,
+        quote_size=Decimal("200"),
+    )
+    assert not any(q.side == "BUY_LONG" for q in quotes)
+    sell_q = next(q for q in quotes if q.side == "SELL_LONG")
+    assert sell_q.qty == Decimal("100")
+    assert sell_q.price >= Decimal("0.200")
+
+
+def test_global_inventory_budget_cap_blocks_buy_long(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug="mkt-global",
+        bids=(Level(Decimal("0.210"), Decimal("500")),),
+        asks=(Level(Decimal("0.220"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    quotes_paired = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("275"), avg_price=Decimal("0.200")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("350"),
+    )
+    assert not any(q.side == "BUY_LONG" for q in quotes_paired)
+
+    quotes_single = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("275"), avg_price=Decimal("0.200")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=False,
+        quote_size=Decimal("350"),
+    )
+    assert not any(q.side == "BUY_LONG" for q in quotes_single)
+
+
+def test_global_single_sided_caps_bid_qty_to_avail_budget(base_market):
+    win = IncentiveWindow(
+        slug="mkt-global",
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug="mkt-global",
+        bids=(Level(Decimal("0.200"), Decimal("500")),),
+        asks=(Level(Decimal("0.210"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-global", net_qty=Decimal("150"), avg_price=Decimal("0.200")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=False,
+        quote_size=Decimal("300"),
+    )
+    buy_q = next(q for q in quotes if q.side == "BUY_LONG")
+    assert buy_q.price == Decimal("0.200")
+    assert buy_q.qty == Decimal("125")
+    assert buy_q.qty * buy_q.price <= Decimal("25.00")
+
+
+def test_global_underwater_non_scoring_position_quotes_scoring_ask(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("60"),
+        max_spread=Decimal("0.065"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.082"), Decimal("500")),),
+        asks=(Level(Decimal("0.122"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("535"), avg_price=Decimal("0.184")),
+        budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    )
+    assert quotes == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.122"), qty=Decimal("535"))]
+    mid = global_rewards.adjusted_mid(book, win.target_size)
+    assert mid is not None
+    assert global_rewards.order_score(win.max_spread, abs(Decimal("0.122") - mid), Decimal("535")) > Decimal("0")
+
+
+def test_global_underwater_non_scoring_caps_at_max_scoring_ask_when_spread_wide(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.035"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.080"), Decimal("100")),),
+        asks=(Level(Decimal("0.160"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("100"), avg_price=Decimal("0.220")),
+        budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    )
+    sell_q = next(q for q in quotes if q.side == "SELL_LONG")
+    assert sell_q.price == Decimal("0.154")
+    assert sell_q.qty == Decimal("100")
+    mid = global_rewards.adjusted_mid(book, win.target_size)
+    assert mid == Decimal("0.120")
+    assert sell_q.price < mid + win.max_spread
+    assert global_rewards.order_score(win.max_spread, abs(sell_q.price - mid), sell_q.qty) > Decimal("0")
+
+
+def test_global_underwater_non_scoring_refuses_penny_chase_below_reward_band_floor(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("100.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("60"),
+        max_spread=Decimal("0.065"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.082"), Decimal("5.01")), Level(Decimal("0.081"), Decimal("60"))),
+        asks=(Level(Decimal("0.114"), Decimal("600")), Level(Decimal("0.123"), Decimal("393.25"))),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("535"), avg_price=Decimal("0.184")),
+        budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    )
+    assert quotes == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.123"), qty=Decimal("535"))]
+
+
+def test_global_within_budget_position_holds_breakeven_instead_of_underwater_unwind(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.040"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.600"), Decimal("100")),),
+        asks=(Level(Decimal("0.680"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("55"), avg_price=Decimal("0.740")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=False,
+    )
+    sell_q = next(q for q in quotes if q.side == "SELL_LONG")
+    assert sell_q.price == Decimal("0.740")
+    assert sell_q.qty == Decimal("55")
+
+
+def test_global_underwater_non_scoring_enforces_loss_floor_when_mid_below_reward_band(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("100"),
+        max_spread=Decimal("0.065"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.055"), Decimal("380")),),
+        asks=(Level(Decimal("0.091"), Decimal("130")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("535"), avg_price=Decimal("0.184")),
+        budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    )
+    sell_q = next(q for q in quotes if q.side == "SELL_LONG")
+    assert sell_q.price >= Decimal("0.119")
+    assert sell_q.price != Decimal("0.091")
+    assert sell_q.qty == Decimal("535")
+
+    book_crashed = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.020"), Decimal("380")),),
+        asks=(Level(Decimal("0.034"), Decimal("130")),),
+        ts_ms=1000,
+    )
+    quotes_crashed = desired_quotes(
+        market=base_market,
+        book=book_crashed,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("535"), avg_price=Decimal("0.184")),
+        budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    )
+    sell_crashed = next(q for q in quotes_crashed if q.side == "SELL_LONG")
+    assert sell_crashed.price == Decimal("0.119")
+    assert sell_crashed.qty == Decimal("535")
+
+
+def test_global_paired_leg_with_inventory_emits_sell_long_unwind(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    bids = (Level(Decimal("0.34"), Decimal("100")),)
+    asks = (Level(Decimal("0.36"), Decimal("100")),)
+    book = Book(slug=base_market.slug, bids=bids, asks=asks, ts_ms=1000)
+
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("55"), avg_price=Decimal("0.35")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("55"),
+    )
+    assert quotes == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.359"), qty=Decimal("55"))
+    ]
+
+
+def test_global_over_budget_position_with_positive_budget_never_panic_sells_below_entry(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.040"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.140"), Decimal("100")),),
+        asks=(Level(Decimal("0.160"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("352"), avg_price=Decimal("0.200")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=False,
+    )
+    sell_q = next(q for q in quotes if q.side == "SELL_LONG")
+    assert sell_q.price >= Decimal("0.200")
+    assert sell_q.qty == Decimal("352")
+
+
+def test_global_flatten_mode_with_zero_bid_budget_joins_qual_ask_even_within_max_spread(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.030"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.273"), Decimal("200")),),
+        asks=(Level(Decimal("0.300"), Decimal("200")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("150"), avg_price=Decimal("0.301")),
+        budget=Decimal("55.00"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+        paired=False,
+    )
+    assert quotes == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.301"), qty=Decimal("150"))
+    ]
+
+
+def test_global_paired_leg_freezes_buy_long_when_holding_min_qty(base_market):
+    market_min5 = Market(
+        slug=base_market.slug,
+        event_id=base_market.event_id,
+        category=base_market.category,
+        tick=base_market.tick,
+        min_qty=Decimal("5"),
+        active=base_market.active,
+        mutually_exclusive=base_market.mutually_exclusive,
+    )
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.34"), Decimal("100")),),
+        asks=(Level(Decimal("0.36"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=market_min5,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("10"), avg_price=Decimal("0.35")),
+        budget=Decimal("55.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+    )
+    assert not any(q.side == "BUY_LONG" for q in quotes)
+    assert quotes == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.359"), qty=Decimal("10"))
+    ]
+
+
+def test_global_dust_and_profitable_inventory_steps_inside_best_ask(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.480"), Decimal("100")),),
+        asks=(Level(Decimal("0.502"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes_dust = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("20"), avg_price=Decimal("0.500")),
+        budget=Decimal("50.00"),
+        is_global=True,
+    )
+    assert quotes_dust == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.501"), qty=Decimal("20"))
+    ]
+
+    book_profit = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.480"), Decimal("100")),),
+        asks=(Level(Decimal("0.494"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes_profit = desired_quotes(
+        market=base_market,
+        book=book_profit,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("50"), avg_price=Decimal("0.490")),
+        budget=Decimal("50.00"),
+        is_global=True,
+    )
+    assert quotes_profit == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.493"), qty=Decimal("50"))
+    ]
+
+    quotes_no_step = desired_quotes(
+        market=base_market,
+        book=book_profit,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("50"), avg_price=Decimal("0.493")),
+        budget=Decimal("50.00"),
+        is_global=True,
+    )
+    assert quotes_no_step == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.494"), qty=Decimal("50"))
+    ]
+
+
+def test_global_sub_tick_avg_price_min_exit_rounds_up(base_market):
+    win = IncentiveWindow(
+        slug=base_market.slug,
+        program_id="p-global",
+        pool_usd=Decimal("50.00"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("50"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    book = Book(
+        slug=base_market.slug,
+        bids=(Level(Decimal("0.450"), Decimal("100")),),
+        asks=(Level(Decimal("0.455"), Decimal("100")),),
+        ts_ms=1000,
+    )
+    quotes = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug=base_market.slug, net_qty=Decimal("50"), avg_price=Decimal("0.4523")),
+        budget=Decimal("50.00"),
+        is_global=True,
+    )
+    assert quotes == [
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.455"), qty=Decimal("50"))
+    ]
+
+
+
+
+
+

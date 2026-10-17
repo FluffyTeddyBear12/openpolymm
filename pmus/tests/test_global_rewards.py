@@ -80,6 +80,26 @@ def test_bid_price_joins_best_bid_on_market_tick_within_spread():
     assert global_rewards.bid_price(book([("0.44", "100")], [("0.56", "100")]), w, Decimal("0.01")) is None
 
 
+def test_bid_price_ignores_dust_spoof_bid_below_target_size():
+    b = book([("0.48", "1"), ("0.47", "100")], [("0.51", "100")])
+    w = window(target="50")
+    assert global_rewards.bid_price(b, w, Decimal("0.01")) == Decimal("0.47")
+
+
+def test_bid_price_steps_behind_top_qualifying_bid_on_multi_level_book():
+    b_cent = book([("0.48", "100"), ("0.47", "100")], [("0.50", "100")])
+    w_cent = window(target="50", max_spread=Decimal("0.04"))
+    assert global_rewards.bid_price(b_cent, w_cent, Decimal("0.01")) == Decimal("0.47")
+
+    b_milli = book([("0.401", "100"), ("0.395", "100")], [("0.415", "100")])
+    w_milli = window(target="50", max_spread=Decimal("0.030"))
+    assert global_rewards.bid_price(b_milli, w_milli, Decimal("0.001")) == Decimal("0.400")
+
+    b_wide_cent = book([("0.59", "100"), ("0.58", "100")], [("0.62", "100")])
+    w_wide_cent = window(target="50", max_spread=Decimal("0.03"))
+    assert global_rewards.bid_price(b_wide_cent, w_wide_cent, Decimal("0.01")) == Decimal("0.59")
+
+
 def test_selector_skips_tail_and_one_sided_books():
     windows = [window("tail-low"), window("tail-high"), window("one-sided")]
     books = {
@@ -151,9 +171,9 @@ def test_global_snapshot_scores_single_sided_bid_at_one_third():
 
     weight = ((V - Decimal("0.01")) / V) ** 2
     assert abs(snap.trader_bid_score - weight * 50) < Decimal("1e-20")
-    assert abs(snap.total_bid_score - weight * 150) < Decimal("1e-20")
+    assert abs(snap.total_bid_score - weight * 100) < Decimal("1e-20")
     assert snap.bid_qualifies is True
-    assert abs(snap.reward_usd - global_rewards.reward_rate(Decimal("100"), weight * 50 / 3, weight * 100)) < Decimal("1e-20")
+    assert abs(snap.reward_usd - global_rewards.reward_rate(Decimal("100"), weight * 50 / 3, weight * 50)) < Decimal("1e-20")
 
 
 def test_global_snapshot_single_sided_tail_market_earns_nothing():
@@ -176,3 +196,73 @@ def test_selector_honors_configured_global_floor(monkeypatch):
 
     assert default.selected_slugs == []
     assert lowered.selected_slugs == ["tok"]
+
+
+def test_strip_orders_from_book_removes_own_resting_bid_and_preserves_other_levels():
+    b = Book(
+        slug="mkt-1",
+        bids=(
+            Level(price=Decimal("0.48"), qty=Decimal("100")),
+            Level(price=Decimal("0.47"), qty=Decimal("100")),
+        ),
+        asks=(
+            Level(price=Decimal("0.52"), qty=Decimal("100")),
+            Level(price=Decimal("0.53"), qty=Decimal("100")),
+        ),
+        ts_ms=1000,
+    )
+    orders = [
+        LiveOrder(order_id="o1", slug="mkt-1", side="BUY_LONG", price=Decimal("0.48"), qty_open=Decimal("100")),
+        LiveOrder(order_id="o2", slug="mkt-1", side="SELL_LONG", price=Decimal("0.52"), qty_open=Decimal("40")),
+        LiveOrder(order_id="o3", slug="other-slug", side="BUY_LONG", price=Decimal("0.47"), qty_open=Decimal("100")),
+    ]
+    stripped = global_rewards.strip_orders_from_book(b, orders)
+    assert stripped.slug == "mkt-1"
+    assert stripped.bids == (Level(price=Decimal("0.47"), qty=Decimal("100")),)
+    assert stripped.asks == (
+        Level(price=Decimal("0.52"), qty=Decimal("60")),
+        Level(price=Decimal("0.53"), qty=Decimal("100")),
+    )
+    assert global_rewards.strip_orders_from_book(b, []) == b
+
+
+def test_bid_price_returns_none_when_no_qualifying_bids():
+    b = book([("0.48", "10")], [("0.52", "100")])
+    w = window(target="50")
+    assert global_rewards.bid_price(b, w, Decimal("0.01")) is None
+
+
+def test_bid_price_steps_back_when_single_qualifying_bid_under_2x_target_size():
+    b = book([("0.48", "60")], [("0.50", "100")])
+    w = window(target="50", max_spread=Decimal("0.04"))
+    assert global_rewards.bid_price(b, w, Decimal("0.01")) == Decimal("0.47")
+
+    b_thick = book([("0.48", "120")], [("0.50", "100")])
+    assert global_rewards.bid_price(b_thick, w, Decimal("0.01")) == Decimal("0.48")
+
+
+def test_pair_quote_prices_steps_back_when_sum_exceeds_098():
+    w = window(target="50", max_spread=Decimal("0.03"))
+    yes_b = book([("0.49", "200")], [("0.51", "100")])
+    no_b = book([("0.50", "200")], [("0.51", "100")])
+    prices = global_rewards.pair_quote_prices(yes_b, no_b, w, Decimal("0.01"), Decimal("0.01"))
+    assert prices is not None
+    p_yes, p_no = prices
+    assert p_yes + p_no <= Decimal("0.98")
+    assert p_yes == Decimal("0.49")
+    assert p_no == Decimal("0.49")
+
+
+def test_bid_price_steps_behind_second_qualifying_level_when_top_level_thin():
+    w = window(target="50", max_spread=Decimal("0.040"))
+    b_milli_deep = book([("0.401", "50"), ("0.398", "80")], [("0.415", "100")])
+    assert global_rewards.bid_price(b_milli_deep, w, Decimal("0.001")) == Decimal("0.397")
+
+    b_milli_thick = book([("0.401", "120"), ("0.398", "60")], [("0.415", "100")])
+    assert global_rewards.bid_price(b_milli_thick, w, Decimal("0.001")) == Decimal("0.400")
+
+    b_milli_solo_thin = book([("0.401", "50")], [("0.415", "100")])
+    assert global_rewards.bid_price(b_milli_solo_thin, w, Decimal("0.001")) == Decimal("0.400")
+
+
+

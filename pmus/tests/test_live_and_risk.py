@@ -335,7 +335,13 @@ def test_collateral_and_buying_power_limits(tmp_path):
     assert "buying power" in res_bp.reason
 
 def test_per_market_contract_cap(tmp_path):
-    settings = Settings(max_contracts_per_market=200, data_dir=tmp_path / "data")
+    settings = Settings(
+        max_contracts_per_market=200,
+        max_collateral_per_market=Decimal("500.00"),
+        total_budget=Decimal("500.00"),
+        max_collateral=Decimal("500.00"),
+        data_dir=tmp_path / "data",
+    )
     rm = RiskManager(settings)
 
     pos = {"mkt-1": Position("mkt-1", Decimal("150"), Decimal("0.50"))}

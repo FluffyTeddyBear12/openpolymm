@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 import time
 from unittest.mock import MagicMock, patch
@@ -15,6 +16,7 @@ from pmus.dashboard import (
     get_active_positions,
     get_profile_links,
     is_database_empty,
+    render_live_hud,
     resolve_market_title,
     sync_ledger_from_vps,
 )
@@ -54,6 +56,18 @@ def test_compute_kpis_empty(tmp_path):
     assert kpis["maker_rebates"] == Decimal("0")
     assert kpis["taker_fees"] == Decimal("0")
     assert kpis["net_pnl"] == Decimal("0")
+
+
+def test_compute_kpis_collateral_cap_uses_effective_balance_when_max_collateral_higher(tmp_path):
+    ledger = Ledger(tmp_path / "high_cap.db")
+    kpis = compute_kpis(
+        ledger,
+        since_ms=0,
+        buying_power=Decimal("176.18"),
+        max_collateral=Decimal("500.00"),
+    )
+    assert kpis["balance_usd"] == Decimal("176.18")
+    assert kpis["collateral_cap_usd"] == Decimal("176.18")
 
 
 def test_compute_kpis_with_fills_and_lip(tmp_path):
@@ -195,6 +209,38 @@ def test_format_market_overview(tmp_path):
     assert row_b["ask_count"] == 0
     assert row_b["qualifies"] is False
     assert row_b["target_pool_size"] == Decimal("200")
+
+
+def test_format_market_overview_zeroes_stale_rewards_when_monitoring(tmp_path):
+    ledger = Ledger(tmp_path / "stale_lip.db")
+    now_ms = 1_000_000
+    ledger.record_lip_snapshot(
+        LipSnapshot(
+            ts_ms=now_ms,
+            slug="mkt-stale",
+            program_id="prog-stale",
+            trader_bid_score=Decimal("45"),
+            total_bid_score=Decimal("500"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("500"),
+            qualifies=True,
+            reward_usd=Decimal("0.00047884"),
+            bid_qualifies=True,
+            ask_qualifies=False,
+        )
+    )
+    rows = format_market_overview(ledger, recent_ms=0)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["slug"] == "mkt-stale"
+    assert row["status"] == "MONITORING"
+    assert row["qualifies"] is False
+    assert row["bid_qualifies"] is False
+    assert row["ask_qualifies"] is False
+    assert row["trader_bid_score"] == Decimal("0")
+    assert row["trader_ask_score"] == Decimal("0")
+    assert row["est_reward_rate"] == Decimal("0")
+    assert row["target_pool_size"] == Decimal("500")
 
 
 def test_format_fills_table():
@@ -444,6 +490,18 @@ def test_check_password_success_submit():
         mock_st.rerun.assert_called_once()
 
 
+def test_check_password_accepts_whitespace_padded_password():
+    settings = Settings(dashboard_password="secret_password")
+    session = {}
+    with patch("pmus.dashboard.st") as mock_st:
+        mock_st.session_state = session
+        mock_st.text_input.return_value = "  secret_password  "
+        mock_st.form_submit_button.return_value = True
+        assert check_password(settings) is False
+        assert session.get("authenticated") is True
+        mock_st.rerun.assert_called_once()
+
+
 def test_check_password_invalid_submit():
     settings = Settings(dashboard_password="secret_password")
     session = {}
@@ -560,6 +618,125 @@ def test_compute_maker_rebate_summary_calculates_rebates_and_projections(tmp_pat
     assert summary["projected_monthly_rebates"] == Decimal("225.00")
     assert summary["projected_daily_profit"] == Decimal("16.14")
     assert summary["projected_monthly_profit"] == Decimal("484.20")
+
+
+def test_global_mode_disables_synthetic_us_maker_rebates_and_projects_pool_velocity(tmp_path):
+    ledger = Ledger(tmp_path / "global_mode.db")
+    now_ms = 1_000_000
+
+    fill = ShadowFill(
+        fill_id="f1",
+        order_id="o1",
+        slug="mkt-1",
+        side="BUY_LONG",
+        price=Decimal("0.40"),
+        qty=Decimal("100"),
+        fee=Decimal("0"),
+        is_maker=True,
+        ts_ms=now_ms,
+    )
+    ledger.record_fill(fill)
+
+    order = LiveOrder(
+        order_id="o2",
+        slug="mkt-1",
+        side="BUY_LONG",
+        price=Decimal("0.45"),
+        qty_open=Decimal("100"),
+    )
+    ledger.record_order(order)
+
+    kpis = compute_kpis(ledger, since_ms=0, is_global=True)
+    assert kpis["maker_rebates"] == Decimal("0")
+
+    fills_table = format_fills_table([fill], is_global=True)
+    assert fills_table[0]["Fee"] == "-$0.0000"
+
+    market_rows = [
+        {
+            "slug": "mkt-1",
+            "status": "QUOTING",
+            "qualifies": True,
+            "est_reward_rate": Decimal("0.00010000"),
+        },
+        {
+            "slug": "mkt-2",
+            "status": "IDLE",
+            "qualifies": False,
+            "est_reward_rate": Decimal("0.00005000"),
+        },
+    ]
+
+    summary = compute_maker_rebate_summary(
+        ledger,
+        since_ms=0,
+        market_rows=market_rows,
+        open_orders=[order],
+        is_global=True,
+    )
+    assert summary["current_maker_rebates"] == Decimal("0")
+    assert summary["resting_rebate_potential"] == Decimal("0")
+    assert summary["active_daily_lip"] == Decimal("8.64")
+    assert summary["active_hourly_lip"] == Decimal("0.3600")
+    assert summary["active_monthly_lip"] == Decimal("259.20")
+    assert summary["deployed_collateral"] == Decimal("45.00")
+    assert summary["scoring_markets_count"] == 1
+    assert summary["active_buy_orders_count"] == 1
+
+
+def test_render_live_hud_displays_today_est_and_all_time_lip_yield(tmp_path):
+    ledger = Ledger(tmp_path / "hud_test.db")
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_ms = int(today_start.timestamp() * 1000)
+    yesterday_ms = today_start_ms - 3_600_000
+    today_ms = today_start_ms + 3_600_000
+
+    ledger.record_lip_snapshot(
+        LipSnapshot(
+            ts_ms=yesterday_ms,
+            slug="mkt-old",
+            program_id="p-old",
+            trader_bid_score=Decimal("10"),
+            total_bid_score=Decimal("100"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("100"),
+            qualifies=True,
+            reward_usd=Decimal("10.00"),
+            bid_qualifies=True,
+            ask_qualifies=False,
+        )
+    )
+    ledger.record_lip_snapshot(
+        LipSnapshot(
+            ts_ms=today_ms,
+            slug="mkt-today",
+            program_id="p-today",
+            trader_bid_score=Decimal("20"),
+            total_bid_score=Decimal("100"),
+            trader_ask_score=Decimal("0"),
+            total_ask_score=Decimal("100"),
+            qualifies=True,
+            reward_usd=Decimal("5.00"),
+            bid_qualifies=True,
+            ask_qualifies=False,
+        )
+    )
+
+    settings = Settings(venue="global")
+    with patch("pmus.dashboard.st") as mock_st, \
+         patch("pmus.dashboard.is_database_empty", return_value=False), \
+         patch("pmus.dashboard._get_live_buying_power", return_value=Decimal("100.00")), \
+         patch("pmus.dashboard._get_official_daily_earnings", return_value=None):
+        mock_st.columns.side_effect = lambda n: [MagicMock() for _ in range(n)]
+        fn = getattr(render_live_hud, "__wrapped__", render_live_hud)
+        fn(ledger, settings)
+        metric_calls = [call.kwargs for call in mock_st.metric.call_args_list]
+        pool_metric = next(m for m in metric_calls if m.get("label") == "Pool Rewards Earned")
+        assert pool_metric["value"] == "$15.0000"
+        assert pool_metric["delta"] == "Today Est: $5.00 | All-Time: $15.00"
+
+
 
 
 

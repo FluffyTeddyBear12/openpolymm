@@ -34,10 +34,11 @@ def estimate_global_lip_score(
 
     v = window.max_spread
     ours = [o for o in resting_orders if o.slug == book.slug and o.qty_open >= window.target_size]
+    clean_book = global_rewards.strip_orders_from_book(book, ours) if ours else book
     our_bid = sum((global_rewards.order_score(v, abs(o.price - mid), o.qty_open) for o in ours if o.side in BID_SIDES), zero)
     our_ask = sum((global_rewards.order_score(v, abs(o.price - mid), o.qty_open) for o in ours if o.side in ASK_SIDES), zero)
-    comp_bid = global_rewards.side_score(book.bids, mid, v)
-    comp_ask = global_rewards.side_score(book.asks, mid, v)
+    comp_bid = global_rewards.side_score(clean_book.bids, mid, v)
+    comp_ask = global_rewards.side_score(clean_book.asks, mid, v)
 
     our_q = global_rewards.combined_score(our_bid, our_ask, mid)
     competitors = (comp_bid if our_bid > zero else zero) + (comp_ask if our_ask > zero else zero)
@@ -92,12 +93,14 @@ def estimate_global_pair_score(
     v = window.max_spread
     yes_orders = [o for o in resting_orders if o.slug == yes_book.slug and o.qty_open >= window.target_size and o.side in BID_SIDES]
     no_orders = [o for o in resting_orders if o.slug == no_book.slug and o.qty_open >= window.target_size and o.side in BID_SIDES]
+    clean_yes_book = global_rewards.strip_orders_from_book(yes_book, yes_orders) if yes_orders else yes_book
+    clean_no_book = global_rewards.strip_orders_from_book(no_book, no_orders) if no_orders else no_book
 
     s_one = sum((global_rewards.order_score(v, abs(o.price - mid_y), o.qty_open) for o in yes_orders), zero)
     s_two = sum((global_rewards.order_score(v, abs(o.price - mid_n), o.qty_open) for o in no_orders), zero)
 
     ours = global_rewards.combined_score(s_one, s_two, mid_y)
-    competitors = global_rewards.competitor_q(yes_book, no_book, window)
+    competitors = global_rewards.competitor_q(clean_yes_book, clean_no_book, window)
     reward = global_rewards.reward_rate(window.pool_usd, ours, competitors)
 
     if s_one + s_two > zero:
@@ -107,8 +110,8 @@ def estimate_global_pair_score(
         reward_y = zero
         reward_n = zero
 
-    comp_bid_y = global_rewards.side_score(yes_book.bids, mid_y, v)
-    comp_bid_n = global_rewards.side_score(no_book.bids, mid_n, v)
+    comp_bid_y = global_rewards.side_score(clean_yes_book.bids, mid_y, v)
+    comp_bid_n = global_rewards.side_score(clean_no_book.bids, mid_n, v)
     qualifies = ours > zero
 
     return (

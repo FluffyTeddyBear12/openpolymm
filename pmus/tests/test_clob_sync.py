@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -133,7 +133,7 @@ def test_get_positions_pages_data_api():
     responses[1].json.return_value = []
     client = make_client(MagicMock())
 
-    with patch("requests.get", side_effect=responses) as mock_get:
+    with patch("pmus.clob_venue.POSITIONS_PAGE_SIZE", 2), patch("requests.get", side_effect=responses) as mock_get:
         positions = client.get_positions()
 
     assert {p.slug: p.net_qty for p in positions} == {"1107": Decimal("7.0"), "999": Decimal("12.5")}
@@ -145,10 +145,78 @@ def test_get_positions_pages_data_api():
     assert mock_get.call_args_list[0].kwargs["timeout"] == 10
 
 
+def test_get_positions_stops_when_under_page_size():
+    page1 = [
+        {"asset": "1107", "size": 7.0, "avgPrice": 0.73},
+        {"asset": "999", "size": 12.5, "avgPrice": 0.1},
+    ]
+    resp = MagicMock()
+    resp.json.return_value = page1
+    client = make_client(MagicMock())
+
+    with patch("requests.get", return_value=resp) as mock_get:
+        positions = client.get_positions()
+
+    assert len(positions) == 2
+    assert mock_get.call_count == 1
+
+
 def test_get_positions_requires_proxy():
     client = make_client(MagicMock(), proxy="")
     with pytest.raises(RuntimeError, match="POLYMARKET_PROXY_ADDRESS"):
         client.get_positions()
+
+
+def test_get_positions_returns_cached_within_ttl():
+    page = [{"asset": "1107", "size": 7.0, "avgPrice": 0.73}]
+    resp = MagicMock()
+    resp.json.return_value = page
+    client = make_client(MagicMock())
+
+    with patch("requests.get", return_value=resp) as mock_get:
+        pos1 = client.get_positions()
+        pos2 = client.get_positions()
+
+    assert pos1 == pos2
+    assert len(pos1) == 1
+    assert mock_get.call_count == 1
+
+
+def test_invalidate_positions_cache_forces_fresh_fetch():
+    page1 = [{"asset": "1107", "size": 7.0, "avgPrice": 0.73}]
+    page2 = [{"asset": "1107", "size": 14.0, "avgPrice": 0.73}]
+    resp1 = MagicMock()
+    resp1.json.return_value = page1
+    resp2 = MagicMock()
+    resp2.json.return_value = page2
+    client = make_client(MagicMock())
+
+    with patch("requests.get", side_effect=[resp1, resp2]) as mock_get:
+        pos1 = client.get_positions()
+        client.invalidate_positions_cache()
+        pos2 = client.get_positions()
+
+    assert mock_get.call_count == 2
+    assert pos1[0].net_qty == Decimal("7.0")
+    assert pos2[0].net_qty == Decimal("14.0")
+
+
+def test_get_positions_falls_back_to_stale_cache_on_timeout():
+    page = [{"asset": "1107", "size": 7.0, "avgPrice": 0.73}]
+    resp = MagicMock()
+    resp.json.return_value = page
+    client = make_client(MagicMock())
+
+    with patch("requests.get", return_value=resp):
+        pos1 = client.get_positions()
+
+    client._positions_cache_ts -= 20.0
+
+    with patch("requests.get", side_effect=TimeoutError("Polymarket data-api timeout")) as mock_get:
+        pos2 = client.get_positions()
+
+    assert mock_get.call_count == 1
+    assert pos2 == pos1
 
 
 def test_scoped_cancel_falls_back_to_per_market_cancel():
@@ -203,3 +271,102 @@ def test_unacknowledged_order_is_not_reported_as_created():
     created = client.create_orders_batch(quotes)
 
     assert [o.order_id for o in created] == ["0xok"]
+
+
+def test_fetch_sampling_markets_filters_status_patterns_and_expiry():
+    now = datetime.now(timezone.utc)
+    future_valid = (now + timedelta(days=10)).isoformat()
+    future_short = (now + timedelta(days=2)).isoformat()
+    raw = [
+        {
+            "condition_id": "c-valid",
+            "market_slug": "valid-slug",
+            "question": "Will candidate win?",
+            "rewards": {"rates": [{"rewards_daily_rate": "100"}], "min_size": 100, "max_spread": 2.5},
+            "minimum_tick_size": "0.01",
+            "minimum_order_size": "5",
+            "tokens": [{"token_id": "tok-y", "outcome": "Yes"}, {"token_id": "tok-n", "outcome": "No"}],
+            "end_date_iso": future_valid,
+            "game_start_time": future_valid,
+            "active": True,
+            "closed": False,
+        },
+        {
+            "condition_id": "c-closed",
+            "question": "Will candidate win?",
+            "rewards": {"rates": [{"rewards_daily_rate": "100"}]},
+            "tokens": [{"token_id": "tok-1"}, {"token_id": "tok-2"}],
+            "end_date_iso": future_valid,
+            "active": True,
+            "closed": True,
+        },
+        {
+            "condition_id": "c-inactive",
+            "question": "Will candidate win?",
+            "rewards": {"rates": [{"rewards_daily_rate": "100"}]},
+            "tokens": [{"token_id": "tok-1"}, {"token_id": "tok-2"}],
+            "end_date_iso": future_valid,
+            "active": False,
+            "closed": False,
+        },
+        {
+            "condition_id": "c-weather",
+            "question": "Highest temp in London on Friday?",
+            "rewards": {"rates": [{"rewards_daily_rate": "100"}]},
+            "tokens": [{"token_id": "tok-1"}, {"token_id": "tok-2"}],
+            "end_date_iso": future_valid,
+            "active": True,
+            "closed": False,
+        },
+        {
+            "condition_id": "c-short-expiry",
+            "question": "Will team win tonight?",
+            "rewards": {"rates": [{"rewards_daily_rate": "100"}]},
+            "tokens": [{"token_id": "tok-1"}, {"token_id": "tok-2"}],
+            "end_date_iso": future_short,
+            "active": True,
+            "closed": False,
+        },
+    ]
+
+    mock_clob = MagicMock()
+    mock_clob.get_sampling_markets.return_value = raw
+    client = make_client(mock_clob)
+
+    conds = client.fetch_reward_conditions()
+    assert len(conds) == 1
+    c = conds[0]
+    assert c.condition_id == "c-valid"
+    assert c.window.end is not None
+    assert c.window.event_start_time is not None
+
+
+def test_buying_power_cache_locking_and_stale_fallback():
+    mock_clob = MagicMock()
+    mock_clob.get_balance_allowance.return_value = {"balance": "100000000"}
+    client = make_client(mock_clob)
+
+    bp1 = client.get_buying_power()
+    assert bp1 == Decimal("100")
+    assert mock_clob.get_balance_allowance.call_count == 1
+    assert client._resolved_bp_sig_type == 3
+
+    bp2 = client.get_buying_power()
+    assert bp2 == Decimal("100")
+    assert mock_clob.get_balance_allowance.call_count == 1
+
+    client._buying_power_cache_ts -= 10.0
+    bp3 = client.get_buying_power()
+    assert bp3 == Decimal("100")
+    assert mock_clob.get_balance_allowance.call_count == 2
+    param = mock_clob.get_balance_allowance.call_args[0][0]
+    assert param.signature_type == 3
+
+    client._buying_power_cache_ts -= 10.0
+    mock_clob.get_balance_allowance.side_effect = RuntimeError("RPC fail")
+    bp4 = client.get_buying_power()
+    assert bp4 == Decimal("100")
+
+    client.invalidate_buying_power_cache()
+    bp5 = client.get_buying_power()
+    assert bp5 == Decimal("0")

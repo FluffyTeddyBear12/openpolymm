@@ -83,6 +83,7 @@ class RiskManager:
             total_collateral += order_col
             market_collateral[o.slug] = market_collateral.get(o.slug, Decimal("0")) + order_col
 
+        new_collateral = Decimal("0")
         for q in new_quotes:
             px = q.price
             if q.side in ("BUY_LONG", "BUY_SHORT"):
@@ -92,32 +93,58 @@ class RiskManager:
             else:
                 col = Decimal("1") - px
             quote_col = col * q.qty
+            new_collateral += quote_col
             total_collateral += quote_col
             market_collateral[q.slug] = market_collateral.get(q.slug, Decimal("0")) + quote_col
 
-        if total_collateral > self.settings.total_budget:
-            return RiskGateResult(
-                False,
-                f"Exceeds total budget collateral: ${total_collateral} > ${self.settings.total_budget}",
-            )
-        if total_collateral > self.settings.max_collateral:
-            return RiskGateResult(
-                False,
-                f"Exceeds max collateral: ${total_collateral} > ${self.settings.max_collateral}",
-            )
-        if total_collateral > buying_power:
-            return RiskGateResult(
-                False,
-                f"Exceeds account buying power: ${total_collateral} > ${buying_power}",
-            )
+        if new_collateral > Decimal("0"):
+            if total_collateral > self.settings.total_budget:
+                return RiskGateResult(
+                    False,
+                    f"Exceeds total budget collateral: ${total_collateral} > ${self.settings.total_budget}",
+                )
+            if total_collateral > self.settings.max_collateral:
+                return RiskGateResult(
+                    False,
+                    f"Exceeds max collateral: ${total_collateral} > ${self.settings.max_collateral}",
+                )
+            if total_collateral > buying_power:
+                return RiskGateResult(
+                    False,
+                    f"Exceeds account buying power: ${total_collateral} > ${buying_power}",
+                )
 
         max_market_col = getattr(self.settings, "max_collateral_per_market", None)
         if max_market_col is not None:
+            buy_quote_slugs = {q.slug for q in new_quotes if q.side in ("BUY_LONG", "BUY_SHORT")}
             for slug, m_col in market_collateral.items():
-                if m_col > max_market_col:
+                pos = positions.get(slug)
+                pos_cost = (
+                    abs(pos.net_qty) * pos.avg_price
+                    if (slug in buy_quote_slugs and pos is not None and pos.avg_price > Decimal("0"))
+                    else Decimal("0")
+                )
+                if (m_col + pos_cost) > max_market_col:
                     return RiskGateResult(
                         False,
-                        f"Exceeds max collateral per market for {slug}: ${m_col} > ${max_market_col}",
+                        f"Exceeds max collateral per market for {slug}: ${m_col + pos_cost} > ${max_market_col}",
+                    )
+
+        for q in new_quotes:
+            if q.side == "SELL_LONG":
+                pos = positions.get(q.slug, Position(q.slug, Decimal("0"), Decimal("0")))
+                resting_sell = sum(
+                    o.qty_open for o in open_orders
+                    if o.slug == q.slug and o.side in ("SELL", "SELL_LONG")
+                )
+                new_sell = sum(
+                    n.qty for n in new_quotes
+                    if n.slug == q.slug and n.side == "SELL_LONG"
+                )
+                if pos.net_qty <= Decimal("0") or (resting_sell + new_sell) > pos.net_qty:
+                    return RiskGateResult(
+                        False,
+                        f"SELL_LONG exceeds held inventory for {q.slug}: {resting_sell + new_sell} > {pos.net_qty}",
                     )
 
         for q in new_quotes:

@@ -1,10 +1,11 @@
 """SQLite ledger for tracking satellite paper and live trades."""
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import math
 from pathlib import Path
 import sqlite3
-from typing import Any
+from typing import Any, Iterator
 
 DEFAULT_LEDGER_PATH = Path(__file__).resolve().parent / "data" / "certainty_ledger.db"
 
@@ -18,10 +19,18 @@ class CertaintyLedger:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
@@ -99,7 +108,7 @@ class CertaintyLedger:
                     notes,
                 ),
             )
-            return cursor.lastrowid
+            return int(cursor.lastrowid)
 
     def get_trade(self, trade_id: int) -> dict[str, Any] | None:
         with self._get_connection() as conn:
@@ -128,6 +137,10 @@ class CertaintyLedger:
             status = "RESOLVED_WIN"
             exit_price = float(payout_per_share)
             pnl_usd = (exit_price - entry_price) * shares
+        elif 0.01 < float(payout_per_share) < 0.99:
+            exit_price = float(payout_per_share)
+            pnl_usd = (exit_price - entry_price) * shares
+            status = "RESOLVED_WIN" if pnl_usd >= 0 else "RESOLVED_LOSS"
         else:
             status = "RESOLVED_LOSS"
             exit_price = 0.0
@@ -198,7 +211,8 @@ class CertaintyLedger:
             row = conn.execute(
                 """
                 SELECT exit_timestamp FROM satellite_trades
-                WHERE status = 'RESOLVED_LOSS' OR (status = 'EXITED_CLOB' AND pnl_usd < 0)
+                WHERE strategy_type != 'parity_arb'
+                  AND (status = 'RESOLVED_LOSS' OR (status = 'EXITED_CLOB' AND pnl_usd < 0))
                 ORDER BY exit_timestamp DESC LIMIT 1
                 """
             ).fetchone()

@@ -2,7 +2,7 @@ import dataclasses
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -20,10 +20,14 @@ from pmus.venue import AuthenticatedClient, PublicGatewayClient
 
 MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
 
-CANDIDATE_BOOK_LIMIT = 300
+if not hasattr(LiveOrder, "remaining_qty"):
+    setattr(LiveOrder, "remaining_qty", property(lambda self: self.qty_open))
+
+CANDIDATE_BOOK_LIMIT = 800
 FILL_LOOKBACK_SECONDS = 60
 FILL_WINDOW_SECONDS = 3600
-REALLOCATE_SECONDS = 1800
+LOCAL_FILL_POSITION_TTL_SECONDS = 60.0
+REALLOCATE_SECONDS = 900
 
 def reconcile_quotes(
     current_orders: list[LiveOrder],
@@ -77,7 +81,15 @@ def update_position_from_fill(current_pos: Position, fill_side: str, fill_price:
     return Position(slug=current_pos.slug, net_qty=new_qty, avg_price=new_avg)
 
 def resolve_market(client: Any, slug: str) -> Market:
-    market = client.get_market(slug) if hasattr(client, "get_market") else None
+    market = None
+    if hasattr(client, "get_market"):
+        res = client.get_market(slug)
+        if isinstance(res, Market):
+            market = res
+    if market is None and hasattr(client, "fetch_market"):
+        res = client.fetch_market(slug)
+        if isinstance(res, Market):
+            market = res
     if market is not None:
         return market
     return Market(
@@ -95,24 +107,43 @@ def allocate_markets(
     client: Any,
     logger: logging.Logger,
     available_budget: Decimal | None = None,
+    positions: dict[str, Position] | None = None,
+    open_orders: list[LiveOrder] | None = None,
 ) -> tuple[dict[str, IncentiveWindow], AllocationResult]:
     budget = available_budget if available_budget is not None else settings.total_budget
     is_global = settings.venue == "global"
     if is_global and hasattr(client, "fetch_reward_conditions"):
         conditions = client.fetch_reward_conditions()
+        base_cond_cap = min(settings.max_per_market, settings.max_collateral_per_market)
+        num_pairs = max(1, settings.max_markets // 2)
+        max_cost_per_condition = (
+            max(base_cond_cap, budget / Decimal(str(num_pairs)))
+            if available_budget is not None
+            else base_cond_cap
+        )
         max_contracts = Decimal(str(settings.max_contracts_per_market))
-        conditions.sort(
+        if settings.pair_preference <= Decimal("0") and max_cost_per_condition > Decimal("0"):
+            max_affordable_contracts = min(
+                max_contracts,
+                (max_cost_per_condition / Decimal("0.90")) // Decimal("1"),
+            )
+        else:
+            max_affordable_contracts = max_contracts
+        active_windows: dict[str, IncentiveWindow] = {}
+        for cond in conditions:
+            active_windows[cond.yes.slug] = dataclasses.replace(cond.window, slug=cond.yes.slug)
+            active_windows[cond.no.slug] = dataclasses.replace(cond.window, slug=cond.no.slug)
+
+        allocatable = [c for c in conditions if "temperature in " not in c.question.lower()]
+        allocatable.sort(
             key=lambda c: (
+                c.window.target_size <= max_affordable_contracts,
                 c.window.target_size <= max_contracts,
                 c.window.pool_usd,
                 -c.window.target_size,
             ),
             reverse=True,
         )
-        active_windows: dict[str, IncentiveWindow] = {}
-        for cond in conditions:
-            active_windows[cond.yes.slug] = dataclasses.replace(cond.window, slug=cond.yes.slug)
-            active_windows[cond.no.slug] = dataclasses.replace(cond.window, slug=cond.no.slug)
 
         candidate_books: dict[str, Book] = {}
         book_limit = (
@@ -120,7 +151,7 @@ def allocate_markets(
             if budget < Decimal("500")
             else min(1200, max(CANDIDATE_BOOK_LIMIT, int(budget // Decimal("10"))))
         )
-        top_conditions = conditions[: book_limit // 2]
+        top_conditions = allocatable[: book_limit // 2]
         batch_books = None
         if hasattr(client, "fetch_books_batch"):
             try:
@@ -146,14 +177,23 @@ def allocate_markets(
                 candidate_books[cond.yes.slug] = yes_book
                 candidate_books[cond.no.slug] = no_book
 
+        if open_orders:
+            orders_by_slug: dict[str, list[LiveOrder]] = {}
+            for o in open_orders:
+                orders_by_slug.setdefault(o.slug, []).append(o)
+            for slug, s_orders in orders_by_slug.items():
+                if slug in candidate_books:
+                    candidate_books[slug] = global_rewards.strip_orders_from_book(candidate_books[slug], s_orders)
+
         targets = allocate_conditions(
-            conditions=conditions,
+            conditions=allocatable,
             books=candidate_books,
             total_budget=budget,
-            max_cost_per_condition=min(settings.max_per_market, settings.max_collateral_per_market),
+            max_cost_per_condition=max_cost_per_condition,
             max_markets=settings.max_markets,
             max_contracts=max_contracts,
             pair_preference=settings.pair_preference,
+            positions=positions,
         )
         for target in targets:
             daily_usd = target.expected_reward_sec * global_rewards.SECONDS_PER_DAY
@@ -376,6 +416,7 @@ class LiveEngine:
         self.order_created_at: dict[str, float] = {}
         self.recent_cancels: dict[str, float] = {}
         self.slug_cooldown: dict[str, float] = {}
+        self.local_fill_positions: dict[str, tuple[Position, float]] = {}
 
     def run(self, duration_seconds: int | None = None) -> None:
         if not self.auth_client.is_available:
@@ -404,36 +445,87 @@ class LiveEngine:
     def prepare(self, is_realloc: bool = False) -> None:
         old_targets = list(self.target_slugs)
         effective_budget = self.settings.total_budget
+        open_orders: list[LiveOrder] = []
         try:
             bp = self.auth_client.get_buying_power()
-            if self.settings.venue != "global":
-                try:
-                    open_orders = self.auth_client.get_open_orders()
+            try:
+                open_orders = self.auth_client.get_open_orders()
+                if self.settings.venue != "global":
                     open_collateral = sum(o.price * o.qty_open for o in open_orders if o.side.startswith("BUY"))
                     bp += open_collateral
-                except Exception:
-                    pass
+            except Exception:
+                pass
             if bp > Decimal("0"):
-                fee_buffer = max(Decimal("3.00"), bp * Decimal("0.05"))
+                fee_buffer = (
+                    Decimal("2.50")
+                    if self.settings.venue == "global"
+                    else max(Decimal("3.00"), bp * Decimal("0.05"))
+                )
                 effective_budget = min(self.settings.total_budget, max(Decimal("0"), bp - fee_buffer))
         except Exception as exc:
             self.logger.warning("Could not fetch buying power for allocation: %s", exc)
-        self.active_windows, alloc_res = allocate_markets(self.settings, self.public_client, self.logger, available_budget=effective_budget)
+        held_positions = None
+        pos_map = None
+        try:
+            held_positions = self.auth_client.get_positions()
+            if isinstance(held_positions, list):
+                pos_map = {p.slug: p for p in held_positions}
+        except Exception as exc:
+            self.logger.warning("Could not fetch held positions for allocation: %s", exc)
+
+        now_prep = time.time()
+        for slug, (opt_pos, fill_ts) in list(self.local_fill_positions.items()):
+            if now_prep - fill_ts > LOCAL_FILL_POSITION_TTL_SECONDS:
+                self.local_fill_positions.pop(slug, None)
+            else:
+                if pos_map is None:
+                    pos_map = {}
+                pos_map[slug] = opt_pos
+
+        self.active_windows, alloc_res = allocate_markets(
+            self.settings,
+            self.public_client,
+            self.logger,
+            available_budget=effective_budget,
+            positions=pos_map,
+            open_orders=open_orders,
+        )
         self.target_slugs = list(alloc_res.selected_slugs)
         self.side_budgets = dict(alloc_res.side_budgets)
         self.side_qtys = dict(alloc_res.side_qtys)
         self.paired_slugs = alloc_res.paired_slugs
         self.condition_pairs = alloc_res.condition_pairs
-        try:
-            held_positions = self.auth_client.get_positions()
-            if isinstance(held_positions, list):
-                for p in held_positions:
-                    if p.net_qty >= Decimal("5") and p.slug in self.active_windows and p.slug not in self.target_slugs:
-                        self.target_slugs.append(p.slug)
-                        self.side_budgets.setdefault((p.slug, "bid"), Decimal("0"))
-                        self.side_budgets.setdefault((p.slug, "ask"), Decimal("0"))
-        except Exception:
-            pass
+        if pos_map is not None:
+            now_utc = datetime.now(timezone.utc)
+            for p in pos_map.values():
+                if p.net_qty >= Decimal("5") and p.slug not in self.target_slugs:
+                    if p.slug not in self.active_windows:
+                        try:
+                            b = self.public_client.fetch_book(p.slug)
+                            if not b.bids and not b.asks:
+                                continue
+                            best_bid = b.bids[0].price if b.bids else Decimal("0")
+                            best_ask = b.asks[0].price if b.asks else Decimal("0")
+                            if best_bid <= Decimal("0.01") and best_ask <= Decimal("0.01"):
+                                continue
+                            if not b.bids:
+                                continue
+                        except Exception:
+                            continue
+                        self.active_windows[p.slug] = IncentiveWindow(
+                            slug=p.slug,
+                            program_id="unwind",
+                            pool_usd=Decimal("0"),
+                            discount=Decimal("0"),
+                            target_size=Decimal("5"),
+                            max_spread=Decimal("0.04"),
+                            start=now_utc - timedelta(hours=1),
+                            end=now_utc + timedelta(hours=23),
+                            status="active",
+                        )
+                    self.target_slugs.append(p.slug)
+                    self.side_budgets.setdefault((p.slug, "bid"), Decimal("0"))
+                    self.side_budgets.setdefault((p.slug, "ask"), Decimal("0"))
         for slug in self.target_slugs:
             if slug not in self.market_states:
                 self.market_states[slug] = "IDLE"
@@ -444,9 +536,20 @@ class LiveEngine:
             self._cancel_targets(self.started_at)
         else:
             dropped_slugs = [s for s in old_targets if s not in self.target_slugs]
-            if dropped_slugs:
-                self.logger.info("Scoped reallocation cancel for dropped slugs: %s", dropped_slugs)
-                self._cancel_targets(time.time(), slugs=dropped_slugs)
+            downsized_slugs = [
+                s for s in self.target_slugs
+                if s in old_targets
+                and any(
+                    o.slug == s
+                    and o.side.startswith("BUY")
+                    and o.qty_open > self.side_qtys.get((s, "bid"), Decimal("0"))
+                    for o in (open_orders or self.ledger.get_open_orders(s))
+                )
+            ]
+            cancel_slugs = dropped_slugs + [s for s in downsized_slugs if s not in dropped_slugs]
+            if cancel_slugs:
+                self.logger.info("Scoped reallocation cancel for dropped/downsized slugs: %s", cancel_slugs)
+                self._cancel_targets(time.time(), slugs=cancel_slugs)
                 for s in dropped_slugs:
                     self.market_states.pop(s, None)
 
@@ -484,11 +587,17 @@ class LiveEngine:
             self.logger.warning("Exchange sync failed, skipping tick: %s", exc)
             return 1.0
 
-        self._ingest_fills(fills)
-        self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms)
-
         live_positions = {p.slug: p for p in positions}
-        realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
+        self._ingest_fills(fills, live_positions=live_positions, now_ts=now_ts)
+        for slug, (opt_pos, fill_ts) in list(self.local_fill_positions.items()):
+            if now_ts - fill_ts > LOCAL_FILL_POSITION_TTL_SECONDS:
+                self.local_fill_positions.pop(slug, None)
+            else:
+                live_positions[slug] = opt_pos
+        self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms)
+        raw_realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
+        baseline = getattr(self.settings, "daily_loss_baseline", Decimal("0"))
+        realized_loss_today = max(Decimal("0"), raw_realized_loss_today - baseline)
         if realized_loss_today >= self.settings.daily_loss_stop:
             if not self.daily_loss_stop_tripped:
                 self.daily_loss_stop_tripped = True
@@ -502,19 +611,21 @@ class LiveEngine:
             return 10.0
         self.daily_loss_stop_tripped = False
 
+        active_slugs = [
+            s for s in self.target_slugs
+            if now_ts >= self.slug_cooldown.get(s, 0.0)
+        ]
         batch_books: dict[str, Book] = {}
-        if hasattr(self.public_client, "fetch_books_batch") and self.target_slugs:
+        if hasattr(self.public_client, "fetch_books_batch") and active_slugs:
             try:
-                res = self.public_client.fetch_books_batch(self.target_slugs)
+                res = self.public_client.fetch_books_batch(active_slugs)
                 if isinstance(res, dict):
                     batch_books = res
             except Exception as exc:
                 self.logger.debug("Batch book fetch failed in tick: %s", exc)
 
         pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] = {}
-        for slug in self.target_slugs:
-            if now_ts < self.slug_cooldown.get(slug, 0.0):
-                continue
+        for slug in active_slugs:
             self._quote_market(
                 slug,
                 now_dt,
@@ -545,9 +656,26 @@ class LiveEngine:
         created = self.order_created_at.get(order_id)
         return created is not None and now_ts - created < self.settings.order_sync_grace_seconds
 
-    def _ingest_fills(self, fills: list[ShadowFill]) -> None:
+    def _ingest_fills(
+        self,
+        fills: list[ShadowFill],
+        live_positions: dict[str, Position] | None = None,
+        now_ts: float | None = None,
+    ) -> None:
         for f in fills:
             if self.ledger.record_fill(f):
+                if hasattr(self.auth_client, "invalidate_positions_cache"):
+                    self.auth_client.invalidate_positions_cache()
+                ts = now_ts if now_ts is not None else time.time()
+                if f.slug in self.local_fill_positions and (ts - self.local_fill_positions[f.slug][1]) <= LOCAL_FILL_POSITION_TTL_SECONDS:
+                    base_pos = self.local_fill_positions[f.slug][0]
+                elif live_positions is not None and f.slug in live_positions:
+                    base_pos = live_positions[f.slug]
+                else:
+                    base_pos = self.ledger.get_position(f.slug)
+                updated_pos = update_position_from_fill(base_pos, f.side, f.price, f.qty)
+                self.local_fill_positions[f.slug] = (updated_pos, ts)
+                self.ledger.update_position(updated_pos, ts_ms=f.ts_ms)
                 self.notifier.notify_fill(f)
                 self.logger.info("Fill recorded: %s %s %s @ %s (order %s)", f.slug, f.side, f.qty, f.price, f.order_id)
 
@@ -630,9 +758,25 @@ class LiveEngine:
             else:
                 self.market_states[slug] = "QUOTING"
 
+            min_qty = getattr(market, "min_qty", Decimal("0"))
+            effective_bid_budget = (
+                Decimal("0")
+                if (isinstance(min_qty, Decimal) and pos.net_qty >= min_qty)
+                else self.side_budgets.get((slug, "bid"), Decimal("0"))
+            )
+
+            resting_on_slug = [
+                o for o in exchange_open if o.slug == slug and o.order_id not in self.recent_cancels
+            ] or self.ledger.get_open_orders(slug)
+            quote_book = (
+                global_rewards.strip_orders_from_book(book, resting_on_slug)
+                if (self.settings.venue == "global" and resting_on_slug)
+                else book
+            )
+
             quotes = desired_quotes(
                 market=market,
-                book=book,
+                book=quote_book,
                 window=window,
                 position=pos,
                 budget=self.settings.max_per_market,
@@ -640,25 +784,105 @@ class LiveEngine:
                 now=now_dt,
                 pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
                 quote_live_periods=self.settings.quote_live_periods,
-                bid_budget=self.side_budgets.get((slug, "bid"), Decimal("0")),
+                bid_budget=effective_bid_budget,
                 ask_budget=self.side_budgets.get((slug, "ask"), Decimal("0")),
                 is_global=(self.settings.venue == "global"),
                 paired=(slug in self.paired_slugs),
                 quote_size=self.side_qtys.get((slug, "bid")),
             )
 
+            if self.settings.venue == "global" and slug in self.paired_slugs:
+                other_slug = None
+                for y, n in self.condition_pairs:
+                    if y == slug:
+                        other_slug = n
+                        break
+                    elif n == slug:
+                        other_slug = y
+                        break
+                if other_slug:
+                    other_pos = live_positions.get(
+                        other_slug,
+                        Position(slug=other_slug, net_qty=Decimal("0"), avg_price=Decimal("0")),
+                    )
+                    other_mkt = self.markets.get(other_slug)
+                    raw_other_min = getattr(other_mkt, "min_qty", min_qty) if other_mkt is not None else min_qty
+                    other_min_qty = raw_other_min if isinstance(raw_other_min, Decimal) else Decimal("5")
+                    other_bids = [
+                        o.price for o in exchange_open
+                        if o.slug == other_slug
+                        and o.side in ("BUY", "BUY_LONG")
+                        and o.order_id not in self.recent_cancels
+                        and isinstance(o.price, Decimal)
+                    ] or [
+                        o.price for o in self.ledger.get_open_orders(other_slug)
+                        if o.side in ("BUY", "BUY_LONG") and isinstance(o.price, Decimal)
+                    ]
+                    other_has_pos = other_pos.net_qty >= other_min_qty and other_pos.avg_price > Decimal("0")
+                    if other_has_pos:
+                        other_bids = list(other_bids) + [other_pos.avg_price]
+                    existing_buy_prices = [
+                        o.price for o in resting_on_slug
+                        if o.side in ("BUY", "BUY_LONG") and isinstance(o.price, Decimal)
+                    ]
+                    max_allowed: Decimal | None = None
+                    if other_bids:
+                        max_allowed = Decimal("0.98") - max(other_bids)
+                    if other_pos.net_qty >= other_min_qty and existing_buy_prices:
+                        freeze_cap = max(existing_buy_prices)
+                        max_allowed = min(max_allowed, freeze_cap) if max_allowed is not None else freeze_cap
+                    if max_allowed is not None:
+                        clamped_quotes: list[Quote] = []
+                        for q in quotes:
+                            if q.side == "BUY_LONG" and q.price > max_allowed:
+                                clamped_px = (max_allowed // market.tick) * market.tick
+                                if clamped_px > Decimal("0"):
+                                    clamped_quotes.append(dataclasses.replace(q, price=clamped_px))
+                            else:
+                                clamped_quotes.append(q)
+                        quotes = clamped_quotes
+
             to_create, to_cancel, _ = reconcile_quotes(self.ledger.get_open_orders(slug), quotes)
 
-            if to_cancel:
-                self.auth_client.cancel_orders_batch(to_cancel)
-                for o in to_cancel:
-                    self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
-                    self.order_created_at.pop(o.order_id, None)
-                    self.recent_cancels[o.order_id] = now_ts
+            if (
+                self.settings.venue == "global"
+                and slug in self.paired_slugs
+                and window is not None
+                and window.max_spread is not None
+                and to_create
+                and to_cancel
+            ):
+                mid = global_rewards.adjusted_mid(quote_book, window.target_size)
+                if mid is not None and quote_book.asks:
+                    margin = max(market.tick, Decimal("0.005"))
+                    max_keep_dist = min(window.max_spread - margin, window.max_spread * Decimal("0.55"))
+                    max_price_lag = Decimal("2") * market.tick
+                    kept_cancel_ids: set[str] = set()
+                    kept_create_sides: set[str] = set()
+                    for old_o in to_cancel:
+                        if old_o.side == "BUY_LONG":
+                            for new_q in to_create:
+                                if (
+                                    new_q.side == "BUY_LONG"
+                                    and new_q.price > old_o.price
+                                    and (new_q.price - old_o.price) <= max_price_lag
+                                    and new_q.qty == old_o.remaining_qty
+                                    and old_o.price < quote_book.asks[0].price
+                                    and abs(old_o.price - mid) <= max_keep_dist
+                                ):
+                                    kept_cancel_ids.add(old_o.order_id)
+                                    kept_create_sides.add("BUY_LONG")
+                    if kept_cancel_ids:
+                        to_cancel = [o for o in to_cancel if o.order_id not in kept_cancel_ids]
+                        to_create = [q for q in to_create if q.side not in kept_create_sides]
+
+            cancel_ids = {o.order_id for o in to_cancel if o.order_id}
+            risk_open = self._risk_open_orders(exchange_open, now_ts)
+            post_cancel_open = [o for o in risk_open if o.order_id not in cancel_ids]
 
             risk_res = self.risk_manager.check_pre_submit(
                 new_quotes=to_create,
-                open_orders=self._risk_open_orders(exchange_open, now_ts),
+                open_orders=post_cancel_open,
                 positions=live_positions,
                 buying_power=buying_power,
                 realized_loss_today=realized_loss_today,
@@ -668,6 +892,13 @@ class LiveEngine:
                 self.logger.warning("Risk gate blocked submission on %s: %s", slug, risk_res.reason)
                 self.market_states[slug] = "PAUSED"
                 return
+
+            if to_cancel:
+                self.auth_client.cancel_orders_batch(to_cancel)
+                for o in to_cancel:
+                    self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
+                    self.order_created_at.pop(o.order_id, None)
+                    self.recent_cancels[o.order_id] = now_ts
 
             if to_create:
                 created = self.auth_client.create_orders_batch(to_create, {slug: market.tick}, {slug: market.min_qty})
@@ -687,7 +918,13 @@ class LiveEngine:
             else:
                 self.ledger.record_lip_snapshot(estimate_lip_score(book, window, orders, market.tick, ts_ms=now_ms))
         except Exception as exc:
-            self.slug_cooldown[slug] = now_ts + 30.0
+            err_str = str(exc).lower()
+            if "not enough balance" in err_str or "allowance" in err_str:
+                self.slug_cooldown[slug] = now_ts + 5.0
+                if hasattr(self.auth_client, "invalidate_positions_cache"):
+                    self.auth_client.invalidate_positions_cache()
+            else:
+                self.slug_cooldown[slug] = now_ts + 30.0
             self.market_states[slug] = "PAUSED"
             self.logger.warning("Error processing %s: %s", slug, exc)
 

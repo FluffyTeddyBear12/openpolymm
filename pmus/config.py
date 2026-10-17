@@ -22,6 +22,7 @@ class Settings:
     quote_live_periods: bool = False
     daily_loss_limit: Decimal = Decimal("5.00")
     daily_loss_stop: Decimal = Decimal("10.00")
+    daily_loss_baseline: Decimal = Decimal("0.00")
     webhook_url: str = ""
     data_dir: Path = Path(__file__).resolve().parent / "data"
     logs_dir: Path = Path(__file__).resolve().parent / "logs"
@@ -34,7 +35,7 @@ class Settings:
     clob_host: str = "https://clob.polymarket.com"
     chain_id: int = 137
     order_sync_grace_seconds: int = 20
-    pair_preference: Decimal = Decimal("1.0")
+    pair_preference: Decimal = Decimal("0.0")
     dashboard_password: str = ""
 
     @classmethod
@@ -108,6 +109,7 @@ class Settings:
             quote_live_periods=os.getenv("PMUS_QUOTE_LIVE_PERIODS", "false").strip().lower() in ("true", "1"),
             daily_loss_limit=Decimal(os.getenv("PMUS_DAILY_LOSS_LIMIT", "5.00")),
             daily_loss_stop=Decimal(os.getenv("PMUS_DAILY_LOSS_STOP", "10.00")),
+            daily_loss_baseline=Decimal(os.getenv("PMUS_DAILY_LOSS_BASELINE", "0.00")),
             webhook_url=webhook_url,
             data_dir=Path(os.getenv("PMUS_DATA_DIR", str(Path(__file__).resolve().parent / "data"))),
             logs_dir=Path(os.getenv("PMUS_LOGS_DIR", str(Path(__file__).resolve().parent / "logs"))),
@@ -120,6 +122,6 @@ class Settings:
             clob_host=clob_host,
             chain_id=chain_id,
             order_sync_grace_seconds=int(os.getenv("PMUS_ORDER_SYNC_GRACE_SECONDS", "20")),
-            pair_preference=Decimal(os.getenv("PMUS_PAIR_PREFERENCE", "1.0")),
+            pair_preference=Decimal(os.getenv("PMUS_PAIR_PREFERENCE", "0.0")),
             dashboard_password=dashboard_password,
         )

@@ -34,7 +34,7 @@ def check_password(settings: Settings) -> bool:
     with st.form("login_form"):
         pwd = st.text_input("Dashboard Password", type="password", key="login_pwd")
         if st.form_submit_button("Unlock Dashboard"):
-            if pwd == settings.dashboard_password:
+            if pwd == settings.dashboard_password or (pwd.strip() and pwd.strip() == settings.dashboard_password.strip()):
                 st.session_state["authenticated"] = True
                 st.rerun()
             elif pwd:
@@ -77,8 +77,8 @@ def is_database_empty(ledger: Ledger) -> bool:
             cur = conn.cursor()
             for tbl in ("lip_snapshots", "orders", "fills", "quotes"):
                 try:
-                    res = cur.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()
-                    if res and res[0] > 0:
+                    res = cur.execute(f"SELECT 1 FROM {tbl} LIMIT 1").fetchone()
+                    if res is not None:
                         return False
                 except sqlite3.OperationalError:
                     continue
@@ -87,10 +87,16 @@ def is_database_empty(ledger: Ledger) -> bool:
         return True
 
 
-def _fill_maker_rebate(f: ShadowFill) -> Decimal:
+def _fill_maker_rebate(f: ShadowFill, is_global: bool = False) -> Decimal:
     if f.fee < Decimal("0"):
         return -f.fee
-    if f.is_maker and f.fee == Decimal("0") and Decimal("0") < f.price < Decimal("1") and f.qty > Decimal("0"):
+    if (
+        not is_global
+        and f.is_maker
+        and f.fee == Decimal("0")
+        and Decimal("0") < f.price < Decimal("1")
+        and f.qty > Decimal("0")
+    ):
         return (Decimal("0.0125") * f.qty * f.price * (Decimal("1") - f.price)).quantize(Decimal("0.0001"))
     return Decimal("0")
 
@@ -100,8 +106,11 @@ def compute_kpis(
     since_ms: int = 0,
     buying_power: Decimal | None = None,
     max_collateral: Decimal | None = None,
+    is_global: bool = False,
+    fills: list[ShadowFill] | None = None,
 ) -> dict[str, Any]:
-    fills = ledger.get_fills_since(since_ms)
+    if fills is None:
+        fills = ledger.get_fills_since(since_ms)
     lip_stats = ledger.get_lip_stats(since_ms)
 
     total_volume = Decimal("0")
@@ -111,7 +120,7 @@ def compute_kpis(
 
     for f in fills:
         total_volume += (f.price * f.qty)
-        reb = _fill_maker_rebate(f)
+        reb = _fill_maker_rebate(f, is_global=is_global)
         if reb > Decimal("0"):
             maker_rebates += reb
         elif f.fee > Decimal("0"):
@@ -155,8 +164,11 @@ def compute_kpis(
     qualifying_bid_seconds = lip_stats["qualifying_bid_seconds"]
     qualifying_ask_seconds = lip_stats["qualifying_ask_seconds"]
 
-    collateral_cap = max_collateral if max_collateral is not None else Decimal("70.00")
     effective_balance = buying_power if buying_power is not None else Decimal("0")
+    if max_collateral is not None and effective_balance > Decimal("0") and max_collateral > effective_balance:
+        collateral_cap = effective_balance
+    else:
+        collateral_cap = max_collateral if max_collateral is not None else Decimal("70.00")
 
     return {
         "balance_usd": effective_balance,
@@ -194,7 +206,8 @@ def format_market_overview(ledger: Ledger, recent_ms: int = 0) -> list[dict[str,
         total_ask_qty = sum((a.qty_open for a in asks), Decimal("0"))
 
         snap = latest_snaps.get(slug)
-        status = "QUOTING" if (bids or asks) else "MONITORING"
+        is_quoting = bool(bids or asks)
+        status = "QUOTING" if is_quoting else "MONITORING"
         title = resolve_market_title(slug)
 
         rows.append({
@@ -207,13 +220,13 @@ def format_market_overview(ledger: Ledger, recent_ms: int = 0) -> list[dict[str,
             "ask_count": len(asks),
             "best_ask": best_ask,
             "ask_qty": total_ask_qty,
-            "qualifies": snap.qualifies if snap else False,
-            "bid_qualifies": snap.bid_qualifies if snap else False,
-            "ask_qualifies": snap.ask_qualifies if snap else False,
+            "qualifies": (snap.qualifies if snap else False) if is_quoting else False,
+            "bid_qualifies": (snap.bid_qualifies if snap else False) if is_quoting else False,
+            "ask_qualifies": (snap.ask_qualifies if snap else False) if is_quoting else False,
             "target_pool_size": snap.total_bid_score if snap else Decimal("0"),
-            "trader_bid_score": snap.trader_bid_score if snap else Decimal("0"),
-            "trader_ask_score": snap.trader_ask_score if snap else Decimal("0"),
-            "est_reward_rate": snap.reward_usd if snap else Decimal("0"),
+            "trader_bid_score": (snap.trader_bid_score if snap else Decimal("0")) if is_quoting else Decimal("0"),
+            "trader_ask_score": (snap.trader_ask_score if snap else Decimal("0")) if is_quoting else Decimal("0"),
+            "est_reward_rate": (snap.reward_usd if snap else Decimal("0")) if is_quoting else Decimal("0"),
             "program_id": snap.program_id if snap else "",
             "last_update_ms": snap.ts_ms if snap else 0,
         })
@@ -221,31 +234,52 @@ def format_market_overview(ledger: Ledger, recent_ms: int = 0) -> list[dict[str,
     return rows
 
 
-def compute_maker_rebate_summary(ledger: Ledger, since_ms: int = 0) -> dict[str, Any]:
-    fills = ledger.get_fills_since(since_ms)
-    open_orders = ledger.get_open_orders()
-    market_rows = format_market_overview(ledger, recent_ms=since_ms)
-    current_rebates = sum((_fill_maker_rebate(f) for f in fills), Decimal("0.0000"))
+def compute_maker_rebate_summary(
+    ledger: Ledger,
+    since_ms: int = 0,
+    market_rows: list[dict[str, Any]] | None = None,
+    fills: list[ShadowFill] | None = None,
+    open_orders: list[LiveOrder] | None = None,
+    is_global: bool = False,
+) -> dict[str, Any]:
+    if fills is None:
+        fills = ledger.get_fills_since(since_ms)
+    if open_orders is None:
+        open_orders = ledger.get_open_orders()
+    if market_rows is None:
+        market_rows = format_market_overview(ledger, recent_ms=since_ms)
+    current_rebates = sum((_fill_maker_rebate(f, is_global=is_global) for f in fills), Decimal("0.0000"))
     maker_fills = [f for f in fills if f.is_maker or f.fee < Decimal("0")]
-    resting_potential = sum(
-        (
-            (Decimal("0.0125") * o.qty_open * o.price * (Decimal("1") - o.price)).quantize(Decimal("0.0001"))
-            for o in open_orders
-            if Decimal("0") < o.price < Decimal("1") and o.qty_open > Decimal("0")
-        ),
-        Decimal("0.0000"),
-    )
     active_daily_lip = sum((r["est_reward_rate"] * Decimal("86400") for r in market_rows if r["status"] == "QUOTING"), Decimal("0.00"))
-    if len(maker_fills) >= 2:
-        ts_vals = [f.ts_ms for f in maker_fills if f.ts_ms > 0]
-        span_ms = max(ts_vals) - min(ts_vals) if len(ts_vals) >= 2 else 0
-        if span_ms >= 3_600_000:
-            pace = (current_rebates * Decimal("86400000") / Decimal(str(span_ms))).quantize(Decimal("0.0001"))
-            projected_daily_rebates = max(pace, resting_potential)
+    active_hourly_lip = (active_daily_lip / Decimal("24")).quantize(Decimal("0.0001"))
+    active_monthly_lip = (active_daily_lip * Decimal("30")).quantize(Decimal("0.01"))
+    deployed_collateral = sum((o.price * o.qty_open for o in open_orders if o.side.startswith("BUY")), Decimal("0.00"))
+    scoring_markets_count = sum(1 for r in market_rows if r["status"] == "QUOTING" and r["qualifies"])
+    active_buy_orders_count = sum(1 for o in open_orders if o.side.startswith("BUY"))
+
+    if is_global:
+        resting_potential = Decimal("0.0000")
+        projected_daily_rebates = current_rebates
+    else:
+        resting_potential = sum(
+            (
+                (Decimal("0.0125") * o.qty_open * o.price * (Decimal("1") - o.price)).quantize(Decimal("0.0001"))
+                for o in open_orders
+                if Decimal("0") < o.price < Decimal("1") and o.qty_open > Decimal("0")
+            ),
+            Decimal("0.0000"),
+        )
+        if len(maker_fills) >= 2:
+            ts_vals = [f.ts_ms for f in maker_fills if f.ts_ms > 0]
+            span_ms = max(ts_vals) - min(ts_vals) if len(ts_vals) >= 2 else 0
+            if span_ms >= 3_600_000:
+                pace = (current_rebates * Decimal("86400000") / Decimal(str(span_ms))).quantize(Decimal("0.0001"))
+                projected_daily_rebates = max(pace, resting_potential)
+            else:
+                projected_daily_rebates = current_rebates + resting_potential
         else:
             projected_daily_rebates = current_rebates + resting_potential
-    else:
-        projected_daily_rebates = current_rebates + resting_potential
+
     projected_monthly_rebates = (projected_daily_rebates * Decimal("30")).quantize(Decimal("0.01"))
     projected_daily_profit = (active_daily_lip + projected_daily_rebates).quantize(Decimal("0.01"))
     projected_monthly_profit = (projected_daily_profit * Decimal("30")).quantize(Decimal("0.01"))
@@ -254,6 +288,11 @@ def compute_maker_rebate_summary(ledger: Ledger, since_ms: int = 0) -> dict[str,
         "maker_fills_count": len(maker_fills),
         "resting_rebate_potential": resting_potential,
         "active_daily_lip": active_daily_lip,
+        "active_hourly_lip": active_hourly_lip,
+        "active_monthly_lip": active_monthly_lip,
+        "deployed_collateral": deployed_collateral,
+        "scoring_markets_count": scoring_markets_count,
+        "active_buy_orders_count": active_buy_orders_count,
         "projected_daily_rebates": projected_daily_rebates,
         "projected_monthly_rebates": projected_monthly_rebates,
         "projected_daily_profit": projected_daily_profit,
@@ -261,12 +300,12 @@ def compute_maker_rebate_summary(ledger: Ledger, since_ms: int = 0) -> dict[str,
     }
 
 
-def format_fills_table(fills: list[ShadowFill], limit: int = 25) -> list[dict[str, Any]]:
+def format_fills_table(fills: list[ShadowFill], limit: int = 25, is_global: bool = False) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for f in sorted(fills, key=lambda x: x.ts_ms, reverse=True)[:limit]:
         dt = datetime.fromtimestamp(f.ts_ms / 1000, tz=timezone.utc)
         ts_str = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-        reb = _fill_maker_rebate(f)
+        reb = _fill_maker_rebate(f, is_global=is_global)
         if f.fee < Decimal("0"):
             fee_str = f"+${abs(f.fee):.4f}"
         elif reb > Decimal("0"):
@@ -600,7 +639,18 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
         st.info("Waiting for first tick... Trading bot has not recorded any quotes, orders, or LIP snapshots yet.")
 
     buying_power = _get_live_buying_power(settings) if not empty else Decimal("0")
-    kpis = compute_kpis(ledger, since_ms=0, buying_power=buying_power, max_collateral=settings.max_collateral)
+    is_global = settings.venue == "global"
+    fills = ledger.get_fills_since(0)
+    open_orders = ledger.get_open_orders()
+    kpis = compute_kpis(ledger, since_ms=0, buying_power=buying_power, max_collateral=settings.max_collateral, is_global=is_global, fills=fills)
+    today_start_ms = int(
+        datetime.now(timezone.utc)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .timestamp()
+        * 1000
+    )
+    today_lip_stats = ledger.get_lip_stats(today_start_ms)
+    est_yield_delta = f"Today Est: ${today_lip_stats['lip_reward_total']:,.2f} | All-Time: ${kpis['lip_reward_total']:,.2f}"
     official_rewards = _get_official_daily_earnings(settings)
 
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -617,7 +667,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
             st.metric(
                 label="Pool Rewards Earned",
                 value=f"${official_rewards:,.4f}",
-                delta=f"Est Yield: ${kpis['lip_reward_total']:,.4f}",
+                delta=est_yield_delta,
                 delta_color="off",
                 border=True,
             )
@@ -625,7 +675,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
             st.metric(
                 label="Pool Rewards Earned",
                 value=f"${kpis['lip_reward_total']:,.4f}",
-                delta="LIP Yield",
+                delta=est_yield_delta,
                 delta_color="off",
                 border=True,
             )
@@ -647,55 +697,101 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
         )
     with c5:
         pnl_val = kpis["realized_pnl"]
+        c5_delta = (
+            f"Fees: -${kpis['taker_fees']:,.4f}"
+            if is_global and kpis["maker_rebates"] == Decimal("0")
+            else f"Rebates: +${kpis['maker_rebates']:,.4f}"
+        )
         st.metric(
             label="Net Exit Profit",
             value=f"${pnl_val:+,.4f}",
-            delta=f"Rebates: +${kpis['maker_rebates']:,.4f}",
+            delta=c5_delta,
             delta_color="normal" if pnl_val != Decimal("0") else "off",
             border=True,
         )
 
-    st.markdown("#### Maker Rebates & Projected Income")
-    reb_summary = compute_maker_rebate_summary(ledger, since_ms=0)
-    r1, r2, r3, r4 = st.columns(4)
-    with r1:
-        st.metric(
-            label="Current Maker Rebates",
-            value=f"+${reb_summary['current_maker_rebates']:,.4f}",
-            delta=f"{reb_summary['maker_fills_count']} Maker Matches",
-            delta_color="off",
-            border=True,
-        )
-    with r2:
-        st.metric(
-            label="Resting Rebate Potential",
-            value=f"+${reb_summary['resting_rebate_potential']:,.4f}",
-            delta="Per Full Order Turnover",
-            delta_color="off",
-            border=True,
-        )
-    with r3:
-        st.metric(
-            label="Projected Rebate Profit",
-            value=f"+${reb_summary['projected_daily_rebates']:,.2f}/day",
-            delta=f"+${reb_summary['projected_monthly_rebates']:,.2f} / 30d",
-            delta_color="normal",
-            border=True,
-        )
-    with r4:
-        st.metric(
-            label="Projected Total Income",
-            value=f"+${reb_summary['projected_daily_profit']:,.2f}/day",
-            delta=f"+${reb_summary['projected_monthly_profit']:,.2f} / 30d (Pools + Rebates)",
-            delta_color="normal",
-            border=True,
-        )
+    market_rows = format_market_overview(ledger, recent_ms=0)
+
+    reb_summary = compute_maker_rebate_summary(ledger, since_ms=0, market_rows=market_rows, fills=fills, open_orders=open_orders, is_global=is_global)
+    if is_global:
+        st.markdown("#### Pool Rewards Velocity & Projected Income")
+        r1, r2, r3, r4 = st.columns(4)
+        with r1:
+            st.metric(
+                label="Live Hourly Pool Pace",
+                value=f"+${reb_summary['active_hourly_lip']:,.4f}/hr",
+                delta=f"{reb_summary['scoring_markets_count']} Scoring Markets",
+                delta_color="normal",
+                border=True,
+            )
+        with r2:
+            st.metric(
+                label="Deployed Order Collateral",
+                value=f"${reb_summary['deployed_collateral']:,.2f}",
+                delta=f"{reb_summary['active_buy_orders_count']} Active Buy Orders",
+                delta_color="off",
+                border=True,
+            )
+        with r3:
+            st.metric(
+                label="Projected Daily Rewards",
+                value=f"+${reb_summary['active_daily_lip']:,.2f}/day",
+                delta="Active Pool Share",
+                delta_color="normal",
+                border=True,
+            )
+        with r4:
+            st.metric(
+                label="Projected 30d Rewards",
+                value=f"+${reb_summary['active_monthly_lip']:,.2f}/30d",
+                delta="At Current Pool Pace",
+                delta_color="normal",
+                border=True,
+            )
+    else:
+        st.markdown("#### Maker Rebates & Projected Income")
+        r1, r2, r3, r4 = st.columns(4)
+        with r1:
+            st.metric(
+                label="Current Maker Rebates",
+                value=f"+${reb_summary['current_maker_rebates']:,.4f}",
+                delta=f"{reb_summary['maker_fills_count']} Maker Matches",
+                delta_color="off",
+                border=True,
+            )
+        with r2:
+            st.metric(
+                label="Resting Rebate Potential",
+                value=f"+${reb_summary['resting_rebate_potential']:,.4f}",
+                delta="Per Full Order Turnover",
+                delta_color="off",
+                border=True,
+            )
+        with r3:
+            st.metric(
+                label="Projected Rebate Profit",
+                value=f"+${reb_summary['projected_daily_rebates']:,.2f}/day",
+                delta=f"+${reb_summary['projected_monthly_rebates']:,.2f} / 30d",
+                delta_color="normal",
+                border=True,
+            )
+        with r4:
+            st.metric(
+                label="Projected Total Income",
+                value=f"+${reb_summary['projected_daily_profit']:,.2f}/day",
+                delta=f"+${reb_summary['projected_monthly_profit']:,.2f} / 30d (Pools + Rebates)",
+                delta_color="normal",
+                border=True,
+            )
 
     st.markdown("#### Live Reward Pools")
-    market_rows = format_market_overview(ledger, recent_ms=0)
     if market_rows:
+        sorted_rows = sorted(
+            market_rows,
+            key=lambda r: (0 if r["status"] == "QUOTING" else 1, -r["est_reward_rate"], r["slug"]),
+        )
         display_data = []
-        for r in market_rows:
+        for r in sorted_rows:
             best_bid_str = f"${r['best_bid']:.3f}" if r["best_bid"] is not None else "-"
             best_ask_str = f"${r['best_ask']:.3f}" if r["best_ask"] is not None else "-"
             qual_symbol = "YES" if r["qualifies"] else "NO"
@@ -723,8 +819,7 @@ def render_live_hud(ledger: Ledger, settings: Settings) -> None:
         st.markdown("_No active quoting markets found._")
 
     st.markdown("#### Recent Order Matches")
-    fills = ledger.get_fills_since(0)
-    blotter_rows = format_fills_table(fills)
+    blotter_rows = format_fills_table(fills, is_global=is_global)
     if blotter_rows:
         df_fills = pd.DataFrame(blotter_rows)
         st.dataframe(df_fills, width="stretch", hide_index=True)
@@ -774,8 +869,9 @@ def render_satellite_hud(settings: Settings) -> None:
     open_trades = sat_ledger.get_open_trades()
 
     bankroll_usd = 1000.0
+    realized_pnl = float(summary.get("total_pnl", 0.0))
     allocated_capital = sum(float(t.get("size_usd", 0.0)) for t in open_trades)
-    virtual_cash = max(0.0, bankroll_usd - allocated_capital)
+    virtual_cash = max(0.0, bankroll_usd + realized_pnl - allocated_capital)
 
     cb_active, rem_hours = sat_ledger.is_circuit_breaker_active(0.0)
     if cb_active:
