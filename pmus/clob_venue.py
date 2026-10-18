@@ -85,6 +85,9 @@ EXCLUDED_QUESTION_PATTERNS = (
     "organic sales",
     "comparable store sales",
     "comparable sales",
+    "same-restaurant sales",
+    "same-store sales",
+    "sales growth",
     "identical sales",
     "unit case volume",
 )
