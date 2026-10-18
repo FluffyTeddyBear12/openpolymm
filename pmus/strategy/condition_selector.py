@@ -115,13 +115,13 @@ def evaluate_condition(
         if yes_held < min_size:
             p_yes = global_rewards.bid_price(yes_book, window, yes_tick)
             opp_no_bid = next((lvl.price for lvl in no_book.bids if lvl.qty >= min_size), no_book.bids[0].price) if no_book.bids else Decimal("0")
-            if no_held > Decimal("0") and no_pos is not None and no_pos.avg_price > Decimal("0"):
-                opp_no_bid = max(opp_no_bid, no_pos.avg_price)
+            held_no_px = no_pos.avg_price if (no_held > Decimal("0") and no_pos is not None and no_pos.avg_price > Decimal("0")) else Decimal("0")
             if (
                 p_yes is not None
                 and p_yes >= SINGLE_SIDED_MIN_PRICE
-                and (p_yes + opp_no_bid) < Decimal("1")
-                and not (no_held >= min_size and no_pos is not None and no_pos.avg_price > Decimal("0") and (p_yes + no_pos.avg_price) > PAIR_MAX_PRICE_SUM)
+                and (p_yes + opp_no_bid) <= global_rewards.pair_max_sum(window)
+                and (p_yes + held_no_px) < Decimal("1")
+                and not (no_held >= min_size and held_no_px > Decimal("0") and (p_yes + held_no_px) > PAIR_MAX_PRICE_SUM)
                 and _admit(cond, yes_book, p_yes, yes_tick)
             ):
                 size_yes = _single_size(max_cost, p_yes, min_size, lot, max_contracts)
@@ -143,13 +143,13 @@ def evaluate_condition(
         if no_held < min_size:
             p_no = global_rewards.bid_price(no_book, window, no_tick)
             opp_yes_bid = next((lvl.price for lvl in yes_book.bids if lvl.qty >= min_size), yes_book.bids[0].price) if yes_book.bids else Decimal("0")
-            if yes_held > Decimal("0") and yes_pos is not None and yes_pos.avg_price > Decimal("0"):
-                opp_yes_bid = max(opp_yes_bid, yes_pos.avg_price)
+            held_yes_px = yes_pos.avg_price if (yes_held > Decimal("0") and yes_pos is not None and yes_pos.avg_price > Decimal("0")) else Decimal("0")
             if (
                 p_no is not None
                 and p_no >= SINGLE_SIDED_MIN_PRICE
-                and (p_no + opp_yes_bid) < Decimal("1")
-                and not (yes_held >= min_size and yes_pos is not None and yes_pos.avg_price > Decimal("0") and (p_no + yes_pos.avg_price) > PAIR_MAX_PRICE_SUM)
+                and (p_no + opp_yes_bid) <= global_rewards.pair_max_sum(window)
+                and (p_no + held_yes_px) < Decimal("1")
+                and not (yes_held >= min_size and held_yes_px > Decimal("0") and (p_no + held_yes_px) > PAIR_MAX_PRICE_SUM)
                 and _admit(cond, no_book, p_no, no_tick)
             ):
                 size_no = _single_size(max_cost, p_no, min_size, cond.no.min_qty, max_contracts)

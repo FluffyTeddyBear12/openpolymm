@@ -58,7 +58,25 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "player_stat_prop",
         re.compile(
-            r"\b(?:most receptions|\d+\+ receptions|anytime touchdown|(?:rushing|receiving) yards o/u|lead the (?:nba|nfl|nhl|mlb) in (?:points|assists|rebounds|blocks|player efficiency rating|efficiency)|record \d+\+ goals|record the most (?:assists|passing yards|rushing yards|receiving yards)|most (?:passing|rushing|receiving) yards|(?:passing|rushing|receiving) yards leader|most (?:scrimmage |rushing |receiving )?touchdowns)\b"
+            r"\b(?:most receptions|\d+\+ receptions|anytime touchdown|(?:rushing|receiving) yards o/u|lead the (?:nba|nfl|nhl|mlb) in (?:points|assists|rebounds|blocks|player efficiency rating|efficiency)|record \d+\+ goals|record the most (?:assists|passing yards|rushing yards|receiving yards)|most (?:passing|rushing|receiving) yards|(?:passing|rushing|receiving) yards leader|most (?:scrimmage |rushing |receiving )?touchdowns|have the most (?:first bloods|kills|goals|points|assists|rebounds|steals|blocks|strikeouts|home runs|hits|saves|touchdowns|receptions|wins|aces))\b"
+        ),
+    ),
+    (
+        "esports",
+        re.compile(
+            r"\b(?:valorant|first bloods?|cs2|counter-strike|dota(?: 2)?|league of legends|lol worlds|vct|champions 202\d|most kills|most deaths|pentakill|first baron|first dragon)\b"
+        ),
+    ),
+    (
+        "severe_weather",
+        re.compile(
+            r"\b(?:typhoon|hurricane|cyclone|tropical storm|category [1-5] storm)\b"
+        ),
+    ),
+    (
+        "corporate_metrics",
+        re.compile(
+            r"\b(?:comp sales|organic sales|comparable (?:store )?sales|identical sales|unit case volume)\b"
         ),
     ),
 )

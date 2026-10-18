@@ -172,3 +172,29 @@ def test_last_trade_reference_reads_shared_market_price_on_this_books_side():
     assert quote_guard(no_b, w, D("0.61"), D("0.01")) is None
     yes_b = book("y", [("0.34", "300"), ("0.33", "300")], [("0.36", "300")], tick="0.01", last="0.35")
     assert quote_guard(yes_b, w, D("0.34"), D("0.01")) is None
+
+
+def test_guard_rejects_procter_and_gamble_cliff_book():
+    w = window(target="20", max_spread="0.045")
+    pg_yes = book(
+        "pg-y",
+        [("0.26", "40"), ("0.25", "58.7"), ("0.03", "27"), ("0.02", "306")],
+        [("0.28", "100")],
+        tick="0.01",
+    )
+    reason = quote_guard(pg_yes, w, D("0.25"), D("0.01"))
+    assert reason is not None and ("support" in reason or "cliff book" in reason)
+
+
+def test_guard_rejects_walmart_single_order_bait_book():
+    w = window(target="50", max_spread="0.045")
+    wmt_no = book(
+        "wmt-n",
+        [("0.52", "65"), ("0.24", "200")],
+        [("0.54", "65")],
+        tick="0.01",
+        last="0.26",
+    )
+    reason = quote_guard(wmt_no, w, D("0.51"), D("0.01"))
+    assert reason is not None and ("support" in reason or "last trade" in reason)
+

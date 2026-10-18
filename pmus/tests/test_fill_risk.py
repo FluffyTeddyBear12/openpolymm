@@ -79,3 +79,17 @@ def test_review_found_gaps_are_closed(question, category):
 
 def test_dictionary_word_speed_is_not_a_streamer():
     assert fill_risk_category("Will envoys meet with speed and urgency?") is None
+
+
+@pytest.mark.parametrize(
+    "question,expected_categories",
+    [
+        ("Will lukxo have the most first bloods at VALORANT Champions 2026?", ("player_stat_prop", "esports")),
+        ("Will Champi peak as a Very strong typhoon?", ("severe_weather",)),
+        ("Walmart (WMT) Q3 US comp sales (ex-fuel) 2.5% to 4%?", ("corporate_metrics",)),
+        ("Procter & Gamble (PG) Q1 organic sales growth 2.5% to 3.5%?", ("corporate_metrics",)),
+    ],
+)
+def test_esports_weather_and_corporate_metrics_filtered(question, expected_categories):
+    assert fill_risk_category(question) in expected_categories
+

@@ -58,7 +58,7 @@ BUYING_POWER_CACHE_TTL_SEC = 5.0
 MAX_SAMPLING_PAGES = 40
 SAMPLING_CACHE_TTL_SEC = 60.0
 SAMPLING_STALE_CACHE_TTL_SEC = 1800.0
-MAX_MARKET_CACHE_SIZE = 3000
+MAX_MARKET_CACHE_SIZE = 10000
 EXCLUDED_QUESTION_PATTERNS = (
     "temperature in ",
     "weather in ",
@@ -71,6 +71,22 @@ EXCLUDED_QUESTION_PATTERNS = (
     "quarterly earnings",
     "beat earnings",
     "views on day",
+    "valorant",
+    "first blood",
+    "cs2",
+    "counter-strike",
+    "dota",
+    "league of legends",
+    "typhoon",
+    "hurricane",
+    "cyclone",
+    "tropical storm",
+    "comp sales",
+    "organic sales",
+    "comparable store sales",
+    "comparable sales",
+    "identical sales",
+    "unit case volume",
 )
 
 logger = logging.getLogger(__name__)
@@ -333,37 +349,41 @@ class ClobVenueClient:
                 is_excluded = any(pat in q_lower for pat in EXCLUDED_QUESTION_PATTERNS)
                 risk_cat = fill_risk_category(question) if not is_excluded else None
 
+                raw_tokens = m.get("tokens") or []
+                if isinstance(raw_tokens, (list, tuple)):
+                    for tok in raw_tokens:
+                        if isinstance(tok, dict):
+                            tid = str(tok.get("token_id", "")).strip()
+                            if tid:
+                                self._record_market_meta(
+                                    tid,
+                                    Market(
+                                        slug=tid,
+                                        event_id=market_slug,
+                                        category="global",
+                                        tick=tick,
+                                        min_qty=min_qty,
+                                        active=True,
+                                        mutually_exclusive=False,
+                                        question=question,
+                                    ),
+                                )
+
                 if is_excluded or risk_cat:
                     if risk_cat:
                         skipped_by_risk[risk_cat] = skipped_by_risk.get(risk_cat, 0) + 1
-                    raw_tokens = m.get("tokens") or []
-                    if isinstance(raw_tokens, (list, tuple)):
-                        for tok in raw_tokens:
-                            if isinstance(tok, dict):
-                                tid = str(tok.get("token_id", "")).strip()
-                                if tid:
-                                    self._record_market_meta(
-                                        tid,
-                                        Market(
-                                            slug=tid,
-                                            event_id=market_slug,
-                                            category="global",
-                                            tick=tick,
-                                            min_qty=min_qty,
-                                            active=True,
-                                            mutually_exclusive=False,
-                                            question=question,
-                                        ),
-                                    )
                     continue
 
                 end_date_raw = m.get("end_date_iso") or m.get("end_date") or m.get("game_end_time")
                 game_start_raw = m.get("game_start_time") or m.get("event_start_time") or m.get("start_date")
+                explicit_game_start = _parse_iso_ts(m.get("game_start_time") or m.get("event_start_time"))
                 end_date_dt = _parse_iso_ts(end_date_raw)
                 game_start_dt = _parse_iso_ts(game_start_raw)
                 if end_date_dt is not None:
                     if (end_date_dt - now_utc) < MIN_DAYS_TO_EXPIRY:
                         continue
+                if explicit_game_start is not None and (explicit_game_start - now_utc) < MIN_DAYS_TO_EXPIRY:
+                    continue
 
                 tokens = m.get("tokens", [])
                 if not isinstance(tokens, list):
