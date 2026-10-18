@@ -48,12 +48,17 @@ from pmus.models import (
     ShadowFill,
     Side,
 )
+from pmus.strategy.fill_risk import fill_risk_category
 
 DATA_API_POSITIONS_URL = "https://data-api.polymarket.com/positions"
 POSITIONS_PAGE_SIZE = 500
 POSITIONS_CACHE_TTL_SEC = 15.0
 MIN_DAYS_TO_EXPIRY = timedelta(days=3)
 BUYING_POWER_CACHE_TTL_SEC = 5.0
+MAX_SAMPLING_PAGES = 40
+SAMPLING_CACHE_TTL_SEC = 60.0
+SAMPLING_STALE_CACHE_TTL_SEC = 1800.0
+MAX_MARKET_CACHE_SIZE = 3000
 EXCLUDED_QUESTION_PATTERNS = (
     "temperature in ",
     "weather in ",
@@ -151,7 +156,7 @@ class _SamplingMarket:
     pool_usd: Decimal
     target_size: Decimal
     max_spread: Decimal
-    tokens: list[dict[str, Any]]
+    tokens: tuple[dict[str, Any], ...]
     end_date: datetime | None = None
     game_start_time: datetime | None = None
 
@@ -166,6 +171,9 @@ class ClobVenueClient:
         self._buying_power_cache: Decimal | None = None
         self._buying_power_cache_ts: float = 0.0
         self._resolved_bp_sig_type: int | None = None
+        self._sampling_markets_cache: list[_SamplingMarket] | None = None
+        self._sampling_markets_cache_ts: float = 0.0
+        self._last_fill_risk_skipped: dict[str, int] = {}
 
         if client is not None:
             self.client = client
@@ -234,22 +242,167 @@ class ClobVenueClient:
     def is_available(self) -> bool:
         return self.is_authenticated
 
-    def _fetch_sampling_markets(self, max_pages: int = 8) -> list[_SamplingMarket]:
-        if hasattr(self.client, "get_sampling_markets"):
-            try:
-                raw_resp = self.client.get_sampling_markets()
-            except Exception:
+    def _record_market_meta(self, token_id: str, market: Market) -> None:
+        if token_id not in self._market_cache:
+            if len(self._market_cache) >= MAX_MARKET_CACHE_SIZE:
+                self._market_cache.pop(next(iter(self._market_cache)))
+            self._market_cache[token_id] = market
+
+    def invalidate_sampling_cache(self) -> None:
+        self._sampling_markets_cache = None
+        self._sampling_markets_cache_ts = 0.0
+
+    def invalidate_sampling_markets_cache(self) -> None:
+        self.invalidate_sampling_cache()
+
+    def _fetch_sampling_markets(
+        self,
+        max_pages: int = MAX_SAMPLING_PAGES,
+        force_refresh: bool = False,
+    ) -> list[_SamplingMarket]:
+        now_mono = time.monotonic()
+        if (
+            not force_refresh
+            and max_pages >= MAX_SAMPLING_PAGES
+            and self._sampling_markets_cache is not None
+            and (now_mono - self._sampling_markets_cache_ts) < SAMPLING_CACHE_TTL_SEC
+        ):
+            return list(self._sampling_markets_cache)
+
+        try:
+            if hasattr(self.client, "get_sampling_markets"):
+                try:
+                    raw_resp = self.client.get_sampling_markets()
+                except Exception:
+                    resp = requests.get(f"{self.host}/sampling-markets", timeout=10.0)
+                    resp.raise_for_status()
+                    raw_resp = resp.json()
+            else:
                 resp = requests.get(f"{self.host}/sampling-markets", timeout=10.0)
                 resp.raise_for_status()
                 raw_resp = resp.json()
-        else:
-            resp = requests.get(f"{self.host}/sampling-markets", timeout=10.0)
-            resp.raise_for_status()
-            raw_resp = resp.json()
+        except Exception as exc:
+            if (
+                max_pages >= MAX_SAMPLING_PAGES
+                and self._sampling_markets_cache is not None
+                and (now_mono - self._sampling_markets_cache_ts) <= SAMPLING_STALE_CACHE_TTL_SEC
+            ):
+                logger.warning("First page of sampling-markets failed (%s); returning stale complete cache", exc)
+                return list(self._sampling_markets_cache)
+            raise
+
+        parsed: list[_SamplingMarket] = []
+        seen_conds: set[str] = set()
+        skipped_by_risk: dict[str, int] = {}
+        now_utc = datetime.now(timezone.utc)
+
+        def _process_market_dicts(raw_items: list[Any]) -> None:
+            for m in raw_items:
+                if not isinstance(m, dict):
+                    continue
+                if m.get("active") is False or m.get("closed") is True:
+                    continue
+                rewards = m.get("rewards")
+                if not isinstance(rewards, dict):
+                    continue
+                rates = rewards.get("rates")
+                if not isinstance(rates, list) or not rates:
+                    continue
+
+                rate = rates[0]
+                if not isinstance(rate, dict):
+                    continue
+
+                try:
+                    pool_usd = Decimal(str(rate.get("rewards_daily_rate", "0")))
+                except Exception:
+                    continue
+
+                if pool_usd <= Decimal("0"):
+                    continue
+
+                target_size = Decimal(str(rewards.get("min_size", 200)))
+                raw_max_spread = rewards.get("max_spread", 3.5)
+                max_spread = Decimal(str(raw_max_spread)) / Decimal("100")
+                cond_id = str(m.get("condition_id", ""))
+                market_slug = str(m.get("market_slug", "") or cond_id)
+                tick = Decimal(str(m.get("minimum_tick_size", "0.001")))
+                min_qty = Decimal(str(m.get("minimum_order_size", "5")))
+                question = str(m.get("question", ""))
+                q_lower = question.lower()
+                is_excluded = any(pat in q_lower for pat in EXCLUDED_QUESTION_PATTERNS)
+                risk_cat = fill_risk_category(question) if not is_excluded else None
+
+                if is_excluded or risk_cat:
+                    if risk_cat:
+                        skipped_by_risk[risk_cat] = skipped_by_risk.get(risk_cat, 0) + 1
+                    raw_tokens = m.get("tokens") or []
+                    if isinstance(raw_tokens, (list, tuple)):
+                        for tok in raw_tokens:
+                            if isinstance(tok, dict):
+                                tid = str(tok.get("token_id", "")).strip()
+                                if tid:
+                                    self._record_market_meta(
+                                        tid,
+                                        Market(
+                                            slug=tid,
+                                            event_id=market_slug,
+                                            category="global",
+                                            tick=tick,
+                                            min_qty=min_qty,
+                                            active=True,
+                                            mutually_exclusive=False,
+                                            question=question,
+                                        ),
+                                    )
+                    continue
+
+                end_date_raw = m.get("end_date_iso") or m.get("end_date") or m.get("game_end_time")
+                game_start_raw = m.get("game_start_time") or m.get("event_start_time") or m.get("start_date")
+                end_date_dt = _parse_iso_ts(end_date_raw)
+                game_start_dt = _parse_iso_ts(game_start_raw)
+                if end_date_dt is not None:
+                    if (end_date_dt - now_utc) < MIN_DAYS_TO_EXPIRY:
+                        continue
+
+                tokens = m.get("tokens", [])
+                if not isinstance(tokens, list):
+                    continue
+
+                if cond_id:
+                    if cond_id in seen_conds:
+                        continue
+                    seen_conds.add(cond_id)
+
+                token_copies = tuple(dict(t) for t in tokens if isinstance(t, dict))
+                parsed.append(
+                    _SamplingMarket(
+                        cond_id=cond_id,
+                        market_slug=market_slug,
+                        question=question,
+                        tick=tick,
+                        min_qty=min_qty,
+                        pool_usd=pool_usd,
+                        target_size=target_size,
+                        max_spread=max_spread,
+                        tokens=token_copies,
+                        end_date=end_date_dt,
+                        game_start_time=game_start_dt,
+                    )
+                )
+
+        pages_fetched = 1
+        crawl_completed = False
+        crawl_error = False
 
         if isinstance(raw_resp, dict):
-            raw_markets = list(raw_resp.get("data", []))
+            page_data_list = list(raw_resp.get("data") or [])
+            _process_market_dicts(page_data_list)
+            del page_data_list
             next_cursor = raw_resp.get("next_cursor")
+            del raw_resp
+
+            seen_cursors: set[str] = set()
             pages_left = max_pages - 1
             while (
                 pages_left > 0
@@ -257,6 +410,14 @@ class ClobVenueClient:
                 and next_cursor
                 and next_cursor != "LTE="
             ):
+                if next_cursor in seen_cursors:
+                    logger.warning(
+                        "Repeated cursor %s in sampling-markets pagination; stopping after %d pages",
+                        next_cursor,
+                        pages_fetched,
+                    )
+                    break
+                seen_cursors.add(next_cursor)
                 pages_left -= 1
                 try:
                     resp = requests.get(
@@ -266,89 +427,59 @@ class ClobVenueClient:
                     )
                     resp.raise_for_status()
                     page_data = resp.json()
-                except Exception:
+                except Exception as exc:
+                    crawl_error = True
+                    logger.warning(
+                        "Sampling markets fetch failed after %d pages: %s",
+                        pages_fetched,
+                        exc,
+                    )
                     break
                 if isinstance(page_data, dict):
-                    raw_markets.extend(page_data.get("data", []))
+                    page_items = list(page_data.get("data") or [])
+                    _process_market_dicts(page_items)
+                    del page_items
+                    pages_fetched += 1
                     next_cursor = page_data.get("next_cursor")
+                    del page_data
                 else:
                     break
+
+            if not crawl_error and (not next_cursor or next_cursor == "LTE="):
+                crawl_completed = True
         elif isinstance(raw_resp, list):
-            raw_markets = raw_resp
+            _process_market_dicts(raw_resp)
+            del raw_resp
+            crawl_completed = True
         else:
-            raw_markets = []
+            del raw_resp
+            crawl_completed = True
 
-        parsed: list[_SamplingMarket] = []
-        seen_conds: set[str] = set()
-        for m in raw_markets:
-            if not isinstance(m, dict):
-                continue
-            if m.get("active") is False or m.get("closed") is True:
-                continue
-            rewards = m.get("rewards")
-            if not isinstance(rewards, dict):
-                continue
-            rates = rewards.get("rates")
-            if not isinstance(rates, list) or not rates:
-                continue
+        self._last_fill_risk_skipped = dict(skipped_by_risk)
+        logger.info("Fill-risk skipped markets: %s", skipped_by_risk)
 
-            rate = rates[0]
-            if not isinstance(rate, dict):
-                continue
-
-            try:
-                pool_usd = Decimal(str(rate.get("rewards_daily_rate", "0")))
-            except Exception:
-                continue
-
-            if pool_usd <= Decimal("0"):
-                continue
-
-            target_size = Decimal(str(rewards.get("min_size", 200)))
-            raw_max_spread = rewards.get("max_spread", 3.5)
-            max_spread = Decimal(str(raw_max_spread)) / Decimal("100")
-            cond_id = str(m.get("condition_id", ""))
-            market_slug = str(m.get("market_slug", "") or cond_id)
-            tick = Decimal(str(m.get("minimum_tick_size", "0.001")))
-            min_qty = Decimal(str(m.get("minimum_order_size", "5")))
-            question = str(m.get("question", ""))
-            q_lower = question.lower()
-            if any(pat in q_lower for pat in EXCLUDED_QUESTION_PATTERNS):
-                continue
-
-            end_date_raw = m.get("end_date_iso") or m.get("end_date") or m.get("game_end_time")
-            game_start_raw = m.get("game_start_time") or m.get("event_start_time") or m.get("start_date")
-            end_date_dt = _parse_iso_ts(end_date_raw)
-            game_start_dt = _parse_iso_ts(game_start_raw)
-            if end_date_dt is not None:
-                if (end_date_dt - datetime.now(timezone.utc)) < MIN_DAYS_TO_EXPIRY:
-                    continue
-
-            tokens = m.get("tokens", [])
-            if not isinstance(tokens, list):
-                continue
-
-            if cond_id:
-                if cond_id in seen_conds:
-                    continue
-                seen_conds.add(cond_id)
-
-            parsed.append(
-                _SamplingMarket(
-                    cond_id=cond_id,
-                    market_slug=market_slug,
-                    question=question,
-                    tick=tick,
-                    min_qty=min_qty,
-                    pool_usd=pool_usd,
-                    target_size=target_size,
-                    max_spread=max_spread,
-                    tokens=tokens,
-                    end_date=end_date_dt,
-                    game_start_time=game_start_dt,
+        if crawl_completed:
+            if max_pages >= MAX_SAMPLING_PAGES:
+                self._sampling_markets_cache = list(parsed)
+                self._sampling_markets_cache_ts = now_mono
+            return parsed
+        else:
+            if (
+                max_pages >= MAX_SAMPLING_PAGES
+                and self._sampling_markets_cache is not None
+                and (now_mono - self._sampling_markets_cache_ts) <= SAMPLING_STALE_CACHE_TTL_SEC
+            ):
+                logger.warning(
+                    "Sampling markets crawl incomplete after %d pages; returning stale complete cache",
+                    pages_fetched,
                 )
+                return list(self._sampling_markets_cache)
+            logger.warning(
+                "Sampling markets crawl incomplete after %d pages with no stale cache; returning %d markets without caching",
+                pages_fetched,
+                len(parsed),
             )
-        return parsed
+            return parsed
 
     def fetch_reward_markets(self, limit: int = 20) -> list[tuple[Market, IncentiveWindow]]:
         now_utc = datetime.now(timezone.utc)
@@ -372,7 +503,7 @@ class ClobVenueClient:
                     mutually_exclusive=False,
                     question=pm.question,
                 )
-                self._market_cache[token_id] = market
+                self._record_market_meta(token_id, market)
 
                 window = IncentiveWindow(
                     slug=token_id,
@@ -436,8 +567,8 @@ class ClobVenueClient:
                 mutually_exclusive=False,
                 question=pm.question,
             )
-            self._market_cache[yes_id] = market_yes
-            self._market_cache[no_id] = market_no
+            self._record_market_meta(yes_id, market_yes)
+            self._record_market_meta(no_id, market_no)
 
             window = IncentiveWindow(
                 slug=pm.cond_id,
@@ -510,41 +641,55 @@ class ClobVenueClient:
     def fetch_books_batch(self, token_ids: list[str], chunk_size: int = 200) -> dict[str, Book]:
         if not token_ids:
             return {}
+        start_time = time.monotonic()
         results: dict[str, Book] = {}
-        for i in range(0, len(token_ids), chunk_size):
+        for chunk_idx, i in enumerate(range(0, len(token_ids), chunk_size)):
             chunk = token_ids[i : i + chunk_size]
             payload = [{"token_id": tid} for tid in chunk]
             batch_data = None
-            try:
-                resp = requests.post(f"{self.host}/books", json=payload, timeout=15.0)
-                resp.raise_for_status()
-                batch_data = resp.json()
-            except Exception as exc:
-                logger.warning("Batch books fetch failed (%s); falling back to single fetch", exc)
-
-            missing: list[str] = []
-            if isinstance(batch_data, list):
-                for item in batch_data:
-                    if isinstance(item, dict):
-                        tid = str(item.get("asset_id") or item.get("token_id") or "").strip()
-                        if tid:
-                            try:
-                                results[tid] = self._parse_book_payload(tid, item)
-                            except Exception as parse_exc:
-                                logger.warning("Failed to parse book payload for %s: %s", tid, parse_exc)
-                if len(token_ids) <= 20:
-                    for tid in chunk:
-                        if tid not in results:
-                            missing.append(tid)
-            else:
-                missing = list(chunk)
-
-            for tid in missing:
+            last_exc = None
+            for attempt in range(2):
+                if attempt > 0:
+                    time.sleep(1.0)
                 try:
-                    results[tid] = self.fetch_book(tid)
+                    resp = requests.post(f"{self.host}/books", json=payload, timeout=15.0)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    if isinstance(data, list):
+                        batch_data = data
+                        break
+                    last_exc = ValueError(f"Non-list response: {type(data)}")
                 except Exception as exc:
-                    logger.warning("Fallback fetch_book failed for %s: %s", tid, exc)
+                    last_exc = exc
 
+            if batch_data is None:
+                logger.warning("Batch books chunk %d failed after retry: %s", chunk_idx, last_exc)
+                continue
+
+            for item in batch_data:
+                if isinstance(item, dict):
+                    tid = str(item.get("asset_id") or item.get("token_id") or "").strip()
+                    if tid:
+                        try:
+                            results[tid] = self._parse_book_payload(tid, item)
+                        except Exception as parse_exc:
+                            logger.warning("Failed to parse book payload for %s: %s", tid, parse_exc)
+
+            if len(token_ids) <= 20:
+                for tid in chunk:
+                    if tid not in results:
+                        try:
+                            results[tid] = self.fetch_book(tid)
+                        except Exception as exc:
+                            logger.warning("Fallback fetch_book failed for %s: %s", tid, exc)
+
+        elapsed = time.monotonic() - start_time
+        logger.info(
+            "fetch_books_batch: %d tokens requested, %d returned in %.2f seconds",
+            len(token_ids),
+            len(results),
+            elapsed,
+        )
         return results
 
     def fetch_bbo(self, token_id: str) -> tuple[Level | None, Level | None]:

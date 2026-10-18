@@ -673,11 +673,11 @@ def test_live_engine_tick_uses_fetch_books_batch_when_dict_returned():
     public_client.fetch_book.assert_not_called()
 
 
-def test_allocate_markets_keeps_800_book_limit_under_500_and_expands_above_500():
+def test_allocate_markets_caps_candidate_books_at_3000():
     logger = logging.getLogger("test_engine_book_limit")
     conditions = [
-        make_condition(cond_id=f"c{i}", pool=str(1000 - i), target="50")
-        for i in range(700)
+        make_condition(cond_id=f"c{i}", pool=str(2000 - i), target="50")
+        for i in range(1600)
     ]
 
     client = MagicMock()
@@ -694,7 +694,7 @@ def test_allocate_markets_keeps_800_book_limit_under_500_and_expands_above_500()
     )
     allocate_markets(settings_under, client, logger)
     slugs_under = client.fetch_books_batch.call_args[0][0]
-    assert len(slugs_under) == 1200
+    assert len(slugs_under) == 3000
 
     client.fetch_reward_conditions.return_value = list(conditions)
     client.fetch_books_batch.reset_mock()
@@ -708,7 +708,7 @@ def test_allocate_markets_keeps_800_book_limit_under_500_and_expands_above_500()
     )
     allocate_markets(settings_above, client, logger)
     slugs_above = client.fetch_books_batch.call_args[0][0]
-    assert len(slugs_above) == 1200
+    assert len(slugs_above) == 3000
 
 
 def test_allocate_markets_prioritizes_affordable_pair_target_size_and_strips_open_orders():
@@ -2039,4 +2039,271 @@ def test_prepare_caches_404_unwind_slugs_and_allows_ask_only_books():
         engine.prepare(is_realloc=True)
         assert "123404567" in engine.dead_unwind_slugs
         assert client.fetch_book.call_count == 2
+
+
+def test_allocate_markets_filters_unaffordable_conditions_and_reaches_rank_1400():
+    logger = logging.getLogger("test_filters_unaffordable")
+    cond_unaffordable = make_condition(cond_id="c_unaffordable", pool="1000000", target="500")
+    affordable_conditions = [
+        make_condition(cond_id=f"c_aff_{i}", pool=str(1500 - i), target="50")
+        for i in range(1401)
+    ]
+    all_conditions = [cond_unaffordable] + affordable_conditions
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = list(all_conditions)
+    client.fetch_books_batch.return_value = {}
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    allocate_markets(settings, client, logger)
+    fetched_slugs = client.fetch_books_batch.call_args[0][0]
+    assert "c_aff_0-yes" in fetched_slugs
+    assert "c_aff_1399-yes" in fetched_slugs
+    assert "c_aff_1400-yes" in fetched_slugs
+    assert cond_unaffordable.yes.slug in fetched_slugs
+    assert fetched_slugs.index("c_aff_1400-no") < fetched_slugs.index(cond_unaffordable.yes.slug)
+
+
+def test_allocate_markets_sequential_fallback_caps_at_fallback_limit_and_warns(caplog):
+    logger = logging.getLogger("test_seq_fallback")
+    conditions = [
+        make_condition(cond_id=f"c_{i}", pool=str(500 - i), target="50")
+        for i in range(200)
+    ]
+
+    client = MagicMock(spec=["fetch_reward_conditions", "fetch_book", "fetch_books_batch"])
+    client.fetch_reward_conditions.return_value = list(conditions)
+    client.fetch_books_batch.return_value = {}
+    client.fetch_book.return_value = make_book([("0.48", "250")], [("0.52", "250")])
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        allocate_markets(settings, client, logger)
+
+    assert client.fetch_book.call_count == 300
+    warning_records = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING and "Falling back to sequential book fetch" in r.message
+    ]
+    assert len(warning_records) == 1
+    assert "FALLBACK_BOOK_CONDITION_LIMIT=150" in warning_records[0].message
+
+
+def test_allocate_markets_partial_batch_books_skips_missing_legs_and_logs(caplog):
+    logger = logging.getLogger("test_partial_batch")
+    cond1 = make_condition(cond_id="c1", pool="300", target="50")
+    cond2 = make_condition(cond_id="c2", pool="200", target="50")
+
+    book1_yes = make_book([("0.48", "250")], [("0.52", "250")], slug="c1-yes")
+    book1_no = make_book([("0.48", "250")], [("0.52", "250")], slug="c1-no")
+    book2_yes = make_book([("0.48", "250")], [("0.52", "250")], slug="c2-yes")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond1, cond2]
+    client.fetch_books_batch.return_value = {
+        "c1-yes": book1_yes,
+        "c1-no": book1_no,
+        "c2-yes": book2_yes,
+    }
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        _, alloc = allocate_markets(settings, client, logger)
+
+    assert alloc.selected_slugs == ["c1-yes", "c1-no"]
+    warns = [r for r in caplog.records if "fetch_books_batch returned partial books" in r.message]
+    assert len(warns) == 1
+    assert "1 conditions had books vs 2 requested" in warns[0].message
+
+
+def test_allocate_markets_batch_books_below_50_pct_falls_back_to_sequential(caplog):
+    logger = logging.getLogger("test_batch_below_50")
+    cond1 = make_condition(cond_id="c1", pool="300", target="50")
+    cond2 = make_condition(cond_id="c2", pool="200", target="50")
+    cond3 = make_condition(cond_id="c3", pool="100", target="50")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond1, cond2, cond3]
+    client.fetch_books_batch.return_value = {
+        "c1-yes": make_book([("0.48", "250")], [("0.52", "250")], slug="c1-yes"),
+        "c1-no": make_book([("0.48", "250")], [("0.52", "250")], slug="c1-no"),
+    }
+    client.fetch_book.return_value = make_book([("0.48", "250")], [("0.52", "250")])
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=4,
+        max_contracts_per_market=100,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        allocate_markets(settings, client, logger)
+
+    assert client.fetch_book.call_count == 6
+    warns = [r for r in caplog.records if "Falling back to sequential book fetch" in r.message]
+    assert len(warns) == 1
+
+
+def test_prepare_startup_cancels_non_target_orphaned_orders():
+    logger = logging.getLogger("test_startup_orphan_cancel")
+    cond = make_condition(cond_id="c1", pool="200")
+
+    public_client = MagicMock()
+    public_client.fetch_reward_conditions.return_value = [cond]
+    public_client.fetch_book.return_value = make_book([("0.48", "250")], [("0.52", "250")])
+
+    orphan_order = LiveOrder(
+        order_id="ord-orphan",
+        slug="slug-heisman-removed",
+        side="BUY_LONG",
+        price=Decimal("0.50"),
+        qty_open=Decimal("10"),
+    )
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    auth_client.get_positions.return_value = []
+    auth_client.get_open_orders.return_value = [orphan_order]
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.cancel_orders_batch.return_value = []
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=2,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+
+    engine.prepare(is_realloc=False)
+    auth_client.cancel_orders_batch.assert_called_once()
+    cancelled_orders = auth_client.cancel_orders_batch.call_args[0][0]
+    assert any(o.order_id == "ord-orphan" for o in cancelled_orders)
+
+    auth_client.cancel_orders_batch.reset_mock()
+    auth_client.cancel_all_scoped.reset_mock()
+
+    engine.prepare(is_realloc=True)
+    auth_client.cancel_orders_batch.assert_not_called()
+
+
+def test_prepare_unwind_non_404_logs_warning_with_slug(caplog):
+    logger = logging.getLogger("test_unwind_warning")
+    cond = make_condition(cond_id="c1", pool="200")
+
+    public_client = MagicMock()
+    public_client.fetch_reward_conditions.return_value = [cond]
+    public_client.fetch_book.side_effect = ConnectionError("Connection refused")
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_buying_power.return_value = Decimal("500.00")
+    held_pos = Position(slug="slug-held-unwind", net_qty=Decimal("10"), avg_price=Decimal("0.50"))
+    auth_client.get_positions.return_value = [held_pos]
+    auth_client.get_open_orders.return_value = []
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.cancel_orders_batch.return_value = []
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=2,
+        max_contracts_per_market=100,
+    )
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        engine.prepare(is_realloc=False)
+
+    warn_logs = [r for r in caplog.records if r.levelno == logging.WARNING and "Unwind book fetch failed for slug-held-unwind" in r.message]
+    assert len(warn_logs) == 1
+    assert "Connection refused" in warn_logs[0].message
+
+
+def test_allocate_markets_logs_cycle_telemetry_info(caplog):
+    logger = logging.getLogger("test_cycle_info")
+    cond_temp = make_condition(cond_id="c_temp", pool="500", target="50", question="Temperature in NYC")
+    cond_aff = make_condition(cond_id="c_aff", pool="300", target="50", question="Will team A win?")
+    cond_unaff = make_condition(cond_id="c_unaff", pool="200", target="500", question="Will team B win?")
+
+    book_yes = make_book([("0.48", "250")], [("0.52", "250")], slug="c_aff-yes")
+    book_no = make_book([("0.48", "250")], [("0.52", "250")], slug="c_aff-no")
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond_temp, cond_aff, cond_unaff]
+    client.fetch_books_batch.return_value = {
+        "c_aff-yes": book_yes,
+        "c_aff-no": book_no,
+    }
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=2,
+        max_contracts_per_market=100,
+    )
+
+    with caplog.at_level(logging.INFO):
+        allocate_markets(settings, client, logger)
+
+    info_records = [
+        r for r in caplog.records
+        if r.levelno == logging.INFO and "Book fetch cycle:" in r.message
+    ]
+    assert len(info_records) == 1
+    msg = info_records[0].message
+    assert "2 conditions after filters" in msg
+    assert "1 conditions affordable" in msg
+    assert "1 conditions with books" in msg
+    assert "elapsed=" in msg
 

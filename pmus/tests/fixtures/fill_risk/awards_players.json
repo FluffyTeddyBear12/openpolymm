@@ -1,0 +1,1422 @@
+{
+  "risk": [
+    {
+      "question": "Will \"14th\" be nominated for Best Documentary Feature Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"32B\" be nominated for Best Live Action Short Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"A Derailment\" be nominated for Best Documentary Short Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"A Short Documentary About a Giant Pencil\" be nominated for Best Documentary Short Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"A Wolf in the Suburbs\" be nominated for Best Documentary Short Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Agapito\" be nominated for Best Live Action Short Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"All of a Sudden\" be nominated for Best Adapted Screenplay at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"All of a Sudden\" be nominated for Best Casting at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"All of a Sudden\" be nominated for Best International Feature Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"All of a Sudden\" be nominated for Best Picture at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"American Doctor\" be nominated for Best Documentary Feature Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Anthony Ippolito\" be nominated for Best Actor at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Avengers: Doomsday\" be nominated for Best Picture at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Avengers: Doomsday\" be nominated for Best Visual Effects at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Backrooms\" be nominated for Best Production Design at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Because Today is Saturday\" be nominated for Best Animated Short Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Behemoth!\" be nominated for Best Original Score at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Behemoth!\" be nominated for Best Original Screenplay at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Behemoth!\" be nominated for Best Picture at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Behemoth!\" be nominated for Best Sound at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Being Heumann\" be nominated for Best Casting at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"By Any Means\" from By Any Means be nominated for Best Original Song at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Chains of Love\" from Wuthering Heights be nominated for Best Original Song at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Clarissa\" be nominated for Best Adapted Screenplay at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Clayface\" be nominated for Best Makeup and Hairstyling at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Digger\" be nominated for Best Makeup and Hairstyling at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Digger\" be nominated for Best Production Design at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Disclosure Day\" be nominated for Best Sound at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Dune: Part Three\" be nominated for Best Picture at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"El Cuerpo de Cristo\" be nominated for Best Animated Short Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Club Kid\" be nominated for Best Film Editing at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Club Kid\" be nominated for Best Original Screenplay at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Coward\" be nominated for Best International Feature Film at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Cry to Heaven\" be nominated for Best Adapted Screenplay at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"Cry to Heaven\" be nominated for Best Casting at the 99th Academy Awards?",
+      "category": "award_nomination"
+    },
+    {
+      "question": "Will \"I Knew It, I Knew You\" from Toy Story 5 win Best Original Song at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will \"La Nieve\" from The Black Ball win Best Original Song at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will \"NAZA\" win Best Documentary Feature Film at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will \"This City May Have Chewed Me Up (But It Hasn't Spit Me Out)\" from The Debut win Best Original Song at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will \"When I'm Home\" from The Odyssey win Best Original Song at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will A Derailment win Best Documentary Short Film at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Amanda Seyfried win Best Supporting Actress at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Andrew Garfield win Best Supporting Actor at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Andrew Scott win Best Actor at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Anne Hathaway win Best Supporting Actress at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Backrooms win Best Production Design at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Because Today is Saturday win Best Animated Short Film at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Christopher Nolan win Best Director at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Clayface win Best Makeup and Hairstyling at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Denis Villeneuve win Best Director at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Digger win Best Makeup and Hairstyling at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Dune: Part Three win Best Film Editing at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Dune: Part Three win Best Visual Effects at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will John Malkovich win Best Actor at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Julianne Moore win Best Actress at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Matt Damon win Best Actor at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Penélope Cruz win Best Supporting Actress at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Robert Pattinson win Best Supporting Actor at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will The Odyssey win Best Picture at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Tom Cruise win Best Actor at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Toy Story 5 win Best Animated Feature Film at the 99th Academy Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Don't Be Dumb (A$AP Rocky) win Best Rap Album at the 69th Annual GRAMMY Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Ella Langley win Best New Artist at the 69th Annual GRAMMY Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Lost Weekend (Phoebe Bridgers) win Album of the Year at the 69th Annual GRAMMY Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Lux (Rosalía) win Album of the Year at the 69th Annual GRAMMY Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Octane (Don Toliver) win Best Rap Album at the 69th Annual GRAMMY Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will SIENNA SPIRO win Best New Artist at the 69th Annual GRAMMY Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will The Art of Loving (Olivia Dean) win Album of the Year at the 69th Annual GRAMMY Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will you seem pretty sad for a girl so in love (Olivia Rodrigo) win Album of the Year at the 69th Annual GRAMMY Awards?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will António Guterres win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Committee to Protect Journalists win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Doctors Without Borders win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Donald Trump win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Jimmy Lai win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Sudan's Emergency Response Rooms win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Sviatlana Tsikhanouskaya win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will UNRWA win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Volodymyr Zelenskyy win the Nobel Peace Prize in 2027?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Ali G be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Artificial Intelligence be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Bad Bunny be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Benjamin Netanyahu be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Christina Koch be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Dario Amodei be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Donald Trump be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Elon Musk be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Jeremy Hansen be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Marco Rubio be TIME Person of the Year 2026?",
+      "category": "award_win"
+    },
+    {
+      "question": "Ballon d'Or 2026: Erling Haaland or Jude Bellingham to finish higher?",
+      "category": "award_win"
+    },
+    {
+      "question": "Ballon d'Or 2026: Harry Kane or Lamine Yamal to finish higher?",
+      "category": "award_win"
+    },
+    {
+      "question": "Ballon d'Or 2026: Rodri or Lionel Messi to finish higher?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Alessia Russo finish in the top 10 of the 2026 Women's Ballon d'Or?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Alex Greenwood finish in the top 10 of the 2026 Women's Ballon d'Or?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Alexia Putellas win the 2026 Women's Ballon d'Or?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Caroline Graham Hansen finish in the top 10 of the 2026 Women's Ballon d'Or?",
+      "category": "award_win"
+    },
+    {
+      "question": "Will Brock Purdy win the 2026 NFL MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Giannis Antetokounmpo win the 2026-27 NBA MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Brice Turang win the 2026 World Series MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Jackson Chourio win the 2026 World Series MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Jacob Misiorowski win the 2026 World Series MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will William Contreras win the 2026 World Series MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Canyon win Worlds 2026 Finals MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Chovy win Worlds 2026 Finals MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Darker win the VALORANT Champions 2026 MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will DaviH win the VALORANT Champions 2026 MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Derke win the VALORANT Champions 2026 MVP?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Faker win a Finals MVP Award at an international event in 2026?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will CJ Carr win the 2026 Heisman Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Darian Mensah win the 2026 Heisman Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Jeremiah Smith win the 2026 Heisman Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Trinidad Chambliss win the 2026 Heisman Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will a player from the ACC win the 2026 Heisman Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will a player from the Big Ten win the 2026 Heisman Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will an FBS Independent win the 2026 Heisman Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will AJ Dybantsa win the 2026-27 NBA Rookie of the Year?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Caleb Wilson win the 2026-27 NBA Rookie of the Year?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Cameron Boozer win the 2026-27 NBA Rookie of the Year?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Darius Acuff Jr. win the 2026-27 NBA Rookie of the Year?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Darryn Peterson win the 2026-27 NBA Rookie of the Year?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Carson Benge win the 2026 NL Rookie of the Year award?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Jeremiyah Love win the 2026 NFL Offensive Rookie of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Arvell Reese win the 2026 NFL Defensive Rookie of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will David Bailey win the 2026 NFL Defensive Rookie of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Gavin McKenna win the 2026-27 Calder Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Ilya Morozov win the 2026-27 Calder Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Ivar Stenberg win the 2026-27 Calder Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Markus Ruck win the 2026-27 Calder Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Tommy Bleyl win the 2026-27 Calder Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Connor McDavid win the 2026-27 Hart Memorial Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Kirill Kaprizov win the 2026-27 Hart Memorial Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Macklin Celebrini win the 2026-27 Hart Memorial Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Nathan MacKinnon win the 2026-27 Hart Memorial Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Mackenzie Blackwood win the 2026-27 Vezina Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Sam Montembeault win the 2026-27 Vezina Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Samuel Ersson win the 2026-27 Vezina Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Cam Fowler win the 2026-27 James Norris Memorial Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Erik Karlsson win the 2026-27 James Norris Memorial Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Miro Heiskanen win the 2026-27 James Norris Memorial Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Mikael Backlund win the 2026-27 Frank J. Selke Trophy?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Alex Bregman win a 2026 NL Gold Glove Award?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Austin Wells win a 2026 AL Gold Glove Award?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Bobby Witt Jr. win a 2026 AL Gold Glove Award?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Bobby Witt Jr. win the 2026 AL Platinum Glove award?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Caleb Durbin win a 2026 AL Gold Glove Award?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Aidan Hutchinson win the 2026 NFL Defensive Player of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Will Anderson Jr. win the 2026 NFL Defensive Player of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Bijan Robinson win the 2026 NFL Offensive Player of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Jahmyr Gibbs win the 2026 NFL Offensive Player of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Jaxon Smith-Njigba win the 2026 NFL Offensive Player of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Kenneth Walker III win the 2026 NFL Offensive Player of the Year award for the 2026-27 NFL season?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Isaiah Hartenstein win the 2026-27 NBA Defensive Player of the Year?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Victor Wembanyama win the 2026-27 NBA Defensive Player of the Year?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Lionel Messi win the 2027 MLS Golden Boot?",
+      "category": "player_award"
+    },
+    {
+      "question": "Will Chris Olave finish the 2026-27 NFL regular season with the most receptions?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Jaxon Smith-Njigba finish the 2026-27 NFL regular season with the most receptions?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Malik Nabers finish the 2026-27 NFL regular season with the most receptions?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Puka Nacua finish the 2026-27 NFL regular season with the most receptions?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Trey McBride finish the 2026-27 NFL regular season with the most receptions?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will any player have 125+ receptions in the 2026-27 NFL regular season?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Ashton Jeanty: Anytime Touchdown",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Bijan Robinson: Anytime Touchdown",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Braelon Allen: Anytime Touchdown",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Brock Bowers: Anytime Touchdown",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Bucky Irving: Anytime Touchdown",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Cade Stover: Anytime Touchdown",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Cam Skattebo: Anytime Touchdown",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Bijan Robinson: Rushing Yards O/U 89.5",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Braelon Allen: Rushing Yards O/U 39.5",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Bucky Irving: Rushing Yards O/U 49.5",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Brock Bowers: Receiving Yards O/U 79.5",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Brycen Tremayne: Receiving Yards O/U 19.5",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Brycen Tremayne: Receiving Yards O/U 29.5",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will AJ Dybantsa lead the NBA in points per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Anthony Davis lead the NBA in points per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Darryn Peterson lead the NBA in points per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Deni Avdija lead the NBA in points per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Desmond Bane lead the NBA in points per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Alperen Sengun lead the NBA in assists per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Alperen Sengun lead the NBA in rebounds per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Chet Holmgren lead the NBA in rebounds per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Domantas Sabonis lead the NBA in rebounds per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Donovan Clingan lead the NBA in rebounds per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Isaiah Hartenstein lead the NBA in rebounds per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Adem Bona lead the NBA in blocks per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Alex Sarr lead the NBA in Player Efficiency Rating (PER) in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Alex Sarr lead the NBA in efficiency (EFF) per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Alperen Sengun lead the NBA in Player Efficiency Rating (PER) in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Alperen Sengun lead the NBA in efficiency (EFF) per game in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Andrew Nembhard lead the NBA in Player Efficiency Rating (PER) in 2026-27?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Adam Fantilli record 50+ goals in the 2026-27 regular season?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Adrian Kempe record 50+ goals in the 2026-27 regular season?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Aleksander Barkov record 50+ goals in the 2026-27 regular season?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Alex DeBrincat record 50+ goals in the 2026-27 regular season?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Amine Harit record the most assists in the 2026-27 UEFA Europa League?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Amine Oudrhiri record the most assists in the 2026-27 UEFA Europa League?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Angelo Stiller record the most assists in the 2026-27 UEFA Champions League?",
+      "category": "player_stat_prop"
+    },
+    {
+      "question": "Will Baba Oladotun be the first pick in the 2027 NBA Draft?",
+      "category": "draft_prop"
+    },
+    {
+      "question": "Will Tyran Stokes be the first pick in the 2027 NBA Draft?",
+      "category": "draft_prop"
+    }
+  ],
+  "keep": [
+    {
+      "question": "Will Gavin Newsom win the 2028 Democratic presidential nomination?",
+      "note": "Political presidential party nomination market - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Alexandria Ocasio-Cortez win the 2028 Democratic presidential nomination?",
+      "note": "Political presidential party nomination market - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Josh Shapiro win the 2028 Democratic presidential nomination?",
+      "note": "Political presidential party nomination market - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Kamala Harris win the 2028 Democratic presidential nomination?",
+      "note": "Political presidential party nomination market - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Jon Ossoff win the 2028 Democratic presidential nomination?",
+      "note": "Political presidential party nomination market - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will J.D. Vance win the 2028 Republican presidential nomination?",
+      "note": "Political presidential party nomination market - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Marco Rubio win the 2028 Republican presidential nomination?",
+      "note": "Political presidential party nomination market - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Axel Kicillof win the Peronist nomination to contest the 2027 Argentine presidential election?",
+      "note": "International political presidential nomination - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Sergio Massa win the Peronist nomination to contest the 2027 Argentine presidential election?",
+      "note": "International political presidential nomination - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Elissa Slotkin win the 2028 Democratic vice-presidential nomination?",
+      "note": "Political vice-presidential nomination - must not be excluded as an award nomination"
+    },
+    {
+      "question": "Will Alexandria Ocasio-Cortez be the 2028 Democratic Vice-Presidential nominee?",
+      "note": "Political vice-presidential party nominee market"
+    },
+    {
+      "question": "Will Gretchen Whitmer be the 2028 Democratic Vice-Presidential nominee?",
+      "note": "Political vice-presidential party nominee market"
+    },
+    {
+      "question": "Will Zohran Mamdani be the 2028 Democratic Vice-Presidential nominee?",
+      "note": "Political vice-presidential party nominee market"
+    },
+    {
+      "question": "Alexandria Ocasio-Cortez Democratic nomination odds leader on October 31?",
+      "note": "Political nomination market leader near-miss trap"
+    },
+    {
+      "question": "Gavin Newsom Democratic nomination odds leader on October 31?",
+      "note": "Political nomination market leader near-miss trap"
+    },
+    {
+      "question": "Jon Ossoff Democratic nomination odds leader on October 31?",
+      "note": "Political nomination market leader near-miss trap"
+    },
+    {
+      "question": "Will Democratic House incumbents not win in between ten and twelve nominating elections in the 2026 cycle?",
+      "note": "Political nominating primary elections aggregate market"
+    },
+    {
+      "question": "Will Democratic House incumbents not win in between thirteen and fifteen nominating elections in the 2026 cycle?",
+      "note": "Political nominating primary elections aggregate market"
+    },
+    {
+      "question": "Will James Comer be the Republican nominee for Kentucky Governor?",
+      "note": "Political state gubernatorial nominee market"
+    },
+    {
+      "question": "Will Savannah Maddox be the Republican nominee for Kentucky Governor?",
+      "note": "Political state gubernatorial nominee market"
+    },
+    {
+      "question": "Will Thomas Massie be the Republican nominee for Kentucky Governor?",
+      "note": "Political state gubernatorial nominee market"
+    },
+    {
+      "question": "Will Michael Echols be the Republican nominee for LA-05?",
+      "note": "Political congressional nominee market"
+    },
+    {
+      "question": "Will Lula announce the nomination of an individual for Minister of the Supreme Federal Court of Brazil by December 31?",
+      "note": "Supreme Court judicial nomination market - civic/political governance, not an award nomination"
+    },
+    {
+      "question": "Will Heidi Overton be confirmed as FDA Commissioner by December 31?",
+      "note": "Executive agency confirmation/appointment market"
+    },
+    {
+      "question": "Will Heidi Overton be confirmed as FDA Commissioner by November 30?",
+      "note": "Executive agency confirmation/appointment market"
+    },
+    {
+      "question": "Will Heidi Overton be confirmed as FDA Commissioner by October 31?",
+      "note": "Executive agency confirmation/appointment market"
+    },
+    {
+      "question": "Will Dean Spanos be the next US Ambassador to Greece?",
+      "note": "Diplomatic ambassadorial appointment market"
+    },
+    {
+      "question": "Will Geoffrey Pyatt be the next US Ambassador to Greece?",
+      "note": "Diplomatic ambassadorial appointment market"
+    },
+    {
+      "question": "Will Gus Bilirakis be the next US Ambassador to Greece?",
+      "note": "Diplomatic ambassadorial appointment market"
+    },
+    {
+      "question": "Will John Catsimatidis be the next US Ambassador to Greece?",
+      "note": "Diplomatic ambassadorial appointment market"
+    },
+    {
+      "question": "Will Nicole Malliotakis be the next US Ambassador to Greece?",
+      "note": "Diplomatic ambassadorial appointment market"
+    },
+    {
+      "question": "Will Pete Hegseth be the next to leave the Trump Cabinet before 2027?",
+      "note": "Cabinet political appointment departure market"
+    },
+    {
+      "question": "Will Susie Wiles be the next to leave the Trump Cabinet before 2027?",
+      "note": "Cabinet political appointment departure market"
+    },
+    {
+      "question": "Will no one leave the Trump Cabinet before 2027?",
+      "note": "Cabinet political appointment departure market"
+    },
+    {
+      "question": "Will the Democrat win the North Carolina Supreme Court general election?",
+      "note": "Judicial election win market - political/court, not an award win"
+    },
+    {
+      "question": "Will the Republican win the North Carolina Supreme Court general election?",
+      "note": "Judicial election win market - political/court, not an award win"
+    },
+    {
+      "question": "Alexandre de Moraes out as Brazil Supreme Court Justice?",
+      "note": "Supreme Court judicial office tenure market"
+    },
+    {
+      "question": "Supreme Court accepts AI copyright case before 2027?",
+      "note": "Judicial docket legal market"
+    },
+    {
+      "question": "Will Notre Dame Fighting Irish win the 2027 CFP National Championship?",
+      "note": "College football team national championship - team award/title, not individual player award"
+    },
+    {
+      "question": "Will Georgia Bulldogs win the 2027 CFP National Championship?",
+      "note": "College football team national championship"
+    },
+    {
+      "question": "Will Indiana Hoosiers win the 2027 CFP National Championship?",
+      "note": "College football team national championship"
+    },
+    {
+      "question": "Will Miami Hurricanes win the 2027 CFP National Championship?",
+      "note": "College football team national championship"
+    },
+    {
+      "question": "Will Ohio State Buckeyes win the 2027 CFP National Championship?",
+      "note": "College football team national championship"
+    },
+    {
+      "question": "Will the ACC conference win the 2026-27 College Football Playoff National Championship?",
+      "note": "College football conference championship prop"
+    },
+    {
+      "question": "Will the Big Ten conference win the 2026-27 College Football Playoff National Championship?",
+      "note": "College football conference championship prop"
+    },
+    {
+      "question": "Will the SEC conference win the 2026-27 College Football Playoff National Championship?",
+      "note": "College football conference championship prop"
+    },
+    {
+      "question": "Will Florida Make the 2027 College Football Playoff National Championship Game?",
+      "note": "Team postseason progression market"
+    },
+    {
+      "question": "Will Florida St. Make the 2027 College Football Playoff National Championship Game?",
+      "note": "Team postseason progression market"
+    },
+    {
+      "question": "Will Georgia Tech Make the 2027 College Football Playoff National Championship Game?",
+      "note": "Team postseason progression market"
+    },
+    {
+      "question": "Will Michigan Make the 2027 College Football Playoff National Championship Game?",
+      "note": "Team postseason progression market"
+    },
+    {
+      "question": "Will Texas Make the 2027 College Football Playoff National Championship Game?",
+      "note": "Team postseason progression market"
+    },
+    {
+      "question": "Will USC Make the 2027 College Football Playoff National Championship Game?",
+      "note": "Team postseason progression market"
+    },
+    {
+      "question": "Will Alabama Crimson Tide Win the 2026 SEC Championship?",
+      "note": "College football conference team championship"
+    },
+    {
+      "question": "Will Air Force Falcons Win the 2026 Mountain West Championship?",
+      "note": "College football conference team championship"
+    },
+    {
+      "question": "Will the Cleveland Guardians win the 2026 World Series?",
+      "note": "MLB team championship - contrast with individual World Series MVP"
+    },
+    {
+      "question": "Will the Milwaukee Brewers win the 2026 World Series?",
+      "note": "MLB team championship - team win, not player award"
+    },
+    {
+      "question": "Will the Tampa Bay Rays win the 2026 World Series?",
+      "note": "MLB team championship"
+    },
+    {
+      "question": "Will an AL Central team win the 2026 World Series?",
+      "note": "MLB division pool team championship"
+    },
+    {
+      "question": "Will an AL East team win the 2026 World Series?",
+      "note": "MLB division pool team championship"
+    },
+    {
+      "question": "Will an NL Central team win the 2026 World Series?",
+      "note": "MLB division pool team championship"
+    },
+    {
+      "question": "Will the Carolina Hurricanes be named the 2026-27 NHL Stanley Cup Champion?",
+      "note": "NHL team championship - team title, not player award"
+    },
+    {
+      "question": "Will the Colorado Avalanche be named the 2026-27 NHL Stanley Cup Champion?",
+      "note": "NHL team championship"
+    },
+    {
+      "question": "Will the Dallas Stars be named the 2026-27 NHL Stanley Cup Champion?",
+      "note": "NHL team championship"
+    },
+    {
+      "question": "Will the Edmonton Oilers be named the 2026-27 NHL Stanley Cup Champion?",
+      "note": "NHL team championship"
+    },
+    {
+      "question": "Will the Florida Panthers be named the 2026-27 NHL Stanley Cup Champion?",
+      "note": "NHL team championship"
+    },
+    {
+      "question": "Will the Vegas Golden Knights be named the 2026-27 NHL Stanley Cup Champion?",
+      "note": "NHL team championship"
+    },
+    {
+      "question": "Will the St. Louis Blues win the 2026-27 NHL Presidents' Trophy?",
+      "note": "NHL regular season team points champion trophy - team honor, not individual player trophy"
+    },
+    {
+      "question": "Will Chicago Blackhawks advance to the Western Conference Finals of the 2027 Stanley Cup Playoffs?",
+      "note": "NHL team playoff progression market"
+    },
+    {
+      "question": "Will Minnesota Timberwolves win the 2027 NBA Finals?",
+      "note": "NBA team championship - team title, not Finals MVP"
+    },
+    {
+      "question": "Will New York Knicks win the 2027 NBA Finals?",
+      "note": "NBA team championship"
+    },
+    {
+      "question": "Will Oklahoma City Thunder win the 2027 NBA Finals?",
+      "note": "NBA team championship"
+    },
+    {
+      "question": "Will Philadelphia 76ers win the 2027 NBA Finals?",
+      "note": "NBA team championship"
+    },
+    {
+      "question": "Will San Antonio Spurs win the 2027 NBA Finals?",
+      "note": "NBA team championship"
+    },
+    {
+      "question": "Will Atlanta Dream win the 2026 WNBA Finals?",
+      "note": "WNBA team championship"
+    },
+    {
+      "question": "Will Golden State Valkyries win the 2026 WNBA Finals?",
+      "note": "WNBA team championship"
+    },
+    {
+      "question": "Will Los Angeles FC win the 2026 MLS Cup?",
+      "note": "MLS team championship - team cup win, not individual Golden Boot"
+    },
+    {
+      "question": "Will Arsenal win the 2026-27 English Premier League (EPL) Championship?",
+      "note": "English Premier League team title"
+    },
+    {
+      "question": "Will Arsenal win the 2026-27 UEFA Champions League Championship?",
+      "note": "UEFA Champions League club championship"
+    },
+    {
+      "question": "Will Ajax win the 2026-27 UEFA Conference League Championship?",
+      "note": "UEFA Conference League club championship"
+    },
+    {
+      "question": "Will Atalanta win the 2026-27 UEFA Conference League Championship?",
+      "note": "UEFA Conference League club championship"
+    },
+    {
+      "question": "Will Atletico Mineiro win the 2026 Copa Sudamericana?",
+      "note": "CONMEBOL club tournament championship"
+    },
+    {
+      "question": "Will Australia win the 2027 AFC Asian Cup?",
+      "note": "International football team tournament"
+    },
+    {
+      "question": "Will Canada win the 2027 Concacaf Gold Cup?",
+      "note": "International football team tournament - team Gold Cup, not individual player Golden Boot/Glove"
+    },
+    {
+      "question": "Will Canada win the 2027 FIFA Women's World Cup?",
+      "note": "FIFA Women's World Cup national team tournament"
+    },
+    {
+      "question": "Will Arizona Cardinals finish the 2026-27 NFL regular season with the most sacks?",
+      "note": "Team defensive season stat prop - team total, not individual player sacks"
+    },
+    {
+      "question": "Will Detroit Lions finish the 2026-27 NFL regular season with the most sacks?",
+      "note": "Team defensive season stat prop"
+    },
+    {
+      "question": "Will Minnesota Vikings finish the 2026-27 NFL regular season with the most sacks?",
+      "note": "Team defensive season stat prop"
+    },
+    {
+      "question": "Will Denver Broncos finish the 2026-27 NFL regular season with the most interceptions?",
+      "note": "Team defensive season stat prop - team total, not individual player interception prop"
+    },
+    {
+      "question": "Will Green Bay Packers finish the 2026-27 NFL regular season with the most interceptions?",
+      "note": "Team defensive season stat prop"
+    },
+    {
+      "question": "Will Houston Rockets receive the first overall pick at the 2027 NBA Draft Lottery?",
+      "note": "Team draft lottery odds market - franchise draft lottery, not an individual athlete draft slot prop"
+    },
+    {
+      "question": "Will Washington Wizards receive the first overall pick at the 2027 NBA Draft Lottery?",
+      "note": "Team draft lottery odds market - franchise draft lottery, not an individual athlete draft slot prop"
+    },
+    {
+      "question": "AFC Bournemouth vs. Sunderland AFC: O/U 2.5",
+      "note": "Soccer match total goals line - game over/under, not an individual player prop"
+    },
+    {
+      "question": "AFC Bournemouth vs. Sunderland AFC: 1st Half O/U 1.5",
+      "note": "Soccer match 1st half goals line - game over/under"
+    },
+    {
+      "question": "AFC Bournemouth vs. Sunderland AFC: O/U 9.5 Total Corners",
+      "note": "Soccer match corners total line - game over/under"
+    },
+    {
+      "question": "Alabama Team Total: O/U 26.5",
+      "note": "College football team game total line - team total, not player points/yards prop"
+    },
+    {
+      "question": "Alabama Team Total: O/U 29.5",
+      "note": "College football team game total line"
+    },
+    {
+      "question": "Will Elizabeth Roy win the 2026 Whitby mayoral election?",
+      "note": "Mayoral election candidate named \"Roy\" - false positive trap for naive rookie of the year \\broy\\b pattern"
+    },
+    {
+      "question": "Will Josh Hart lead the NBA in efficiency (EFF) per game in 2026-27?",
+      "note": "Basketball player named \"Josh Hart\" - false positive trap for naive Hart Trophy \\bhart\\b pattern"
+    },
+    {
+      "question": "Will David Sacks leave the Trump administration before 2027?",
+      "note": "Political appointee named \"David Sacks\" - false positive trap for naive football stat \\bsacks\\b pattern"
+    },
+    {
+      "question": "Will DraftKings (DKNG) beat quarterly earnings?",
+      "note": "Company named \"DraftKings\" quarterly earnings - false positive trap for naive sports \\bdraft\\b pattern"
+    },
+    {
+      "question": "Will voters pick the 1873 Colt Single Action Army Revolver \"Peacemaker\" (.45 Colt) as the state gun of Idaho?",
+      "note": "State referendum ballot choice - false positive trap for naive draft \\bpick\\b pattern"
+    },
+    {
+      "question": "Will voters pick the Colt M1911 .45 automatic Colt pistol (.45 ACP) as the state gun of Idaho?",
+      "note": "State referendum ballot choice - false positive trap for naive draft \\bpick\\b pattern"
+    },
+    {
+      "question": "Will voters pick the Winchester Model 1873 \"Gun that Won the West\" (.44-40) as the state gun of Idaho?",
+      "note": "State referendum ballot choice - false positive trap for naive draft \\bpick\\b pattern"
+    },
+    {
+      "question": "OpenAI vs. Anthropic: First to another Millennium Prize Solution?",
+      "note": "Mathematics Millennium Prize Problem - academic/scientific prize, not an entertainment or sports award"
+    },
+    {
+      "question": "Will AI solve 0 more Millennium Prize Problems in 2026?",
+      "note": "Mathematics Millennium Prize Problem milestone"
+    },
+    {
+      "question": "Will AI solve 1 more Millennium Prize Problem in 2026?",
+      "note": "Mathematics Millennium Prize Problem milestone"
+    },
+    {
+      "question": "Will Anthropic announce a Millennium Prize solution by December 31, 2026?",
+      "note": "Mathematics Millennium Prize Problem milestone"
+    },
+    {
+      "question": "Will Trump say \"Nobel\" this week?",
+      "note": "Speech mention betting market - speech utterance prop, not a Nobel Prize win or nomination"
+    },
+    {
+      "question": "Will \"Prize\" be in the headlines this week?",
+      "note": "News headline keyword mention market - keyword prop, not an award win or nomination"
+    },
+    {
+      "question": "Will Netflix say \"Tiktok\" / \"Youtube\" during earnings call?",
+      "note": "Earnings call speech mention prop"
+    },
+    {
+      "question": "Will JD Vance win the 2028 US Presidential Election?",
+      "note": "US presidential general election win market - political election, not an award win"
+    },
+    {
+      "question": "Will Gavin Newsom win the 2028 US Presidential Election?",
+      "note": "US presidential general election win market"
+    },
+    {
+      "question": "Will Alexandria Ocasio-Cortez win the 2028 US Presidential Election?",
+      "note": "US presidential general election win market"
+    },
+    {
+      "question": "Will Marco Rubio win the 2028 US Presidential Election?",
+      "note": "US presidential general election win market"
+    },
+    {
+      "question": "Will Jon Ossoff win the 2028 US Presidential Election?",
+      "note": "US presidential general election win market"
+    },
+    {
+      "question": "Will the Democrats win the 2028 US Presidential Election?",
+      "note": "US presidential general election party win market"
+    },
+    {
+      "question": "Will the Republicans win the 2028 US Presidential Election?",
+      "note": "US presidential general election party win market"
+    },
+    {
+      "question": "Will the Republican Party candidate win the 2026 Texas Lieutenant Governor election?",
+      "note": "State executive election win market"
+    },
+    {
+      "question": "Will the Republican Party candidate win the 2026 Georgia Lieutenant Governor election?",
+      "note": "State executive election win market"
+    },
+    {
+      "question": "Will the Republican Party candidate win the 2026 Vermont Lieutenant Governor election?",
+      "note": "State executive election win market"
+    },
+    {
+      "question": "Will Adama Barrow win the 2026 Gambian presidential election?",
+      "note": "National presidential election win market"
+    },
+    {
+      "question": "Will Aaron Gunn win the next Conservative Party of British Columbia leadership election?",
+      "note": "Political party leadership election win market"
+    },
+    {
+      "question": "Will Abba Kabir Yusuf win the 2027 Kano State gubernatorial election?",
+      "note": "International gubernatorial election win market"
+    },
+    {
+      "question": "Will Ahmed Aliyu win the 2027 Sokoto State gubernatorial election?",
+      "note": "International gubernatorial election win market"
+    },
+    {
+      "question": "Will Agbu Kefas win the 2027 Taraba State gubernatorial election?",
+      "note": "International gubernatorial election win market"
+    },
+    {
+      "question": "Will Aldo Ruberto win the 2026 Thunder Bay mayoral election?",
+      "note": "Municipal mayoral election win market"
+    },
+    {
+      "question": "Will Abby McKibben win the next Huon Valley mayoral election?",
+      "note": "Municipal mayoral election win market"
+    },
+    {
+      "question": "Will Aldo Antolli win the next Kingborough mayoral election?",
+      "note": "Municipal mayoral election win market"
+    },
+    {
+      "question": "Will the Nepali Congress candidate win the 2027 Kathmandu mayoral election?",
+      "note": "Municipal mayoral election win market"
+    },
+    {
+      "question": "Will the Rastriya Swatantra Party candidate win the 2027 Kathmandu mayoral election?",
+      "note": "Municipal mayoral election win market"
+    },
+    {
+      "question": "First Round Outright Winner in the Georgia Governor Election?",
+      "note": "Gubernatorial election winner market"
+    },
+    {
+      "question": "First Round Outright Winner in the Georgia Senate Election?",
+      "note": "US Senate election winner market"
+    },
+    {
+      "question": "Another Fed rate hike in 2026?",
+      "note": "Monetary policy interest rate market"
+    },
+    {
+      "question": "Will the Bank of Canada increase the target for the overnight rate by 25 bps at the December interest rate announcement?",
+      "note": "Central bank interest rate decision market"
+    },
+    {
+      "question": "Negative GDP growth in 2026?",
+      "note": "Macroeconomic GDP indicator market"
+    },
+    {
+      "question": "Japan recession in 2026?",
+      "note": "Macroeconomic recession indicator market"
+    },
+    {
+      "question": "Will Argentina's monthly inflation in October 2026 be between 1.3% and 1.5%?",
+      "note": "Macroeconomic inflation rate market"
+    },
+    {
+      "question": "Copper cable hit with Sec. 232 tariffs by December 31, 2026?",
+      "note": "International trade and tariff policy market"
+    },
+    {
+      "question": "Another S&P 500 Company buys Bitcoin by December 31, 2026?",
+      "note": "Cryptocurrency corporate treasury balance sheet market"
+    },
+    {
+      "question": "Will Anthropic flip BTC by December 31?",
+      "note": "Cryptocurrency corporate asset market"
+    },
+    {
+      "question": "Will Bitmine announce that it holds more than 7M ETH before 2027?",
+      "note": "Cryptocurrency treasury holdings disclosure market"
+    },
+    {
+      "question": "Will Solana dip to $40 by December 31, 2026?",
+      "note": "Cryptocurrency asset price milestone market"
+    },
+    {
+      "question": "Apple (AAPL) Up or Down on October 19?",
+      "note": "Equity single-day price movement market"
+    },
+    {
+      "question": "Tesla (TSLA) Up or Down on October 19?",
+      "note": "Equity single-day price movement market"
+    },
+    {
+      "question": "WTI Crude Oil (WTI) Up or Down on October 19?",
+      "note": "Commodity energy price movement market"
+    },
+    {
+      "question": "NVIDIA (NVDA) Q3 adjusted gross margin 71% to 73%?",
+      "note": "Corporate earnings financial metric market"
+    },
+    {
+      "question": "Anthropic + OpenAI vs Microsoft - higher valuation on December 31?",
+      "note": "Corporate enterprise valuation comparison market"
+    },
+    {
+      "question": "Google x SpaceX agree to put data centers in space by December 31?",
+      "note": "Commercial aerospace technology partnership market"
+    },
+    {
+      "question": "Will Trump speak to Xi Jinping by October 31?",
+      "note": "Geopolitical bilateral diplomatic contact market"
+    },
+    {
+      "question": "Putin and Zelenskyy shake hands by December 31?",
+      "note": "Geopolitical diplomatic interaction market"
+    },
+    {
+      "question": "Russia x Ukraine ceasefire agreement by April 30, 2027?",
+      "note": "Geopolitical conflict resolution agreement market"
+    },
+    {
+      "question": "Houthis seize an oil tanker by October 31, 2026?",
+      "note": "Geopolitical maritime security incident market"
+    },
+    {
+      "question": "China x Taiwan military clash before 2027?",
+      "note": "Geopolitical military engagement conflict market"
+    },
+    {
+      "question": "Israel Election: Any Coalition Wins a Majority?",
+      "note": "Parliamentary legislative election coalition market"
+    },
+    {
+      "question": "Abbas Araghchi out as Minister of Foreign Affairs of Iran by December 31, 2026?",
+      "note": "Foreign government cabinet ministerial tenure market"
+    },
+    {
+      "question": "Xi Jinping out before 2027?",
+      "note": "Foreign head of state political leadership tenure market"
+    }
+  ]
+}

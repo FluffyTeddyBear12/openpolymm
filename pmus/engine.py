@@ -23,7 +23,8 @@ MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
 if not hasattr(LiveOrder, "remaining_qty"):
     setattr(LiveOrder, "remaining_qty", property(lambda self: self.qty_open))
 
-CANDIDATE_BOOK_LIMIT = 1200
+CANDIDATE_BOOK_LIMIT = 3000
+FALLBACK_BOOK_CONDITION_LIMIT = 150
 FILL_LOOKBACK_SECONDS = 60
 FILL_WINDOW_SECONDS = 3600
 LOCAL_FILL_POSITION_TTL_SECONDS = 60.0
@@ -148,9 +149,16 @@ def allocate_markets(
             reverse=True,
         )
 
-        candidate_books: dict[str, Book] = {}
+        affordable = [c for c in allocatable if c.window.target_size <= max_affordable_contracts]
+        unaffordable = [c for c in allocatable if c.window.target_size > max_affordable_contracts]
         book_limit = CANDIDATE_BOOK_LIMIT
-        top_conditions = allocatable[: book_limit // 2]
+        max_conds = book_limit // 2
+        top_conditions = affordable[:max_conds]
+        if len(top_conditions) < max_conds:
+            top_conditions.extend(unaffordable[: max_conds - len(top_conditions)])
+
+        candidate_books: dict[str, Book] = {}
+        t0 = time.perf_counter()
         batch_books = None
         if hasattr(client, "fetch_books_batch"):
             try:
@@ -160,13 +168,36 @@ def allocate_markets(
             except Exception as e:
                 logger.debug("Failed to fetch candidate books batch: %s", e)
 
-        if batch_books is not None:
+        complete_conds: list[ConditionMarket] = []
+        if isinstance(batch_books, dict) and batch_books:
             for cond in top_conditions:
                 if cond.yes.slug in batch_books and cond.no.slug in batch_books:
-                    candidate_books[cond.yes.slug] = batch_books[cond.yes.slug]
-                    candidate_books[cond.no.slug] = batch_books[cond.no.slug]
+                    complete_conds.append(cond)
+
+        req_count = len(top_conditions)
+        is_batch_usable = (
+            req_count > 0
+            and (len(complete_conds) / req_count) >= 0.5
+        )
+
+        if is_batch_usable and isinstance(batch_books, dict):
+            for cond in complete_conds:
+                candidate_books[cond.yes.slug] = batch_books[cond.yes.slug]
+                candidate_books[cond.no.slug] = batch_books[cond.no.slug]
+            conds_with_books = len(candidate_books) // 2
+            if conds_with_books < req_count:
+                logger.warning(
+                    "fetch_books_batch returned partial books: %d conditions had books vs %d requested",
+                    conds_with_books,
+                    req_count,
+                )
         else:
-            for cond in top_conditions:
+            logger.warning(
+                "Falling back to sequential book fetch: %d conditions capped at FALLBACK_BOOK_CONDITION_LIMIT=%d",
+                req_count,
+                FALLBACK_BOOK_CONDITION_LIMIT,
+            )
+            for cond in top_conditions[:FALLBACK_BOOK_CONDITION_LIMIT]:
                 try:
                     yes_book = client.fetch_book(cond.yes.slug)
                     no_book = client.fetch_book(cond.no.slug)
@@ -175,6 +206,16 @@ def allocate_markets(
                     continue
                 candidate_books[cond.yes.slug] = yes_book
                 candidate_books[cond.no.slug] = no_book
+
+        book_fetch_elapsed = time.perf_counter() - t0
+        conditions_with_books = len(candidate_books) // 2
+        logger.info(
+            "Book fetch cycle: %d conditions after filters, %d conditions affordable, %d conditions with books, elapsed=%.2fs",
+            len(allocatable),
+            len(affordable),
+            conditions_with_books,
+            book_fetch_elapsed,
+        )
 
         if open_orders:
             orders_by_slug: dict[str, list[LiveOrder]] = {}
@@ -542,6 +583,8 @@ class LiveEngine:
                             msg = str(exc).lower().replace(p.slug.lower(), "")
                             if status_code == 404 or "404" in msg or "not found" in msg:
                                 self.dead_unwind_slugs.add(p.slug)
+                            else:
+                                self.logger.warning("Unwind book fetch failed for %s: %s", p.slug, exc)
                             continue
                         self.active_windows[p.slug] = IncentiveWindow(
                             slug=p.slug,
@@ -565,6 +608,27 @@ class LiveEngine:
             self.logger.info("Scoped startup cancel for target slugs: %s", self.target_slugs)
             self.started_at = time.time()
             self._cancel_targets(self.started_at)
+            target_set = set(self.target_slugs)
+            all_open = open_orders
+            if not all_open:
+                try:
+                    all_open = self.auth_client.get_open_orders()
+                except Exception as exc:
+                    self.logger.warning("Could not fetch open orders for startup cancel: %s", exc)
+                    all_open = []
+            non_target_orders = [o for o in all_open if o.slug not in target_set]
+            if non_target_orders:
+                self.logger.warning(
+                    "Startup cancel for %d orphaned orders on non-target slugs: %s",
+                    len(non_target_orders),
+                    [o.order_id for o in non_target_orders],
+                )
+                try:
+                    self.auth_client.cancel_orders_batch(non_target_orders)
+                except Exception as exc:
+                    self.logger.warning("Startup non-target cancel failed: %s", exc)
+                for o in non_target_orders:
+                    self.recent_cancels[o.order_id] = self.started_at
         else:
             dropped_slugs = [s for s in old_targets if s not in self.target_slugs]
             downsized_slugs = [

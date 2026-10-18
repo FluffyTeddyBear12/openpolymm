@@ -1,0 +1,1889 @@
+{
+  "keep": [
+    {
+      "question": "Will Donald Trump attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Marco Rubio attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will J.D. Vance attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Pete Hegseth attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Mohammad Bagher Ghalibaf attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Masoud Pezeshkian attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Majid Takht-Ravanchi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Kazem Gharibabadi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Ahmad Vahidi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Badr bin Hamad Al Busaidi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Ishaq Dar attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Rafael Grossi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Nick Stewart attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Steve Witkoff attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Abbas Araghchi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Jared Kushner attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Mohammed bin Abdulrahman Al Thani attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Gavin Newsom win the 2028 Democratic presidential nomination?",
+      "pool_usd": 29.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Alexandria Ocasio-Cortez win the 2028 Democratic presidential nomination?",
+      "pool_usd": 35.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Josh Shapiro win the 2028 Democratic presidential nomination?",
+      "pool_usd": 3.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Kamala Harris win the 2028 Democratic presidential nomination?",
+      "pool_usd": 6.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Jon Ossoff win the 2028 Democratic presidential nomination?",
+      "pool_usd": 27.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will J.D. Vance win the 2028 Republican presidential nomination?",
+      "pool_usd": 84.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Marco Rubio win the 2028 Republican presidential nomination?",
+      "pool_usd": 16.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Democratic House incumbents not win in between ten and twelve nominating elections in the 2026 cycle?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Democratic House incumbents not win in between thirteen and fifteen nominating elections in the 2026 cycle?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Elissa Slotkin win the 2028 Democratic vice-presidential nomination?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lula announce the nomination of an individual for Minister of the Supreme Federal Court of Brazil by December 31?",
+      "pool_usd": 5.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Jon Ossoff Democratic nomination odds leader on October 31?",
+      "pool_usd": 31.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Alexandria Ocasio-Cortez Democratic nomination odds leader on October 31?",
+      "pool_usd": 45.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Gavin Newsom Democratic nomination odds leader on October 31?",
+      "pool_usd": 24.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Axel Kicillof win the Peronist nomination to contest the 2027 Argentine presidential election?",
+      "pool_usd": 1.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Sergio Massa win the Peronist nomination to contest the 2027 Argentine presidential election?",
+      "pool_usd": 1.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Trump pardon Edward Snowden before 2027?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Marianne Meed Ward win the 2026 Burlington mayoral election?",
+      "pool_usd": 30.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Howard Lutnick be the first of these people impeached by December 31, 2027?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "GTA 6 launch postponed again?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Will Apostle Mxolisi Phakathi be the next mayor of eThekwini?",
+      "pool_usd": 1.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will there be 2+ walk-offs during the 2026 MLB Postseason?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will there be 3+ walk-offs during the 2026 MLB Postseason?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will there be 4+ walk-offs during the 2026 MLB Postseason?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the longest game of the 2026 MLB Postseason last 11+ innings?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the longest game of the 2026 MLB Postseason last 12+ innings?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the longest game of the 2026 MLB Postseason last 13+ innings?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the longest game of the 2026 MLB Postseason last 14+ innings?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the longest game of the 2026 MLB Postseason last 15+ innings?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the longest game of the 2026 MLB Postseason last 16+ innings?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "California Expedited Environmental Review Proposition",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will HLE be number 1 on the end of year Global Power Rankings?",
+      "pool_usd": 3.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will BLG be number 1 on the end of year Global Power Rankings?",
+      "pool_usd": 3.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will GEN be number 1 on the end of year Global Power Rankings?",
+      "pool_usd": 3.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will T1 be number 1 on the end of year Global Power Rankings?",
+      "pool_usd": 1.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Texas A&M be Ranked #1 during the 2026-27 CFB season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will 2026 rank between 7th and 9th among the highest domestic box office years?",
+      "pool_usd": 13.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will 2026 rank between 10th and 12th among the highest domestic box office years?",
+      "pool_usd": 6.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will 2026 rank below 15th among the highest domestic box office years?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Alaska passes ballot measure repealing ranked choice voting?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the St. Louis Blues win the 2026-27 NHL Presidents' Trophy?",
+      "pool_usd": 8.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will a dLLM be the top AI model before 2027?",
+      "pool_usd": 0.001,
+      "min_size": 50.0
+    },
+    {
+      "question": "Over 4 coins launched in 2026 end the year in the top 100?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will TOP ESPORTS make a roster change by December?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Arsenal finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Aston Villa finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bournemouth finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Brentford finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Brighton finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Chelsea finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Everton finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Leeds United finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Liverpool finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Manchester City finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Manchester United finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Newcastle United finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Nottingham Forest finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Tottenham finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Sunderland finish in the top 4 of the 2026-27 English Premier League season?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Paris Saint-Germain finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Aston Villa finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Arsenal finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Manchester City finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Manchester United finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Liverpool finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Inter Milan finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Napoli finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Roma finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Como finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Barcelona finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Real Madrid finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Villarreal finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Atl\u00e9tico Madrid finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Real Betis finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bayern Munich finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Borussia Dortmund finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will RB Leipzig finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will VfB Stuttgart finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lens finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lille finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will PSV Eindhoven finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Feyenoord finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Porto finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Sporting CP finish top 8 in UCL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Club Brugge finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Shakhtar Donetsk finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Fenerbah\u00e7e finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bod\u00f8/Glimt finish top 8 in UCL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bayer Leverkusen finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Benfica finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Juventus finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Milan finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lyon finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will AZ finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Olympiacos finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Real Sociedad finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Marseille finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Ferencvaros finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Viktoria Plzen finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Union Saint-Gilloise finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Dinamo Zagreb finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Red Bull Salzburg finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Sparta Prague finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Rennes finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Anderlecht finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Sturm Graz finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lech Poznan finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Crystal Palace finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bournemouth finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Sunderland finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Celje finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Omonia finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Celta Vigo finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Besiktas finish top 8 in UEL league phase?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Torreense finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will NEC finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lillestrom finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Levski Sofia finish top 8 in UEL league phase?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Top Esports Make the Worlds 2026 Grand Final?",
+      "pool_usd": 6.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Top Esports Reach the Worlds 2026 Knockout Stage?",
+      "pool_usd": 3.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Top Esports Go 3-0 in the Worlds 2026 Swiss Stage?",
+      "pool_usd": 3.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Top Esports Go 0-3 in the Worlds 2026 Swiss Stage?",
+      "pool_usd": 3.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Debra Toporowski win the next Cowichan Valley British Columbia Legislative Assembly election?",
+      "pool_usd": 1.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will OpenAI have a #1 AI model by December 31, 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Alibaba have a #1 AI model by December 31, 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will xAI have a #1 AI model by December 31, 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Baidu have a #1 AI model by December 31, 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will DeepSeek have a #1 AI model by December 31, 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Meta have a #1 AI model by December 31, 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Microsoft have a #1 AI model by December 31, 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Anthropic have the #1 AI model at the end of October 2026?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Google have the #1 AI model at the end of October 2026?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Anthropic have the #1 AI model at the end of November 2026?",
+      "pool_usd": 4.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Meta have the #1 AI model at the end of November 2026?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Google have the #1 AI model at the end of November 2026?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Anthropic have the #1 AI model at the end of December 2026?",
+      "pool_usd": 4.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Meta have the #1 AI model at the end of December 2026?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Google have the #1 AI model at the end of December 2026?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Anthropic have a #1 AI model by December 31, 2026?",
+      "pool_usd": 40.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Boston Celtics finish as the #1 seed in the 2026-27 NBA Eastern Conference?",
+      "pool_usd": 4.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Cleveland Cavaliers finish as the #1 seed in the 2026-27 NBA Eastern Conference?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Detroit Pistons finish as the #1 seed in the 2026-27 NBA Eastern Conference?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Milwaukee Bucks finish as the #1 seed in the 2026-27 NBA Eastern Conference?",
+      "pool_usd": 11.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the New York Knicks finish as the #1 seed in the 2026-27 NBA Eastern Conference?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Philadelphia 76ers finish as the #1 seed in the 2026-27 NBA Eastern Conference?",
+      "pool_usd": 6.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Oklahoma City Thunder finish as the #1 seed in the 2026-27 NBA Western Conference?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the San Antonio Spurs finish as the #1 seed in the 2026-27 NBA Western Conference?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "US recession by end of 2026?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Will no Fed rate cuts happen in 2026?",
+      "pool_usd": 116.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Trump cut corporate taxes before 2027?",
+      "pool_usd": 0.001,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will the 10-year Treasury yield hit 5.5% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 10-year Treasury yield hit 5.7% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 10-year Treasury yield hit 6.0% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will inflation reach more than 5% in 2026?",
+      "pool_usd": 5.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Canada\u2019s 2026 inflation be between 2.0% and 2.4%?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Canada\u2019s 2026 inflation be between 2.5% and 2.9%?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will US unemployment reach at least 5.0% in 2026?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will US unemployment reach at least 5.5% in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the UK\u2019s 2026 inflation be less than 1.0%?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the UK\u2019s 2026 inflation be between 3.0% and 3.4%?",
+      "pool_usd": 4.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the UK\u2019s 2026 inflation be between 3.5% and 3.9%?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Venezuelan crude oil production reach 1.2m barrels per day in 2026?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will China's annual inflation in 2026 be between 0.1% and 0.5%?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will China's annual inflation in 2026 be between 0.6% and 1.0%?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will China's annual inflation in 2026 be between 1.1% and 1.5%?",
+      "pool_usd": 4.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Argentina\u2019s annual inflation in 2026 be between 30% and 34.9%?",
+      "pool_usd": 6.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Argentina\u2019s annual inflation in 2026 be between 25% and 29.9%?",
+      "pool_usd": 4.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Canada\u2019s 2026 inflation be between 3.0% and 3.4%?",
+      "pool_usd": 4.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Canada\u2019s 2026 inflation be between 3.5% and 3.9%?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Brazil\u2019s Annual Inflation in 2026 be between 4.50% and 4.99%?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Brazil\u2019s Annual Inflation in 2026 be between 5.00% and 5.49%?",
+      "pool_usd": 6.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Brazil\u2019s Annual Inflation in 2026 be between 5.50% and 5.99%?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will South African inflation be between 4.4% and 4.7% in 2026?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will South African inflation be between 4.7% and 5.0% in 2026?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will South African inflation be greater than 5.0% in 2026?",
+      "pool_usd": 8.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will South Korea\u2019s 2026 Annual Inflation be between 2.7% and 2.9%?",
+      "pool_usd": 7.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will South Korea\u2019s 2026 Annual Inflation be at least 3.0%?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Mexico\u2019s 2026 Annual Inflation be between 3.00% and 3.49%?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Mexico\u2019s 2026 Annual Inflation be between 3.50% and 3.99%?",
+      "pool_usd": 7.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Mexico\u2019s 2026 Annual Inflation be between 4.00% and 4.49%?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Fed rate cut by December 2026 meeting?",
+      "pool_usd": 5.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Crude Oil reach a new all-time high by December 31?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will inflation reach more than 4.5% in 2026?",
+      "pool_usd": 5.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "US recession by end of 2027?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield hit 5.70% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield hit 5.80% before 2027?",
+      "pool_usd": 50.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield hit 6.00% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield dip below 4.80% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield dip below 4.90% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield dip below 4.95% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield dip below 5.00% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield dip below 5.05% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield dip below 5.10% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield dip below 5.15% before 2027?",
+      "pool_usd": 20.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the 30-year Treasury yield dip below 5.20% before 2027?",
+      "pool_usd": 50.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will the 5-year Treasury yield hit 5.10% before 2027?",
+      "pool_usd": 50.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will the 5-year Treasury yield hit 5.25% before 2027?",
+      "pool_usd": 50.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Ari Weinstein leave OpenAI by December 31, 2026?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Conrad Kramer leave OpenAI by December 31, 2026?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Consensys IPO closing market cap above $1B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Consensys IPO closing market cap above $2B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Consensys IPO closing market cap above $3B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Kraken IPO closing market cap above $18B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Kraken IPO closing market cap above $20B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Kraken IPO closing market cap above $22B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Kraken IPO closing market cap above $24B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Ledger IPO closing market cap above $1B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Ledger IPO closing market cap above $3B?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "OpenAI IPO closing market cap above $800B?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "OpenAI IPO closing market cap above $1T?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "OpenAI IPO closing market cap above $1.4T?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "OpenAI IPO closing market cap above $1.6T?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Apple stop selling MacBook Neo?",
+      "pool_usd": 0.001,
+      "min_size": 50.0
+    },
+    {
+      "question": "Anthropic IPO closing market cap above $1.5T?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Anthropic IPO closing market cap above $1.75T?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Anthropic IPO closing market cap above $2T?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Anthropic IPO closing market cap above $2.25T?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Anthropic IPO closing market cap above $2.5T?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Anthropic IPO closing market cap above $2.75T?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Anthropic IPO closing market cap above $3T?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will China unban Bitcoin by 2027?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "US national Ethereum reserve before 2027?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bitcoin reach $170,000 by December 31, 2026?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bitcoin reach $160,000 by December 31, 2026?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bitcoin reach $110,000 by December 31, 2026?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Will Bitcoin reach $100,000 by December 31, 2026?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Will Solana reach $160 by December 31, 2026?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will CryptoPunks floor price reach 50 ETH before 2027?",
+      "pool_usd": 0.001,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bitcoin reach $90,000 by December 31, 2026?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Will Solana reach $140 by December 31, 2026?",
+      "pool_usd": 0.001,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Ukraine agree to give up the rest of Donbas before 2027?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Will China invade Taiwan by December 31, 2027?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Will China invade Taiwan by June 30, 2027?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Putin out as President of Russia by June 30, 2027?",
+      "pool_usd": 0.001,
+      "min_size": 50.0
+    },
+    {
+      "question": "Zelenskyy out as Ukraine president by June 30, 2027?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the 2028 US Presidential Election?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the 2028 US Presidential Election?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Trump be impeached by December 31, 2026?",
+      "pool_usd": 0.001,
+      "min_size": 0.0
+    },
+    {
+      "question": "Will the Democrats win the Florida governor race in 2026?",
+      "pool_usd": 52.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Florida governor race in 2026?",
+      "pool_usd": 48.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Georgia governor race in 2026?",
+      "pool_usd": 49.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Georgia governor race in 2026?",
+      "pool_usd": 51.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Iowa governor race in 2026?",
+      "pool_usd": 43.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Iowa governor race in 2026?",
+      "pool_usd": 57.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Kansas governor race in 2026?",
+      "pool_usd": 50.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Kansas governor race in 2026?",
+      "pool_usd": 50.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Nebraska governor race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Nebraska governor race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the New Hampshire governor race in 2026?",
+      "pool_usd": 100.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the New Mexico governor race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the New Mexico governor race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the Ohio governor race in 2026?",
+      "pool_usd": 50.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Ohio governor race in 2026?",
+      "pool_usd": 50.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Oklahoma governor race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Oklahoma governor race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the Oregon governor race in 2026?",
+      "pool_usd": 54.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Oregon governor race in 2026?",
+      "pool_usd": 46.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the South Carolina governor race in 2026?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the Tennessee governor race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Tennessee governor race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the Texas governor race in 2026?",
+      "pool_usd": 51.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Texas governor race in 2026?",
+      "pool_usd": 49.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Vermont governor race in 2026?",
+      "pool_usd": 51.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Vermont governor race in 2026?",
+      "pool_usd": 49.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Wisconsin governor race in 2026?",
+      "pool_usd": 48.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Wisconsin governor race in 2026?",
+      "pool_usd": 52.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Arkansas Senate race in 2026?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the Iowa Senate race in 2026?",
+      "pool_usd": 51.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Iowa Senate race in 2026?",
+      "pool_usd": 49.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Kansas Senate race in 2026?",
+      "pool_usd": 52.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Republicans win the Kansas Senate race in 2026?",
+      "pool_usd": 48.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will the Democrats win the Minnesota Senate race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Minnesota Senate race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Montana Senate race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the South Carolina Senate race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the South Carolina Senate race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the South Dakota Senate race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the Mississippi Senate race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Mississippi Senate race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the Florida Senate race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Florida Senate race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Democrats win the Louisiana Senate race in 2026?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Louisiana Senate race in 2026?",
+      "pool_usd": 2.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Republicans win the Nebraska Senate race in 2026?",
+      "pool_usd": 49.0,
+      "min_size": 60.0
+    },
+    {
+      "question": "Will Trump pardon Sam Bankman-Fried before 2027?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will the Tampa Bay Rays win the 2026 World Series?",
+      "pool_usd": 4.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will the Cleveland Guardians win the 2026 World Series?",
+      "pool_usd": 5.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will the Milwaukee Brewers win the 2026 World Series?",
+      "pool_usd": 11.0,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Arsenal qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Aston Villa qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bournemouth qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Brentford qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Brighton & Hove Albion qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Chelsea qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Crystal Palace qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Everton qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Fulham qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Leeds United qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Liverpool qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Manchester City qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Manchester United qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Newcastle United qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Nottingham Forest qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Sunderland qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Tottenham Hotspur qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Coventry City qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Hull City qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Levante qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bayern Munich qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bayer Leverkusen qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Borussia Dortmund qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will RB Leipzig qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Eintracht Frankfurt qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will VfB Stuttgart qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will SC Freiburg qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will FC Augsburg qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will FSV Mainz 05 qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will TSG Hoffenheim qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Union Berlin qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Hamburger SV qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Schalke 04 qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will SV Elversberg qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will AC Milan qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Atalanta qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Bologna qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Cagliari qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Como qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Fiorentina qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Juventus qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lazio qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 3.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Napoli qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Parma qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Roma qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Udinese qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Monza qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Angers qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Brest qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lens qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lille qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lorient qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Lyon qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Marseille qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Monaco qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Paris FC qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Paris Saint-Germain qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Rennes qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Strasbourg qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Toulouse qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Troyes qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Zl\u00edn qualify for the 2027-28 UEFA Champions League?",
+      "pool_usd": 0.001,
+      "min_size": 50.0
+    },
+    {
+      "question": "Will Borussia M\u00f6nchengladbach be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Eintracht Frankfurt be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will FC Augsburg be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will 1. FC K\u00f6ln be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will FC Schalke 04 be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Hamburger SV be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will Mainz 05 be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will SC Paderborn be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will SV Elversberg be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 5.0,
+      "min_size": 20.0
+    },
+    {
+      "question": "Will TSG Hoffenheim be relegated from the 2026-27 Bundesliga?",
+      "pool_usd": 1.0,
+      "min_size": 20.0
+    }
+  ]
+}

@@ -1,0 +1,1934 @@
+{
+  "risk": [
+    {
+      "question": "Will Lionel Messi attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Cristiano Ronaldo attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Lamine Yamal attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Kylian Mbappé attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Harry Kane attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Ousmane Dembélé attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Vinícius Júnior attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Rodri attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Zinedine Zidane attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Sergio Ramos attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Kaka attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Xavi Hernandez attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will David Beckham attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Michael Owen attend the 2026 Ballon d'Or ceremony?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Alix Earle attend an F1 race in 2026?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will ThreadGuy appear on the UpOnly podcast by December 31?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Javier Milei appear on the UpOnly podcast by December 31?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Dua Lipa perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Olivia Rodrigo perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Harry Styles perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Kanye West perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Justin Bieber perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Drake perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Taylor Swift perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Miley Cyrus perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Sabrina Carpenter perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Luke Combs perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Morgan Wallen perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Jay Z perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Post Malone perform at the 2027 Big Game halftime show?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Trump meet with MrBeast in 2026?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Trump meet with iShowSpeed in 2026?",
+      "category": "celebrity_attendance"
+    },
+    {
+      "question": "Will Trump wear a Yarmulke in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Clavicular wear a Yarmulke in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will ArrowCS eat a bug on stream by December 31?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Tarik have a boxing fight with FNS in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Clavicular visit Germany in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Clavicular sentenced to prison by December 31, 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Clavicular sentenced to prison by December 31, 2027?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Hasan Piker arrested in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Anne Hathaway baby: Boy or Girl?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Taylor Swift pregnant before 2027?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Kylie Jenner confirmed pregnant in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Rihanna confirmed pregnant in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Nara Smith confirmed pregnant in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Paris Hilton pregnant in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Alexandra Leclerc pregnant in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Jacob Elordi and Kendall Jenner engaged in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Kim Kardashian and Lewis Hamilton engaged in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Katy Perry and Justin Trudeau engaged by end of 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Obama divorce before 2027?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Graham Platner divorce by October 31?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Jake Paul announce a run for public office in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will MrBeast announce a Presidential run before 2028?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Playboi Carti release an album in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Kendrick Lamar release an album in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Rihanna release an album in 2026?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Trump say \"KFC\" or \"Chicken\" during his Midterm Rally in Kentucky?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Trump say \"Maduro\" during his Midterm Rally in Kentucky?",
+      "category": "celebrity_behavior"
+    },
+    {
+      "question": "Will Taylor Swift's daily YouTube view count hit 25M in October?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will Taylor Swift's daily YouTube view count hit 24M in October?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will MrBeast's next video get between 55 and 60 million views on day 1?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will MrBeast's next video get at least 60 million views on day 1?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will MrBeast's next video get between 100 and 110 million views on week 1?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will MrBeast's next video get between 110 and 120 million views on week 1?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will MrBeast's next video get at least 120 million views on week 1?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will \"Grand Theft Auto VI Launch Trailer\" get between 40 and 60 million views on week 1?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will \"Grand Theft Auto VI Launch Trailer\" get between 60 and 80 million views on week 1?",
+      "category": "virality_views"
+    },
+    {
+      "question": "Will Jack Doherty post again on X by October 31?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Jack Doherty post again on X by April 30?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Trump post \"Putin\" on Truth Social this week?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Trump post \"Rigged\" on Truth Social this week?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Trump post \"Sanction\" on Truth Social this week?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Trump post \"Fool\" on Truth Social this week?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Trump post \"Mexico\" on Truth Social this week?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Trump post \"Nidal Hasan\" on Truth Social this week?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon post \"Trump\" on X this week?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon post \"India\" on X this week?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 200-219 tweets from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 220-239 tweets from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 240-259 tweets from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 260-279 tweets from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 280-299 tweets from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 300-319 tweets from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 320-339 tweets from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 340-359 tweets from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 40-64 tweets from October 19 to October 21, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 65-89 tweets from October 19 to October 21, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 90-114 tweets from October 19 to October 21, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Elon Musk post 115-139 tweets from October 19 to October 21, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Donald Trump post 100-119 Truth Social posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Donald Trump post 120-139 Truth Social posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Donald Trump post 140-159 Truth Social posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Donald Trump post 160-179 Truth Social posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Donald Trump post 180-199 Truth Social posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Donald Trump post 200+ Truth Social posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will CZ post 0-19 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will CZ post 20-39 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will CZ post 40-59 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will CZ post 60-79 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 0-4 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 5-9 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 25-29 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 30-34 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 35-39 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 40-44 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 45-49 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 50-54 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Khamenei post 55-59 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will NYC Mayor post 20-39 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will NYC Mayor post 40-59 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will NYC Mayor post 60-79 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will NYC Mayor post 80-99 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will NYC Mayor post 100-119 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will NYC Mayor post 140-159 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 20-39 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 40-59 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 60-79 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 80-99 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 100-119 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 120-139 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 140-159 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 160-179 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Zelenskyy post 180-199 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Ted Cruz post 100-119 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Ted Cruz post 120-139 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Ted Cruz post 140-159 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Ted Cruz post 160-179 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will Ted Cruz post 180-199 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will White House post 180-199 posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will White House post 200+ posts from October 20 to October 27, 2026?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"AI\" or \"Artificial Intelligence\" be said 15+ times during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Trump\" be said 10+ times during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Legality\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Money\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Different\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Problem\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Red\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Blue\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Green\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Car\" or \"Vehicle\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Nordic\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Iran\" or \"Iranian\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Korea\" or \"Korean\" be said during the next episode of the Lemonade Stand Podcast?",
+      "category": "virality_social_posts"
+    },
+    {
+      "question": "Will \"Doing Life\" be the #2 US Netflix movie this week?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"The Diplomat: Season 4\" be the #2 US Netflix show this week?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Love Is Blind: Boston\" be the #2 US Netflix show this week?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"The Diplomat: Season 4\" be the #2 global Netflix show this week?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Patient Zero - Taylor Swift\" be the Billboard Hot 100 #2 song for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Choosin' Texas - Ella Langley\" be the Billboard Hot 100 #2 song for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Boston - Stella Lefty\" be the Billboard Hot 100 #2 song for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Been By Now - Morgan Wallen\" be the Billboard Hot 100 #2 song for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Solar Eclipse - Drake & Don Toliver\" be the Billboard Hot 100 #2 song for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Housewife - Tate McRae\" be the Billboard Hot 100 #2 song for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"expectations - Olivia Rodrigo & Chappell Roan\" be the Billboard Hot 100 #2 song for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Dandelion - Ella Langley\" be the Billboard 200 #1 album for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"You Seem Pretty Sad for a Girl So in Love - Olivia Rodrigo\" be the Billboard 200 #1 album for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"The Life of a Showgirl: The Encore\" be the Billboard 200 #1 album for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Drake - HABIBTI (FOMO)\" be the Billboard 200 #1 album for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will \"Zach Bryan - Young Manhood & Other Donatable Organs\" be the Billboard 200 #1 album for the week of October 31?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Morgan Wallen be the Billboard #1 top artist in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will A$AP Rocky have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Billie Eilish have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Doja Cat have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Ed Sheeran have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Future have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Jack Harlow have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Kendrick Lamar have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Lil Baby have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Luke Combs have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Morgan Wallen have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Peso Pluma have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Playboi Carti have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Post Malone have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Rihanna have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Sabrina Carpenter have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will SZA have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will The Weeknd have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Travis Scott have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Tyler, The Creator have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Zach Bryan have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Frank Ocean have a #1 song on the Billboard Hot 100 in 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Bad Bunny be the top artist for 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Taylor Swift be the top artist for 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Drake be the top artist for 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Drake be the second most streamed artist for 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Taylor Swift be the second most streamed artist for 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will The Weeknd have the second-greatest number of monthly Spotify listeners this month?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Rihanna have the second-greatest number of monthly Spotify listeners this month?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will HotSchedules be #2 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Shadowrocket be #2 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will AnkiMobile Flashcards be #2 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Procreate Pocket be #2 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will TonalEnergy Tuner & Metronome be #2 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will 2AM CAM be #2 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Shadowrocket be #1 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will HotSchedules be #1 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will AnkiMobile Flashcards be #1 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Procreate Pocket be #1 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will TonalEnergy Tuner & Metronome be #1 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will 2AM CAM be #1 Paid App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Vinted: Pre-loved marketplace be #2 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Muse from Meta be #2 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will ChatGPT be #2 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will TikTok Pro - Events be #2 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Claude by Anthropic be #2 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will McDonald's be #2 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will KICK - Live Streaming be #2 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Muse from Meta be #1 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Vinted: Pre-loved marketplace be #1 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will ChatGPT be #1 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will TikTok Pro - Events be #1 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Claude by Anthropic be #1 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Google Gemini be #1 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will KICK - Live Streaming be #1 Free App in the US Apple App Store on October 23?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will 2026 rank between 7th and 9th among the highest domestic box office years?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will 2026 rank between 10th and 12th among the highest domestic box office years?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will 2026 rank below 15th among the highest domestic box office years?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Lindsay Clancy rank in Google’s Top 5 Most Searched People in the US of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Bad Bunny rank in Google’s Top 5 Most Searched People in the US of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Alysa Liu rank in Google’s Top 5 Most Searched People in the US of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Erling Haaland rank in Google’s Top 5 Most Searched People in the US of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Nicolás Maduro rank in Google’s Top 5 Most Searched People in the US of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Donald Trump rank in Google’s Top 5 Most Searched People in the US of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Lamine Yamal rank in Google’s Top 5 Most Searched People in the US of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Inde Navarrette rank in Google’s Top 5 Most Searched Actors of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Tom Holland rank in Google’s Top 5 Most Searched Actors of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Jaafar Jackson rank in Google’s Top 5 Most Searched Actors of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Zendaya rank in Google’s Top 5 Most Searched Actors of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Chase Infiniti rank in Google’s Top 5 Most Searched Actors of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Wagner Moura rank in Google’s Top 5 Most Searched Actors of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will The Odyssey rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Obsession rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Spider-Man: Brand New Day rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Avengers: Doomsday rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Shrek 5 rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will The Devil Wears Prada 2 rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will The Super Mario Galaxy Movie rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Toy Story 5 rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Michael rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Euphoria rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Stranger Things rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will The Boys rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Monster: The Lizzie Borden Story rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will A Knight of the Seven Kingdoms rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Widow's Bay rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will His & Hers rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Heated Rivalry rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Teach You a Lesson rank in Google’s Top 5 Most Searched TV Shows of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Erling Braut Haaland rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Alysa Liu rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Anthony Joshua rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Lamine Yamal rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Lionel Messi rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Folarin Balogun rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Ilia Malinin rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Victor Wembanyama rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Conor McGregor rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Kylian Mbappé rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Avatar: Fire and Ash rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Backrooms rank in Google’s Top 5 Most Searched Movies of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Lindsey Vonn rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    },
+    {
+      "question": "Will Vozinha rank in Google’s Top 5 Most Searched Athletes of 2026?",
+      "category": "chart_rank"
+    }
+  ],
+  "keep": [
+    {
+      "question": "Will Apple (AAPL) Q4 Wearables, Home and Accessories revenue be above $8.5B?",
+      "note": "Hardware revenue segment containing 'Wearables', not person wearing clothing"
+    },
+    {
+      "question": "Will Apple (AAPL) Q4 Wearables, Home and Accessories revenue be above $8.75B?",
+      "note": "Hardware revenue segment containing 'Wearables', not person wearing clothing"
+    },
+    {
+      "question": "Will Apple (AAPL) Q4 Wearables, Home and Accessories revenue be above $9B?",
+      "note": "Hardware revenue segment containing 'Wearables', not person wearing clothing"
+    },
+    {
+      "question": "Will Apple (AAPL) Q4 Wearables, Home and Accessories revenue be above $9.25B?",
+      "note": "Hardware revenue segment containing 'Wearables', not person wearing clothing"
+    },
+    {
+      "question": "Will Apple (AAPL) Q4 Wearables, Home and Accessories revenue be above $9.5B?",
+      "note": "Hardware revenue segment containing 'Wearables', not person wearing clothing"
+    },
+    {
+      "question": "Will OpenAI announce a necklace-style wearable in 2026?",
+      "note": "Consumer electronics hardware product announcement containing 'wearable', not celebrity clothing"
+    },
+    {
+      "question": "Will The Devil Wears Prada 2 win Best Costume Design at the 99th Academy Awards?",
+      "note": "Academy Awards merit winner or nomination for movie whose title contains 'Wears'"
+    },
+    {
+      "question": "Will \"The Devil Wears Prada 2\" be nominated for Best Costume Design at the 99th Academy Awards?",
+      "note": "Academy Awards merit winner or nomination for movie whose title contains 'Wears'"
+    },
+    {
+      "question": "Will \"Runway\" from The Devil Wears Prada 2 be nominated for Best Original Song at the 99th Academy Awards?",
+      "note": "Academy Awards merit winner or nomination for movie whose title contains 'Wears'"
+    },
+    {
+      "question": "GTA 6 launch postponed again?",
+      "note": "Video game software release date containing substring 'postponed', not social media post"
+    },
+    {
+      "question": "Will \"Rockstar\" by Post Malone, 21 Savage be on the radio in GTA VI at launch?",
+      "note": "Video game radio soundtrack featuring artist whose name contains 'Post', not social media post"
+    },
+    {
+      "question": "Will Apostle Mxolisi Phakathi be the next mayor of eThekwini?",
+      "note": "Mayoral election candidate whose title contains substring 'post' in 'Apostle'"
+    },
+    {
+      "question": "California Expedited Environmental Review Proposition",
+      "note": "State ballot proposition containing substring 'view' in 'Review', not video view counts"
+    },
+    {
+      "question": "Will Hess Midstream (HESM) beat quarterly earnings?",
+      "note": "Corporate energy midstream company quarterly earnings, not digital media streaming"
+    },
+    {
+      "question": "Over 4 coins launched in 2026 end the year in the top 100?",
+      "note": "Financial cryptocurrency market capitalization ranking, not entertainment chart rank"
+    },
+    {
+      "question": "Will Kylian Mbappé finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Rodri finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Khvicha Kvaratskhelia finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Lionel Messi finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Fabian Ruiz finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Ousmane Dembélé finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Erling Haaland finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Jude Bellingham finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Michael Olise finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Vitinha finish in the top 5 of the 2026 Ballon d'Or?",
+      "note": "Merit-based football voting placement, not entertainment chart or social ranking"
+    },
+    {
+      "question": "Will Joe Burrow finish the 2026-27 NFL regular season with the most passing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Matthew Stafford finish the 2026-27 NFL regular season with the most passing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Jared Goff finish the 2026-27 NFL regular season with the most passing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Dak Prescott finish the 2026-27 NFL regular season with the most passing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Patrick Mahomes finish the 2026-27 NFL regular season with the most passing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Jordan Love finish the 2026-27 NFL regular season with the most passing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Tyler Shough finish the 2026-27 NFL regular season with the most passing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Bryce Young finish the 2026-27 NFL regular season with the most passing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Bijan Robinson finish the 2026-27 NFL regular season with the most rushing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Derrick Henry finish the 2026-27 NFL regular season with the most rushing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will James Cook finish the 2026-27 NFL regular season with the most rushing yards?",
+      "note": "NFL statistical season yardage leader props, not digital media streaming"
+    },
+    {
+      "question": "Will Jordan Bardella leave the National Rally by December 31, 2026?",
+      "note": "Political party affiliation in France (National Rally), not speech rally bingo"
+    },
+    {
+      "question": "Will Jordan Bardella leave the National Rally by March 31, 2027?",
+      "note": "Political party affiliation in France (National Rally), not speech rally bingo"
+    },
+    {
+      "question": "Will Madrid host the final of the 2030 FIFA World Cup?",
+      "note": "Sports tournament host city or country selection, not entertainment talk show host"
+    },
+    {
+      "question": "Will any Moroccan city host the final of the 2030 FIFA World Cup?",
+      "note": "Sports tournament host city or country selection, not entertainment talk show host"
+    },
+    {
+      "question": "Will another city host the final of the 2030 FIFA World Cup?",
+      "note": "Sports tournament host city or country selection, not entertainment talk show host"
+    },
+    {
+      "question": "Will France host the 2027 UEFA Nations League Finals?",
+      "note": "Sports tournament host city or country selection, not entertainment talk show host"
+    },
+    {
+      "question": "Will Italy host the 2027 UEFA Nations League Finals?",
+      "note": "Sports tournament host city or country selection, not entertainment talk show host"
+    },
+    {
+      "question": "Will Magomed Ankalaev fight Carlos Ulberg next?",
+      "note": "Professional UFC sports bout matchmaking, not personal celebrity altercation"
+    },
+    {
+      "question": "Will Paulo Costa fight Carlos Ulberg next?",
+      "note": "Professional UFC sports bout matchmaking, not personal celebrity altercation"
+    },
+    {
+      "question": "Will Nassourdine Imamov fight Sean Strickland next?",
+      "note": "Professional UFC sports bout matchmaking, not personal celebrity altercation"
+    },
+    {
+      "question": "Will Dricus Du Plessis fight Sean Strickland next?",
+      "note": "Professional UFC sports bout matchmaking, not personal celebrity altercation"
+    },
+    {
+      "question": "Will Ilia Topuria fight Paddy Pimblett next?",
+      "note": "Professional UFC sports bout matchmaking, not personal celebrity altercation"
+    },
+    {
+      "question": "Will ground beef hit $7 per pound in 2026?",
+      "note": "Agricultural food commodity price index, not celebrity dispute"
+    },
+    {
+      "question": "Will the Minnesota Timberwolves be the 2027 NBA Western Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the Oklahoma City Thunder be the 2027 NBA Western Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the San Antonio Spurs be the 2027 NBA Western Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the Boston Celtics be the 2027 NBA Eastern Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the New York Knicks be the 2027 NBA Eastern Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the Philadelphia 76ers be the 2027 NBA Eastern Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the Toronto Raptors be the 2027 NBA Eastern Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the Cleveland Cavaliers be the 2027 NBA Eastern Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the Detroit Pistons be the 2027 NBA Eastern Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will the Miami Heat be the 2027 NBA Eastern Conference Champion?",
+      "note": "NBA sports playoff conference championship outcome, not press conference"
+    },
+    {
+      "question": "Will Chicago Bears win the 2027 NFL NFC Championship?",
+      "note": "NFL sports playoff conference championship outcome"
+    },
+    {
+      "question": "Will Minnesota Vikings win the 2027 NFL NFC Championship?",
+      "note": "NFL sports playoff conference championship outcome"
+    },
+    {
+      "question": "Will Los Angeles Rams win the 2027 NFL NFC Championship?",
+      "note": "NFL sports playoff conference championship outcome"
+    },
+    {
+      "question": "Will San Francisco 49ers win the 2027 NFL NFC Championship?",
+      "note": "NFL sports playoff conference championship outcome"
+    },
+    {
+      "question": "Will Seattle Seahawks win the 2027 NFL NFC Championship?",
+      "note": "NFL sports playoff conference championship outcome"
+    },
+    {
+      "question": "Sundar Pichai out as Google CEO before 2027?",
+      "note": "Corporate or national constitutional leadership tenure transition, not celebrity antics"
+    },
+    {
+      "question": "Xi Jinping out before 2027?",
+      "note": "Corporate or national constitutional leadership tenure transition, not celebrity antics"
+    },
+    {
+      "question": "Will Trump resign by December 31, 2026?",
+      "note": "Corporate or national constitutional leadership tenure transition, not celebrity antics"
+    },
+    {
+      "question": "Will Trump resign before 2027?",
+      "note": "Corporate or national constitutional leadership tenure transition, not celebrity antics"
+    },
+    {
+      "question": "Will Benjamin Netanyahu be the next leader out before 2027?",
+      "note": "Corporate or national constitutional leadership tenure transition, not celebrity antics"
+    },
+    {
+      "question": "Netanyahu drops out before election?",
+      "note": "Corporate or national constitutional leadership tenure transition, not celebrity antics"
+    },
+    {
+      "question": "Will Netflix, Inc. (NFLX) hit (HIGH) $85 in October?",
+      "note": "Stock equity price threshold target for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Will Netflix, Inc. (NFLX) hit (HIGH) $80 in October?",
+      "note": "Stock equity price threshold target for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Will Netflix, Inc. (NFLX) hit (HIGH) $75 in October?",
+      "note": "Stock equity price threshold target for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Will Netflix, Inc. (NFLX) hit (LOW) $65 in October?",
+      "note": "Stock equity price threshold target for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Will Netflix, Inc. (NFLX) hit (LOW) $60 in October?",
+      "note": "Stock equity price threshold target for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Will Netflix, Inc. (NFLX) hit (LOW) $55 in October?",
+      "note": "Stock equity price threshold target for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Will Netflix, Inc. (NFLX) hit (LOW) $70 in October?",
+      "note": "Stock equity price threshold target for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Netflix (NFLX) Q3 operating margin <30%?",
+      "note": "Corporate financial operating margin for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Netflix (NFLX) Q3 operating margin 32% to 34%?",
+      "note": "Corporate financial operating margin for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Netflix (NFLX) Q3 operating margin 34% to 36%?",
+      "note": "Corporate financial operating margin for Netflix, not streaming chart rank"
+    },
+    {
+      "question": "Netflix (NFLX) Up or Down on October 19?",
+      "note": "Daily equity stock market direction for Netflix"
+    },
+    {
+      "question": "Spotify Monthly Active Users above 780M in Q3?",
+      "note": "Corporate monthly active user (MAU) metric for Spotify, not artist listener rank"
+    },
+    {
+      "question": "Spotify Monthly Active Users above 790M in Q3?",
+      "note": "Corporate monthly active user (MAU) metric for Spotify, not artist listener rank"
+    },
+    {
+      "question": "Spotify Monthly Active Users above 800M in Q3?",
+      "note": "Corporate monthly active user (MAU) metric for Spotify, not artist listener rank"
+    },
+    {
+      "question": "Will Google (GOOGL) Q3 YouTube ads revenue be above $11.2B?",
+      "note": "Corporate advertising segment revenue for YouTube, not video view counts"
+    },
+    {
+      "question": "Will Google (GOOGL) Q3 YouTube ads revenue be above $11.4B?",
+      "note": "Corporate advertising segment revenue for YouTube, not video view counts"
+    },
+    {
+      "question": "Will Google (GOOGL) Q3 YouTube ads revenue be above $11.6B?",
+      "note": "Corporate advertising segment revenue for YouTube, not video view counts"
+    },
+    {
+      "question": "Will Google (GOOGL) Q3 YouTube ads revenue be above $11.8B?",
+      "note": "Corporate advertising segment revenue for YouTube, not video view counts"
+    },
+    {
+      "question": "Courts block Trump's $100,000 Truth Social early access plan by October 31?",
+      "note": "Judicial injunction on a commercial product tier, not social media post count"
+    },
+    {
+      "question": "Courts block Trump's $100,000 Truth Social early access plan by December 31?",
+      "note": "Judicial injunction on a commercial product tier, not social media post count"
+    },
+    {
+      "question": "Will General Motors say \"Battery\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will General Motors say \"Hummer\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will General Motors say \"Passenger\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will Netflix say \"Rockstar\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will Netflix say \"World Cup\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will Netflix say \"Gaming\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will Netflix say \"Paramount\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will Netflix say \"Hollywood\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will Netflix say \"Subscriber\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will Netflix say \"Membership\" during earnings call?",
+      "note": "Corporate earnings call transcript keyword occurrence"
+    },
+    {
+      "question": "Will Tesla (TSLA) beat quarterly earnings?",
+      "note": "Corporate financial quarterly earnings release or revenue milestone"
+    },
+    {
+      "question": "Will IBM (IBM) beat quarterly earnings?",
+      "note": "Corporate financial quarterly earnings release or revenue milestone"
+    },
+    {
+      "question": "Will AT&T (T) beat quarterly earnings?",
+      "note": "Corporate financial quarterly earnings release or revenue milestone"
+    },
+    {
+      "question": "Will United Airlines (UAL) beat quarterly earnings?",
+      "note": "Corporate financial quarterly earnings release or revenue milestone"
+    },
+    {
+      "question": "Will 3M (MMM) beat quarterly earnings?",
+      "note": "Corporate financial quarterly earnings release or revenue milestone"
+    },
+    {
+      "question": "Will Texas Instruments (TXN) beat quarterly earnings?",
+      "note": "Corporate financial quarterly earnings release or revenue milestone"
+    },
+    {
+      "question": "Will Based Polymarket revenue hit $2M before 2027?",
+      "note": "Corporate financial quarterly earnings release or revenue milestone"
+    },
+    {
+      "question": "Will OpenAI IPO by December 31 2026?",
+      "note": "Corporate initial public offering milestone or market capitalization threshold"
+    },
+    {
+      "question": "Will OpenAI not IPO by December 31, 2026?",
+      "note": "Corporate initial public offering milestone or market capitalization threshold"
+    },
+    {
+      "question": "OpenAI $1t+ IPO before 2027?",
+      "note": "Corporate initial public offering milestone or market capitalization threshold"
+    },
+    {
+      "question": "Consensys IPO closing market cap above $1B?",
+      "note": "Corporate initial public offering milestone or market capitalization threshold"
+    },
+    {
+      "question": "Consensys IPO closing market cap above $2B?",
+      "note": "Corporate initial public offering milestone or market capitalization threshold"
+    },
+    {
+      "question": "Will the total domestic gross for Resident Evil be between 150m and 160m by October 31?",
+      "note": "Theatrical movie dollar box office gross, not streaming chart rank"
+    },
+    {
+      "question": "Will the total domestic gross for Resident Evil be between 160m and 170m by October 31?",
+      "note": "Theatrical movie dollar box office gross, not streaming chart rank"
+    },
+    {
+      "question": "Will \"Street Fighter\" Opening Weekend Box Office be between 25m and 30m?",
+      "note": "Theatrical movie opening weekend dollar revenue, not streaming chart rank"
+    },
+    {
+      "question": "Will \"Street Fighter\" Opening Weekend Box Office be between 30m and 35m?",
+      "note": "Theatrical movie opening weekend dollar revenue, not streaming chart rank"
+    },
+    {
+      "question": "Will \"Street Fighter\" Opening Weekend Box Office be between 27m and 30m?",
+      "note": "Theatrical movie opening weekend dollar revenue, not streaming chart rank"
+    },
+    {
+      "question": "Will \"Street Fighter\" Opening Weekend Box Office be between 30m and 33m?",
+      "note": "Theatrical movie opening weekend dollar revenue, not streaming chart rank"
+    },
+    {
+      "question": "Mastercard (MA) Q3 gross dollar volume growth (local currency basis) <6.5%?",
+      "note": "Corporate financial transaction volume growth containing substring 'gross'"
+    },
+    {
+      "question": "Mastercard (MA) Q3 gross dollar volume growth (local currency basis) 6.5% to 7.5%?",
+      "note": "Corporate financial transaction volume growth containing substring 'gross'"
+    },
+    {
+      "question": "Mastercard (MA) Q3 gross dollar volume growth (local currency basis) 7.5% to 8.5%?",
+      "note": "Corporate financial transaction volume growth containing substring 'gross'"
+    },
+    {
+      "question": "Will no Fed rate cuts happen in 2026?",
+      "note": "Macroeconomic indicator or monetary policy interest rate decision by Federal Reserve"
+    },
+    {
+      "question": "Fed emergency rate cut before 2027?",
+      "note": "Macroeconomic indicator or monetary policy interest rate decision by Federal Reserve"
+    },
+    {
+      "question": "US recession by end of 2026?",
+      "note": "Macroeconomic indicator or monetary policy interest rate decision by Federal Reserve"
+    },
+    {
+      "question": "Negative GDP growth in 2026?",
+      "note": "Macroeconomic indicator or monetary policy interest rate decision by Federal Reserve"
+    },
+    {
+      "question": "Will inflation reach more than 5% in 2026?",
+      "note": "Macroeconomic indicator or monetary policy interest rate decision by Federal Reserve"
+    },
+    {
+      "question": "Will inflation reach more than 10% in 2026?",
+      "note": "Macroeconomic indicator or monetary policy interest rate decision by Federal Reserve"
+    },
+    {
+      "question": "Will the 10-year Treasury yield hit 5.5% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the 10-year Treasury yield hit 5.7% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the 10-year Treasury yield hit 6.0% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the 10-year Treasury yield dip below 3.7% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the 10-year Treasury yield dip below 4.6% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the 10-year Treasury yield dip below 4.7% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the 10-year Treasury yield dip below 4.4% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the 10-year Treasury yield dip below 4.5% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the 10-year Treasury yield hit 5.4% before 2027?",
+      "note": "Benchmark fixed income sovereign bond yield interest rate threshold"
+    },
+    {
+      "question": "Will the Fed’s upper bound reach 5.0% or higher before 2027?",
+      "note": "Federal Reserve monetary policy target rate ceiling"
+    },
+    {
+      "question": "Will the Fed’s upper bound reach 5.5% or higher before 2027?",
+      "note": "Federal Reserve monetary policy target rate ceiling"
+    },
+    {
+      "question": "Will the Fed’s upper bound reach 5.25% or higher before 2027?",
+      "note": "Federal Reserve monetary policy target rate ceiling"
+    },
+    {
+      "question": "Will the Fed’s upper bound reach 4.5% or higher before 2027?",
+      "note": "Federal Reserve monetary policy target rate ceiling"
+    },
+    {
+      "question": "Will the Fed’s upper bound reach 4.25% or higher before 2027?",
+      "note": "Federal Reserve monetary policy target rate ceiling"
+    },
+    {
+      "question": "Will Donald Trump attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Marco Rubio attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will J.D. Vance attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Pete Hegseth attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Mohammad Bagher Ghalibaf attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Masoud Pezeshkian attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Majid Takht-Ravanchi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Kazem Gharibabadi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Ahmad Vahidi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Badr bin Hamad Al Busaidi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Ishaq Dar attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Rafael Grossi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Nick Stewart attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Steve Witkoff attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Abbas Araghchi attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Jared Kushner attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Newt Gingrich attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Mohammed bin Abdulrahman Al Thani attend a US x Iran diplomatic meeting by December 31, 2026?",
+      "note": "Bilateral sovereign diplomatic meeting, not entertainment event attendance"
+    },
+    {
+      "question": "Will Ursula von der Leyen visit Ukraine by December 31, 2026?",
+      "note": "Official head of state or government diplomatic delegation travel"
+    },
+    {
+      "question": "Will Mark Rutte visit Ukraine by December 31, 2026?",
+      "note": "Official head of state or government diplomatic delegation travel"
+    },
+    {
+      "question": "Will Emmanuel Macron visit Ukraine by December 31, 2026?",
+      "note": "Official head of state or government diplomatic delegation travel"
+    },
+    {
+      "question": "Will Mark Carney visit Ukraine by December 31, 2026?",
+      "note": "Official head of state or government diplomatic delegation travel"
+    },
+    {
+      "question": "Will António Guterres visit Ukraine by December 31, 2026?",
+      "note": "Official head of state or government diplomatic delegation travel"
+    },
+    {
+      "question": "Will JD Vance visit Ukraine by December 31, 2026?",
+      "note": "Official head of state or government diplomatic delegation travel"
+    },
+    {
+      "question": "Will Trump visit Greenland by December 31?",
+      "note": "Head of state official bilateral diplomatic travel"
+    },
+    {
+      "question": "Will Trump visit North Korea by December 31?",
+      "note": "Head of state official bilateral diplomatic travel"
+    },
+    {
+      "question": "Will Donald Trump visit North Korea in 2026?",
+      "note": "Head of state official bilateral diplomatic travel"
+    },
+    {
+      "question": "Will Donald Trump visit Pakistan in 2026?",
+      "note": "Head of state official bilateral diplomatic travel"
+    },
+    {
+      "question": "Will Trump meet with Volodymyr Zelenskyy by October 31, 2026?",
+      "note": "Head of state bilateral diplomatic summit"
+    },
+    {
+      "question": "Will Trump meet with Mohammed bin Salman by October 31, 2026?",
+      "note": "Head of state bilateral diplomatic summit"
+    },
+    {
+      "question": "Will Trump meet with Giorgia Meloni by October 31, 2026?",
+      "note": "Head of state bilateral diplomatic summit"
+    },
+    {
+      "question": "Will Trump meet with Mark Carney by October 31, 2026?",
+      "note": "Head of state bilateral diplomatic summit"
+    },
+    {
+      "question": "Will Putin meet with Zelenskyy by March 31, 2027?",
+      "note": "Head of state bilateral diplomatic summit"
+    },
+    {
+      "question": "Will Xi meet with Takaichi by December 31, 2026?",
+      "note": "Head of state bilateral diplomatic summit"
+    },
+    {
+      "question": "Will Lamine Yamal win the 2026 Ballon d'Or?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will Harry Kane win the 2026 Ballon d'Or?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will The Odyssey get the most Oscar nominations at the 99th Academy Awards?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will Dune: Messiah get the most Oscar nominations at the 99th Academy Awards?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will \"Dune: Part Three\" be nominated for Best Picture at the 99th Academy Awards?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will Faker win a Finals MVP Award at an international event in 2026?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will Zack Wheeler win the 2026 NL Comeback Player of the Year award?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will Kevin McGonigle win the 2026 AL Rookie of the Year award?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will Sal Stewart win the 2026 NL Rookie of the Year award?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will Carson Benge win the 2026 NL Rookie of the Year award?",
+      "note": "Merit-based sporting or academy award winner or nomination, not ceremony attendance"
+    },
+    {
+      "question": "Will Gavin Newsom win the 2028 Democratic presidential nomination?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Alexandria Ocasio-Cortez win the 2028 Democratic presidential nomination?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Josh Shapiro win the 2028 Democratic presidential nomination?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Kamala Harris win the 2028 Democratic presidential nomination?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Jon Ossoff win the 2028 Democratic presidential nomination?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Chang Chi-kai win the next Chiayi City Mayor election?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Donald Trump visit Maine before the midterms?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Donald Trump visit New Hampshire before the midterms?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Donald Trump visit Oregon before the midterms?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will Donald Trump visit Wisconsin before the midterms?",
+      "note": "Democratic primary nomination, municipal mayoral election, or midterm campaign travel"
+    },
+    {
+      "question": "Will China unban Bitcoin by 2027?",
+      "note": "Cryptocurrency regulatory policy, sovereign reserve policy, or spot price milestone"
+    },
+    {
+      "question": "US national Ethereum reserve before 2027?",
+      "note": "Cryptocurrency regulatory policy, sovereign reserve policy, or spot price milestone"
+    },
+    {
+      "question": "Will Bitcoin reach $170,000 by December 31, 2026?",
+      "note": "Cryptocurrency regulatory policy, sovereign reserve policy, or spot price milestone"
+    },
+    {
+      "question": "Will Bitcoin reach $160,000 by December 31, 2026?",
+      "note": "Cryptocurrency regulatory policy, sovereign reserve policy, or spot price milestone"
+    },
+    {
+      "question": "Will Bitcoin reach $110,000 by December 31, 2026?",
+      "note": "Cryptocurrency regulatory policy, sovereign reserve policy, or spot price milestone"
+    },
+    {
+      "question": "Will the Tampa Bay Rays win the 2026 World Series?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the Cleveland Guardians win the 2026 World Series?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the Milwaukee Brewers win the 2026 World Series?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the Baltimore Ravens win the 2027 NFL league championship?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the Buffalo Bills win the 2027 NFL league championship?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the Jacksonville Jaguars win the 2027 NFL league championship?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the Kansas City Chiefs win the 2027 NFL league championship?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the Los Angeles Rams win the 2027 NFL league championship?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the San Francisco 49ers win the 2027 NFL league championship?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Will the Seattle Seahawks win the 2027 NFL league championship?",
+      "note": "Major professional sports league tournament championship winner"
+    },
+    {
+      "question": "Ilhan Omar federally charged by October 31?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    },
+    {
+      "question": "Ilhan Omar federally charged by December 31?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    },
+    {
+      "question": "Kimberly Guilfoyle federally charged by December 31?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    },
+    {
+      "question": "Will Benjamin Netanyahu be arrested by December 31?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    },
+    {
+      "question": "Will James Comey be arrested before 2027?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    },
+    {
+      "question": "Will Anthony Fauci be arrested before 2027?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    },
+    {
+      "question": "Will John Brennan be arrested before 2027?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    },
+    {
+      "question": "Will Adam Schiff be arrested before 2027?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    },
+    {
+      "question": "Will Letitia James be arrested before 2027?",
+      "note": "Criminal indictment or judicial arrest warrant of political elected official or agency director"
+    }
+  ]
+}
