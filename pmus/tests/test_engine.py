@@ -1156,6 +1156,8 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
         ts_ms=int(t2 * 1000),
     )
     public_client.fetch_book.return_value = book_drift
+    order_reprice = LiveOrder("o-reprice", "tok-1", "BUY_LONG", Decimal("0.72"), Decimal("55"))
+    auth_client.create_orders_batch.return_value = [order_reprice]
 
     engine._quote_market(
         slug="tok-1",
@@ -1169,8 +1171,13 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
         book=book_drift,
     )
 
-    auth_client.cancel_orders_batch.assert_not_called()
-    auth_client.create_orders_batch.assert_not_called()
+    auth_client.cancel_orders_batch.assert_called_once()
+    auth_client.create_orders_batch.assert_called_once()
+    created_reprice = auth_client.create_orders_batch.call_args[0][0]
+    assert any(q.side == "BUY_LONG" and q.price == Decimal("0.72") for q in created_reprice)
+
+    auth_client.cancel_orders_batch.reset_mock()
+    auth_client.create_orders_batch.reset_mock()
 
     t3 = t2 + 1.0
     now3 = datetime.fromtimestamp(t3, timezone.utc)
@@ -1193,7 +1200,7 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
         now_dt=now3,
         now_ts=t3,
         now_ms=int(t3 * 1000),
-        exchange_open=[order_drift],
+        exchange_open=[order_reprice],
         live_positions={},
         buying_power=Decimal("500.00"),
         realized_loss_today=Decimal("0"),
@@ -1202,11 +1209,12 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
 
     auth_client.cancel_orders_batch.assert_called_once()
     canceled_drift = auth_client.cancel_orders_batch.call_args[0][0]
-    assert any(o.order_id == "o-drift" for o in canceled_drift)
+    assert any(o.order_id == "o-reprice" for o in canceled_drift)
 
     auth_client.create_orders_batch.assert_called_once()
     created_drift = auth_client.create_orders_batch.call_args[0][0]
     assert any(q.side == "BUY_LONG" and q.price == Decimal("0.74") for q in created_drift)
+
 
 
 def test_live_engine_prepare_fee_buffer_global_vs_us(tmp_path):
@@ -1688,8 +1696,8 @@ def test_quote_market_clamps_paired_bid_to_98c():
     )
     quotes_wide = auth_client.create_orders_batch.call_args[0][0]
     assert len(quotes_wide) == 1
-    assert quotes_wide[0].price == Decimal("0.46")
-    assert quotes_wide[0].price + resting_no_order.price <= Decimal("0.96")
+    assert quotes_wide[0].price == Decimal("0.47")
+    assert quotes_wide[0].price + resting_no_order.price <= Decimal("0.97")
 
 
 def test_quote_market_clamps_and_freezes_unfilled_leg_when_partner_holds_inventory():
@@ -1740,8 +1748,9 @@ def test_quote_market_clamps_and_freezes_unfilled_leg_when_partner_holds_invento
 
     quotes_submitted = auth_client.create_orders_batch.call_args[0][0]
     assert len(quotes_submitted) == 1
-    assert quotes_submitted[0].price == Decimal("0.44")
-    assert quotes_submitted[0].price + pos_n.avg_price <= Decimal("0.96")
+    assert quotes_submitted[0].price == Decimal("0.45")
+    assert quotes_submitted[0].price + pos_n.avg_price <= Decimal("0.97")
+
 
     auth_client.create_orders_batch.reset_mock()
     resting_y = LiveOrder("o-y", "y1", "BUY_LONG", Decimal("0.43"), Decimal("50"))
@@ -2334,4 +2343,112 @@ def test_allocate_markets_logs_cycle_telemetry_info(caplog):
     assert "1 conditions affordable" in msg
     assert "1 conditions with books" in msg
     assert "elapsed=" in msg
+
+
+def test_quote_market_uses_symmetric_pair_quote_prices_when_batch_books_present():
+    from pmus.risk import RiskGateResult
+
+    logger = logging.getLogger("test_symmetric_pair")
+    mkt_y = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    mkt_n = Market(slug="n1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.045"), datetime.now(timezone.utc), None, "active")
+    w_n = IncentiveWindow("n1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.045"), datetime.now(timezone.utc), None, "active")
+
+    client = MagicMock()
+    auth_client = MagicMock()
+    auth_client.create_orders_batch.return_value = []
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logger,
+    )
+    engine.markets["y1"] = mkt_y
+    engine.markets["n1"] = mkt_n
+    engine.active_windows["y1"] = w
+    engine.active_windows["n1"] = w_n
+    engine.paired_slugs = frozenset({"y1", "n1"})
+    engine.condition_pairs = (("y1", "n1"),)
+    engine.side_budgets[("y1", "bid")] = Decimal("50")
+    engine.side_qtys[("y1", "bid")] = Decimal("50")
+    engine.side_budgets[("n1", "bid")] = Decimal("50")
+    engine.side_qtys[("n1", "bid")] = Decimal("50")
+
+    book_y = Book("y1", (Level(Decimal("0.49"), Decimal("200")),), (Level(Decimal("0.51"), Decimal("200")),), 1000)
+    book_n = Book("n1", (Level(Decimal("0.49"), Decimal("200")),), (Level(Decimal("0.51"), Decimal("200")),), 1000)
+    batch_books = {"y1": book_y, "n1": book_n}
+
+    engine._quote_market(
+        slug="y1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[],
+        live_positions={"y1": Position("y1", Decimal("0"), Decimal("0")), "n1": Position("n1", Decimal("0"), Decimal("0"))},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_y,
+        batch_books=batch_books,
+    )
+    quotes_y = auth_client.create_orders_batch.call_args[0][0]
+    assert len(quotes_y) == 1
+    assert quotes_y[0].price == Decimal("0.48")
+
+    auth_client.create_orders_batch.reset_mock()
+    resting_y = LiveOrder("o-y", "y1", "BUY_LONG", Decimal("0.48"), Decimal("50"))
+    engine._quote_market(
+        slug="n1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[resting_y],
+        live_positions={"y1": Position("y1", Decimal("0"), Decimal("0")), "n1": Position("n1", Decimal("0"), Decimal("0"))},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_n,
+        batch_books=batch_books,
+    )
+    quotes_n = auth_client.create_orders_batch.call_args[0][0]
+    assert len(quotes_n) == 1
+    assert quotes_n[0].price == Decimal("0.49")
+
+
+def test_allocate_markets_caps_effective_max_conditions_to_prevent_dust_waterfill():
+    logger = logging.getLogger("test_eff_max_cond")
+    conditions = [
+        make_condition(cond_id=f"c{i}", pool=str(300 - i * 10), target="20", question=f"Will team {i} win?")
+        for i in range(10)
+    ]
+    books = {}
+    for c in conditions:
+        books[c.yes.slug] = make_book([("0.48", "250")], [("0.52", "250")], slug=c.yes.slug)
+        books[c.no.slug] = make_book([("0.48", "250")], [("0.52", "250")], slug=c.no.slug)
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = conditions
+    client.fetch_books_batch.return_value = books
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("1000.00"),
+        max_per_market=Decimal("100.00"),
+        max_collateral_per_market=Decimal("100.00"),
+        max_markets=10,
+        max_contracts_per_market=100,
+        pair_preference=Decimal("0.0"),
+    )
+
+    _, alloc_res = allocate_markets(settings, client, logger, available_budget=Decimal("320.00"))
+    assert len(alloc_res.condition_pairs) == 6
+    assert all(qty >= Decimal("35") for qty in alloc_res.side_qtys.values())
+
+
 

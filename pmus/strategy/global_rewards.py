@@ -18,7 +18,7 @@ SECONDS_PER_DAY = Decimal("86400")
 MIN_DAILY_PAYOUT_USD = Decimal(os.getenv("PMUS_GLOBAL_MIN_DAILY_REWARD", "1.00"))
 MAX_CUSHION_SPREAD_RATIO = Decimal("0.60")
 PAIR_MAX_SUM = Decimal("0.98")
-WIDE_SPREAD_PAIR_MAX_SUM = Decimal("0.96")
+WIDE_SPREAD_PAIR_MAX_SUM = Decimal("0.97")
 ZERO = Decimal("0")
 
 
@@ -150,7 +150,7 @@ def pair_quote_prices(
         mid_yes = adjusted_mid(yes_book, window.target_size)
         mid_no = adjusted_mid(no_book, window.target_size)
         if mid_yes is not None and mid_no is not None:
-            for _ in range(25):
+            for _ in range(60):
                 if p_yes + p_no <= target_max_sum:
                     break
                 cand_yes = p_yes - yes_tick

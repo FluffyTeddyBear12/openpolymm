@@ -182,11 +182,9 @@ def evaluate_condition(
 
 WATERFILL_MIN_BUDGET = Decimal("100")
 WATERFILL_COST_TIERS: tuple[Decimal, ...] = (
-    Decimal("22"),
-    Decimal("32"),
-    Decimal("42"),
-    Decimal("54"),
-    Decimal("68"),
+    Decimal("36"),
+    Decimal("50"),
+    Decimal("65"),
     Decimal("85"),
     Decimal("110"),
     Decimal("160"),

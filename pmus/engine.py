@@ -225,12 +225,17 @@ def allocate_markets(
                 if slug in candidate_books:
                     candidate_books[slug] = global_rewards.strip_orders_from_book(candidate_books[slug], s_orders)
 
+        effective_max_conditions = (
+            min(settings.max_markets, max(1, max(settings.max_markets // 2, int(budget // Decimal("48")))))
+            if (settings.pair_preference <= Decimal("0") and available_budget is not None)
+            else settings.max_markets
+        )
         targets = allocate_conditions(
             conditions=allocatable,
             books=candidate_books,
             total_budget=budget,
             max_cost_per_condition=max_cost_per_condition,
-            max_markets=settings.max_markets,
+            max_markets=effective_max_conditions,
             max_contracts=max_contracts,
             pair_preference=settings.pair_preference,
             positions=positions,
@@ -737,6 +742,7 @@ class LiveEngine:
                 realized_loss_today,
                 pair_inputs=pair_inputs,
                 book=batch_books.get(slug),
+                batch_books=batch_books,
             )
             live_portfolio_rate_sec += mkt_rate
 
@@ -872,6 +878,7 @@ class LiveEngine:
         realized_loss_today: Decimal,
         pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] | None = None,
         book: Book | None = None,
+        batch_books: dict[str, Book] | None = None,
     ) -> Decimal:
         window = self.active_windows.get(slug)
         try:
@@ -929,12 +936,15 @@ class LiveEngine:
 
             if self.settings.venue == "global" and slug in self.paired_slugs:
                 other_slug = None
+                is_yes_leg = True
                 for y, n in self.condition_pairs:
                     if y == slug:
                         other_slug = n
+                        is_yes_leg = True
                         break
                     elif n == slug:
                         other_slug = y
+                        is_yes_leg = False
                         break
                 existing_buy_prices = [
                     o.price for o in resting_on_slug
@@ -969,11 +979,42 @@ class LiveEngine:
                     if other_filled and existing_buy_prices:
                         freeze_cap = max(existing_buy_prices)
                         max_allowed = min(max_allowed, freeze_cap) if max_allowed is not None else freeze_cap
-                if existing_buy_prices and window is not None and window.max_spread is not None:
-                    min_existing = min(existing_buy_prices)
-                    mid_curr = global_rewards.adjusted_mid(quote_book, window.target_size)
-                    if mid_curr is not None and abs(min_existing - mid_curr) < window.max_spread:
-                        max_allowed = min(max_allowed, min_existing) if max_allowed is not None else min_existing
+                    if (
+                        not other_filled
+                        and batch_books is not None
+                        and other_slug in batch_books
+                        and window is not None
+                    ):
+                        other_raw_book = batch_books[other_slug]
+                        other_resting = [
+                            o for o in exchange_open
+                            if o.slug == other_slug and o.order_id not in self.recent_cancels
+                        ] or self.ledger.get_open_orders(other_slug)
+                        other_orders_to_strip = (
+                            other_resting
+                            if other_raw_book.bids
+                            else [o for o in other_resting if o.side in ("BUY", "BUY_LONG")]
+                        )
+                        other_quote_book = (
+                            global_rewards.strip_orders_from_book(other_raw_book, other_orders_to_strip)
+                            if other_orders_to_strip
+                            else other_raw_book
+                        )
+                        yes_qb, no_qb = (
+                            (quote_book, other_quote_book)
+                            if is_yes_leg
+                            else (other_quote_book, quote_book)
+                        )
+                        pair_px = global_rewards.pair_quote_prices(
+                            yes_qb,
+                            no_qb,
+                            window,
+                            yes_qb.tick_size or market.tick,
+                            no_qb.tick_size or market.tick,
+                        )
+                        if pair_px is not None:
+                            sym_cap = pair_px[0] if is_yes_leg else pair_px[1]
+                            max_allowed = min(max_allowed, sym_cap) if max_allowed is not None else sym_cap
                 if max_allowed is not None:
                     clamped_quotes: list[Quote] = []
                     for q in quotes:

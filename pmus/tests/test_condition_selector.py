@@ -486,7 +486,7 @@ def test_single_sided_tail_token_below_20c_blocked_while_two_sided_allowed():
     assert target_paired is not None
     assert target_paired.mode == "two_sided"
     assert target_paired.yes_price == Decimal("0.73")
-    assert target_paired.no_price == Decimal("0.23")
+    assert target_paired.no_price == Decimal("0.24")
     assert PAIR_LEG_MIN_PRICE <= target_paired.no_price <= PAIR_LEG_MAX_PRICE
     assert PAIR_LEG_MIN_PRICE <= target_paired.yes_price <= PAIR_LEG_MAX_PRICE
 
@@ -730,3 +730,10 @@ def test_evaluate_and_allocate_conditions_skip_two_sided_when_leg_filled_at_targ
     )
     assert [t.condition.condition_id for t in allocated_waterfill] == ["c2"]
     assert allocated_waterfill[0].mode == "two_sided"
+
+
+def test_waterfill_min_tier_prevents_20_share_dust_allocations():
+    from pmus.strategy.condition_selector import WATERFILL_COST_TIERS
+
+    assert WATERFILL_COST_TIERS[0] >= Decimal("36")
+

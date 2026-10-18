@@ -280,11 +280,19 @@ def test_pair_quote_prices_caps_at_096_on_wide_spread_and_keeps_098_on_tight_spr
     no_b = book([("0.49", "200")], [("0.51", "100")])
     prices_wide = global_rewards.pair_quote_prices(yes_b, no_b, w_wide, Decimal("0.01"), Decimal("0.01"))
     assert prices_wide is not None
-    assert prices_wide[0] + prices_wide[1] <= Decimal("0.96")
-    assert prices_wide == (Decimal("0.48"), Decimal("0.48"))
+    assert prices_wide[0] + prices_wide[1] <= Decimal("0.97")
+    assert prices_wide == (Decimal("0.48"), Decimal("0.49"))
 
     w_tight = window(target="50", max_spread=Decimal("0.03"))
     prices_tight = global_rewards.pair_quote_prices(yes_b, no_b, w_tight, Decimal("0.01"), Decimal("0.01"))
     assert prices_tight is not None
     assert prices_tight[0] + prices_tight[1] <= Decimal("0.98")
     assert prices_tight == (Decimal("0.49"), Decimal("0.49"))
+
+    yes_milli = book([("0.499", "200")], [("0.510", "100")])
+    no_milli = book([("0.499", "200")], [("0.510", "100")])
+    prices_milli = global_rewards.pair_quote_prices(yes_milli, no_milli, w_wide, Decimal("0.001"), Decimal("0.001"))
+    assert prices_milli is not None
+    assert prices_milli[0] + prices_milli[1] <= Decimal("0.97")
+
+
