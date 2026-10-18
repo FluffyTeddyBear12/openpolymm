@@ -199,15 +199,20 @@ def test_guard_rejects_walmart_single_order_bait_book():
     assert reason is not None and ("support" in reason or "last trade" in reason)
 
 
-def test_guard_enforces_250_support_shares_and_75_near_notional():
-    from pmus.strategy.book_guard import MIN_NEAR_NOTIONAL_USD, MIN_SUPPORT_SHARES
-    assert MIN_SUPPORT_SHARES == D("250")
-    assert MIN_NEAR_NOTIONAL_USD == D("75")
+def test_guard_enforces_wave20_support_notional_and_front_shield():
+    from pmus.strategy.book_guard import (
+        MIN_NEAR_NOTIONAL_USD,
+        MIN_SUPPORT_SHARES,
+        MULTI_LEVEL_SUPPORT_TARGETS,
+    )
+    assert MIN_SUPPORT_SHARES == D("80")
+    assert MIN_NEAR_NOTIONAL_USD == D("35")
+    assert MULTI_LEVEL_SUPPORT_TARGETS == D("4")
 
     w = window(target="20", max_spread="0.045")
     shallow_support = book(
         "shallow-sup",
-        [("0.40", "100"), ("0.39", "100"), ("0.20", "300")],
+        [("0.40", "40"), ("0.39", "40"), ("0.20", "300")],
         [("0.42", "200")],
         tick="0.01",
     )
@@ -216,11 +221,21 @@ def test_guard_enforces_250_support_shares_and_75_near_notional():
 
     low_notional = book(
         "low-notional",
-        [("0.24", "150"), ("0.23", "130"), ("0.22", "10")],
+        [("0.24", "60"), ("0.23", "50")],
         [("0.26", "200")],
         tick="0.01",
     )
     reason_notional = quote_guard(low_notional, w, D("0.24"), D("0.01"))
     assert reason_notional is not None and "cliff book" in reason_notional
+
+    thin_front_shield = book(
+        "thin-shield",
+        [("0.50", "15"), ("0.49", "20"), ("0.48", "100")],
+        [("0.52", "200")],
+        tick="0.01",
+    )
+    reason_shield = quote_guard(thin_front_shield, w, D("0.49"), D("0.01"))
+    assert reason_shield is not None and "thin front shield" in reason_shield
+
 
 

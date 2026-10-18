@@ -107,14 +107,22 @@ def test_dictionary_word_speed_is_not_a_streamer():
     [
         ("Will lukxo have the most first bloods at VALORANT Champions 2026?", ("player_stat_prop", "esports")),
         ("Will Champi peak as a Very strong typhoon?", ("severe_weather",)),
+        ("Will October 2026 be the wettest month on record?", ("severe_weather",)),
+        ("Will a magnitude 7.0 earthquake hit California in 2026?", ("severe_weather",)),
         ("Walmart (WMT) Q3 US comp sales (ex-fuel) 2.5% to 4%?", ("corporate_metrics",)),
         ("Procter & Gamble (PG) Q1 organic sales growth 2.5% to 3.5%?", ("corporate_metrics",)),
         ("Coca-Cola (KO) Q3 organic revenue (non-GAAP) growth 5% to 6.5%?", ("corporate_metrics",)),
         ("Vertiv (VRT) Q3 adjusted operating margin 26% to 28%?", ("corporate_metrics",)),
         ("Will Apple (AAPL) Q4 Greater China revenue be above $17B?", ("corporate_metrics",)),
         ("Mastercard (MA) Q3 gross dollar volume growth (local currency basis) 6.5% to 7.5%?", ("corporate_metrics",)),
+        ("Will Cursor hit $500M ARR in 2026?", ("corporate_metrics",)),
         ("Will the Ornn H200 Index hit $3.75 (LOW) by December 31, 2026?", ("scraper_tracker",)),
         ("Will 170-189 ships transit the Bab el-Mandeb Strait between October 19-October 25?", ("scraper_tracker",)),
+        ("Will Claude 3.7 top OpenRouter tokens the week of October 19?", ("scraper_tracker",)),
+        ("Will the Rhine River return to normal levels by November?", ("scraper_tracker",)),
+        ("Will US Dollar Index (DXY) close above 105?", ("scraper_tracker",)),
+        ("Will US take military action in 2026?", ("geopolitical_crisis",)),
+        ("Will Wicked opening weekend box office exceed $120M?", ("chart_rank",)),
     ],
 )
 def test_esports_weather_and_corporate_metrics_filtered(question, expected_categories):

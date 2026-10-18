@@ -17,9 +17,10 @@ from decimal import Decimal
 from pmus.models import Book, IncentiveWindow
 
 SUPPORT_DEPTH_TARGETS = Decimal("3")
+MULTI_LEVEL_SUPPORT_TARGETS = Decimal("4")
 MIN_BOOK_DEPTH_TARGETS = Decimal("2")
-MIN_SUPPORT_SHARES = Decimal("250")
-MIN_NEAR_NOTIONAL_USD = Decimal("75")
+MIN_SUPPORT_SHARES = Decimal("80")
+MIN_NEAR_NOTIONAL_USD = Decimal("35")
 MAX_TICKS_ABOVE_SUPPORT = Decimal("2")
 LAST_TRADE_TOLERANCE_SPREADS = Decimal("1.25")
 
@@ -52,24 +53,35 @@ def quote_guard(book: Book, window: IncentiveWindow, price: Decimal, tick: Decim
         return f"thin book: total bid depth {total_depth} below {min_depth}"
     multi_level = len(book.bids) >= 2
     support_depth = (
-        max(SUPPORT_DEPTH_TARGETS * window.target_size, MIN_SUPPORT_SHARES)
+        max(MULTI_LEVEL_SUPPORT_TARGETS * window.target_size, MIN_SUPPORT_SHARES)
         if multi_level
         else SUPPORT_DEPTH_TARGETS * window.target_size
+    )
+    max_support_gap = max(
+        MAX_TICKS_ABOVE_SUPPORT * tick,
+        window.max_spread
+        if (multi_level and window.max_spread is not None)
+        else Decimal("0"),
     )
     support = support_price(
         book,
         support_depth,
         top_discount=window.target_size if multi_level else Decimal("0"),
     )
-    if price > support + MAX_TICKS_ABOVE_SUPPORT * tick:
+    if price > support + max_support_gap:
         return f"bid {price} more than {MAX_TICKS_ABOVE_SUPPORT} ticks above support {support}"
     if multi_level:
         near_notional = sum(
-            (lvl.price * lvl.qty for lvl in book.bids if lvl.price >= price - MAX_TICKS_ABOVE_SUPPORT * tick),
+            (lvl.price * lvl.qty for lvl in book.bids if lvl.price >= price - max_support_gap),
             Decimal("0"),
         )
         if near_notional < MIN_NEAR_NOTIONAL_USD:
             return f"cliff book: near bid notional {near_notional} below {MIN_NEAR_NOTIONAL_USD}"
+        if len(book.bids) >= 3:
+            ahead_qty = sum((lvl.qty for lvl in book.bids if lvl.price > price), Decimal("0"))
+            at_or_ahead_qty = sum((lvl.qty for lvl in book.bids if lvl.price >= price), Decimal("0"))
+            if ahead_qty < window.target_size and at_or_ahead_qty < Decimal("2") * window.target_size:
+                return f"thin front shield: ahead {ahead_qty} and at_or_ahead {at_or_ahead_qty} below target {window.target_size}"
     ref = last_trade_reference(book, support=support)
     if ref is not None and window.max_spread is not None and price > ref + LAST_TRADE_TOLERANCE_SPREADS * window.max_spread:
         return f"bid {price} above last trade reference {ref} by more than {window.max_spread}"

@@ -34,7 +34,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "chart_rank",
         re.compile(
-            r"(?:be the (?:#\d+|\b\d+) (?:us|global) netflix (?:movie|show)|billboard hot 100 (?:#\d+|\b\d+) song|billboard 200 (?:#\d+|\b\d+) album|billboard (?:#\d+|\b\d+) top artist|(?:#\d+|\b\d+) song on the billboard|\bbe the top artist (?:in the us )?for \d{4}\b|\bbe the (?:#\d+|top) song (?:in the us|for \d{4}|globally)\b|\bmost streamed artist for \d{4}\b|\bsecond most streamed artist\b|\bnumber of monthly spotify listeners\b|(?:#\d+|\b\d+) (?:paid|free) app in the (?:us )?apple app store|\brank in google(?:'s|’s)? top \d+ most searched\b|(?:(?<!\w)#\d+|\b(?:#\d+|number one|top)) (?:[a-z]+ ){0,2}(?:song|album|artist|show|movie|film|podcast|app|game|book)\b|\bbillboard hot 100\b|\bspotify (?:global|top|daily|weekly|charts?)\b)"
+            r"(?:be the (?:#\d+|\b\d+) (?:us|global) netflix (?:movie|show)|billboard hot 100 (?:#\d+|\b\d+) song|billboard 200 (?:#\d+|\b\d+) album|billboard (?:#\d+|\b\d+) top artist|(?:#\d+|\b\d+) song on the billboard|\bbe the top artist (?:in the us )?for \d{4}\b|\bbe the (?:#\d+|top) song (?:in the us|for \d{4}|globally)\b|\bmost streamed artist for \d{4}\b|\bsecond most streamed artist\b|\bnumber of monthly spotify listeners\b|(?:#\d+|\b\d+) (?:paid|free) app in the (?:us )?apple app store|\brank in google(?:'s|’s)? top \d+ most searched\b|(?:(?<!\w)#\d+|\b(?:#\d+|number one|top)) (?:[a-z]+ ){0,2}(?:song|album|artist|show|movie|film|podcast|app|game|book)\b|\bbillboard hot 100\b|\bspotify (?:global|top|daily|weekly|charts?)\b|\bopening weekend box office\b|\bfirst week sales\b)"
         ),
     ),
     (
@@ -70,25 +70,25 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "severe_weather",
         re.compile(
-            r"\b(?:typhoon|hurricane|cyclone|tropical storm|category [1-5] storm)\b"
+            r"\b(?:typhoon|hurricane|cyclone|tropical storm|category [1-5] storm|wettest month|driest month|hottest month|coldest month|tornado(?:es)?|earthquake)\b"
         ),
     ),
     (
         "corporate_metrics",
         re.compile(
-            r"(?:\([a-z]{1,5}\)\s+(?:q[1-4]|fy\d{2,4})\b|\b(?:comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|gross dollar volume|q[1-4]\b.*?\b(?:revenue|sales|eps|margin|income|deliveries|profit|guidance|volume)))\b"
+            r"(?:\([a-z]{1,5}\)\s+(?:q[1-4]|fy\d{2,4})\b|\b(?:arr|comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|gross dollar volume|q[1-4]\b.*?\b(?:revenue|revenues|sales|eps|margin|income|deliveries|profit|guidance|volume|bookings|arr|rpo)))\b"
         ),
     ),
     (
         "scraper_tracker",
         re.compile(
-            r"\b(?:ornn\s+h[12]00|h[12]00\s+index|ships\s+transit|bab\s+el-mandeb|west\s+nile|neuroinvasive|home\s+value|debut\s+at\s+a\s+score\s+of|output\s+(?:token\s+)?price\s+be\s+at\s+or\s+below|next\s+(?:fable|astra)\s+model|gpt\s+astra|approval\s+rating\s+hit)\b"
+            r"\b(?:ornn\s+h[12]00|h[12]00\s+index|ships\s+transit|bab\s+el-mandeb|west\s+nile|neuroinvasive|home\s+value|debut\s+at\s+a\s+score\s+of|output\s+(?:token\s+)?price\s+be\s+at\s+or\s+below|next\s+(?:fable|astra)\s+model|gpt\s+astra|approval\s+rating\s+hit|openrouter|tokens\s+the\s+week\s+of|rhine\s+river|return\s+to\s+normal\s+levels|approval\s+rating\s+be\s+between|critical\s+incident|senate\s+odds|house\s+odds|ai\s+agent\s+lab|humanity(?:'|\u2019)?s\s+last\s+exam|gemini\s+pro\s+model|volatility\s+index|us\s+dollar\s+index|dxy)\b"
         ),
     ),
     (
         "geopolitical_crisis",
         re.compile(
-            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce)\b"
+            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action)\b"
         ),
     ),
     (

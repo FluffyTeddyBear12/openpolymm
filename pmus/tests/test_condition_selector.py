@@ -580,7 +580,7 @@ def test_zero_pair_preference_strictly_blocks_single_sided_fallback():
 
 def test_wide_spread_pair_below_92c_sum_rejected():
     cond = make_condition(pool="500", target="50", max_spread="0.05")
-    yes_b = make_book([("0.22", "100")], [("0.24", "100")], slug=cond.yes.slug)
+    yes_b = make_book([("0.18", "100")], [("0.20", "100")], slug=cond.yes.slug)
     no_b = make_book([("0.68", "100")], [("0.70", "100")], slug=cond.no.slug)
 
     target = evaluate_condition(
@@ -593,7 +593,7 @@ def test_wide_spread_pair_below_92c_sum_rejected():
     )
     assert target is None
 
-    yes_tight = make_book([("0.24", "100")], [("0.26", "100")], slug=cond.yes.slug)
+    yes_tight = make_book([("0.20", "100")], [("0.22", "100")], slug=cond.yes.slug)
     target_tight = evaluate_condition(
         cond=cond,
         yes_book=yes_tight,

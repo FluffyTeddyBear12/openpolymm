@@ -10,11 +10,11 @@ from pmus.strategy.market_selector import AllocationResult, CandidateSide
 logger = logging.getLogger(__name__)
 
 SINGLE_SIDED_MIN_PRICE = Decimal("0.20")
-PAIR_LEG_MIN_PRICE = Decimal("0.22")
-PAIR_LEG_MAX_PRICE = Decimal("0.75")
-PAIR_MIN_PRICE_SUM = Decimal("0.92")
+PAIR_LEG_MIN_PRICE = Decimal("0.18")
+PAIR_LEG_MAX_PRICE = Decimal("0.78")
+PAIR_MIN_PRICE_SUM = Decimal("0.88")
 PAIR_MAX_PRICE_SUM = Decimal("0.98")
-MIN_COMPETITOR_SCORE = Decimal("45")
+MIN_COMPETITOR_SCORE = Decimal("6")
 
 
 @dataclass(frozen=True)
@@ -180,10 +180,14 @@ def evaluate_condition(
     return max(surviving, key=lambda t: t.expected_reward_sec)
 
 
-WATERFILL_MIN_BUDGET = Decimal("500")
+WATERFILL_MIN_BUDGET = Decimal("100")
 WATERFILL_COST_TIERS: tuple[Decimal, ...] = (
-    Decimal("40"),
-    Decimal("75"),
+    Decimal("22"),
+    Decimal("32"),
+    Decimal("42"),
+    Decimal("54"),
+    Decimal("68"),
+    Decimal("85"),
     Decimal("110"),
     Decimal("160"),
     Decimal("240"),
@@ -333,6 +337,35 @@ def _waterfill_conditions(
             if resized.cost <= remaining_budget:
                 selected.append(resized)
                 remaining_budget -= resized.cost
+
+    selected.sort(key=lambda t: _rank_score(t, pair_preference), reverse=True)
+    if remaining_budget > Decimal("0"):
+        for idx_sel, cur_target in enumerate(selected):
+            if remaining_budget <= Decimal("0"):
+                break
+            cond = cur_target.condition
+            held_cost = _condition_held_cost(cond, positions)
+            cond_max_cost = max(Decimal("0"), max_cost - held_cost)
+            topup_cap = min(cond_max_cost, cur_target.cost + remaining_budget)
+            if topup_cap <= cur_target.cost:
+                continue
+            topped = evaluate_condition(
+                cond=cond,
+                yes_book=books[cond.yes.slug],
+                no_book=books[cond.no.slug],
+                max_cost=topup_cap,
+                max_contracts=max_contracts,
+                pair_preference=pair_preference,
+                positions=positions,
+            )
+            if (
+                topped is not None
+                and topped.cost > cur_target.cost
+                and (topped.cost - cur_target.cost) <= remaining_budget
+                and topped.expected_reward_sec > cur_target.expected_reward_sec
+            ):
+                remaining_budget -= topped.cost - cur_target.cost
+                selected[idx_sel] = topped
 
     selected.sort(key=lambda t: _rank_score(t, pair_preference), reverse=True)
     return selected
