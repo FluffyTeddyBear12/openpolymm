@@ -878,6 +878,7 @@ class LiveEngine:
             if book is None:
                 book = self.public_client.fetch_book(slug)
             market = self._market(slug)
+            tick = book.tick_size or market.tick
             pos = live_positions.get(slug, Position(slug=slug, net_qty=Decimal("0"), avg_price=Decimal("0")))
             if abs(pos.net_qty) >= self.settings.max_contracts_per_market:
                 self.market_states[slug] = "FLATTENING"
@@ -972,7 +973,7 @@ class LiveEngine:
                         clamped_quotes: list[Quote] = []
                         for q in quotes:
                             if q.side == "BUY_LONG" and q.price > max_allowed:
-                                clamped_px = (max_allowed // market.tick) * market.tick
+                                clamped_px = (max_allowed // tick) * tick
                                 if clamped_px > Decimal("0"):
                                     clamped_quotes.append(dataclasses.replace(q, price=clamped_px))
                             else:
@@ -991,9 +992,9 @@ class LiveEngine:
             ):
                 mid = global_rewards.adjusted_mid(quote_book, window.target_size)
                 if mid is not None and quote_book.asks:
-                    margin = max(market.tick, Decimal("0.005"))
+                    margin = max(tick, Decimal("0.005"))
                     max_keep_dist = min(window.max_spread - margin, window.max_spread * Decimal("0.55"))
-                    max_price_lag = Decimal("2") * market.tick
+                    max_price_lag = Decimal("2") * tick
                     kept_cancel_ids: set[str] = set()
                     kept_create_sides: set[str] = set()
                     for old_o in to_cancel:
@@ -1038,7 +1039,7 @@ class LiveEngine:
                     self.recent_cancels[o.order_id] = now_ts
 
             if to_create:
-                created = self.auth_client.create_orders_batch(to_create, {slug: market.tick}, {slug: market.min_qty})
+                created = self.auth_client.create_orders_batch(to_create, {slug: tick}, {slug: market.min_qty})
                 for o in created:
                     self.ledger.record_order(o, status="OPEN", ts_ms=now_ms)
                     self.order_created_at[o.order_id] = now_ts

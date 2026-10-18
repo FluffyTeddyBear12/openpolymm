@@ -5,6 +5,7 @@ s the distance from the size-adjusted midpoint. Orders below the minimum size
 or at/after v score zero. With the midpoint in [0.10, 0.90] a single-sided
 book scores S/3; outside that band only two-sided liquidity scores.
 """
+import dataclasses
 import os
 from decimal import Decimal
 
@@ -280,5 +281,5 @@ def strip_orders_from_book(book: Book, orders: list[LiveOrder]) -> Book:
                 ask_deduct[opx] -= used
         if rem > ZERO:
             new_asks.append(Level(price=lvl.price, qty=rem))
-    return Book(slug=book.slug, bids=tuple(new_bids), asks=tuple(new_asks), ts_ms=book.ts_ms)
+    return dataclasses.replace(book, bids=tuple(new_bids), asks=tuple(new_asks))
 

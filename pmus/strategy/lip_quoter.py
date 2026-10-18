@@ -1,8 +1,23 @@
+import logging
 from datetime import datetime
 from decimal import Decimal
 
 from pmus.models import Book, IncentiveWindow, Level, Market, Position, Quote
-from pmus.strategy import global_rewards
+from pmus.strategy import book_guard, global_rewards
+
+logger = logging.getLogger(__name__)
+
+
+def _guarded_bid_price(book: Book, window: IncentiveWindow, tick: Decimal) -> Decimal | None:
+    price = global_rewards.bid_price(book, window, tick)
+    if price is None:
+        return None
+    reason = book_guard.quote_guard(book, window, price, tick)
+    if reason is not None:
+        logger.debug("Guard pulled %s bid: %s", book.slug, reason)
+        return None
+    return price
+
 
 def desired_quotes(
     market: Market,
@@ -33,6 +48,8 @@ def desired_quotes(
         if now.timestamp() >= deadline:
             return []
 
+    tick = book.tick_size or market.tick
+
     if (
         not book.bids
         and (book.asks or (position is not None and position.avg_price > Decimal("0")))
@@ -49,10 +66,10 @@ def desired_quotes(
                 if position.avg_price > Decimal("0")
                 else (book.asks[0].price if book.asks else Decimal("0"))
             )
-            rem = raw_exit % market.tick
-            min_exit = raw_exit if rem == Decimal("0") else ((raw_exit // market.tick) + Decimal("1")) * market.tick
-            ask_px = (book.asks[0].price // market.tick) * market.tick if book.asks else Decimal("0")
-            sell_price = min(max(ask_px, min_exit), Decimal("1") - market.tick, Decimal("0.999"))
+            rem = raw_exit % tick
+            min_exit = raw_exit if rem == Decimal("0") else ((raw_exit // tick) + Decimal("1")) * tick
+            ask_px = (book.asks[0].price // tick) * tick if book.asks else Decimal("0")
+            sell_price = min(max(ask_px, min_exit), Decimal("1") - tick, Decimal("0.999"))
             if sell_price > Decimal("0"):
                 return [
                     Quote(
@@ -72,8 +89,8 @@ def desired_quotes(
     if best_bid >= best_ask:
         return []
 
-    bid_price = (best_bid // market.tick) * market.tick
-    ask_price = (best_ask // market.tick) * market.tick
+    bid_price = (best_bid // tick) * tick
+    ask_price = (best_ask // tick) * tick
 
     net = position.net_qty if position is not None else Decimal("0")
     if window.max_spread is not None:
@@ -124,7 +141,7 @@ def desired_quotes(
             target_sz = quote_size if quote_size is not None else window.target_size
             if net < window.target_size and target_sz >= window.target_size:
                 remaining = max(window.target_size, target_sz - net)
-                price = global_rewards.bid_price(book, window, market.tick)
+                price = _guarded_bid_price(book, window, tick)
                 qty = min(remaining, max_bid_contracts)
                 budget_blocked = budget > Decimal("0") and adverse_freeze and (net * position.avg_price >= budget)
                 adverse_blocked = (
@@ -143,7 +160,7 @@ def desired_quotes(
         else:
             spread_ok = window.max_spread is None or (ask_price - bid_price) <= (Decimal("2") * window.max_spread)
             if spread_ok and quote_bid and global_rewards.reward_eligible(book, window.target_size):
-                price = global_rewards.bid_price(book, window, market.tick)
+                price = _guarded_bid_price(book, window, tick)
                 if price is not None and price > Decimal("0"):
                     held_cost = max(Decimal("0"), net) * (
                         position.avg_price
@@ -175,11 +192,11 @@ def desired_quotes(
         if net > Decimal("0"):
             ask_qty = min(net, max_ask_contracts) // market.min_qty * market.min_qty
             if position is not None and position.avg_price > Decimal("0"):
-                rem = position.avg_price % market.tick
+                rem = position.avg_price % tick
                 min_exit = (
-                    (position.avg_price // market.tick) * market.tick
+                    (position.avg_price // tick) * tick
                     if rem == Decimal("0")
-                    else ((position.avg_price // market.tick) + Decimal("1")) * market.tick
+                    else ((position.avg_price // tick) + Decimal("1")) * tick
                 )
             else:
                 min_exit = Decimal("0")
@@ -204,19 +221,19 @@ def desired_quotes(
             )
             if underwater_non_scoring:
                 qual_bid = next((lvl.price for lvl in book.bids if lvl.qty >= window.target_size), best_bid)
-                qual_ask = next(((lvl.price // market.tick) * market.tick for lvl in book.asks if lvl.qty >= window.target_size), ask_price)
-                band_floor = ((Decimal("2") * global_rewards.REWARD_MID_LOW - qual_bid + (Decimal("4") * market.tick)) // market.tick) * market.tick
-                loss_floor = ((min_exit - window.max_spread) // market.tick) * market.tick
-                max_scoring_ask = (((mid + window.max_spread) - (market.tick / Decimal("10"))) // market.tick) * market.tick
+                qual_ask = next(((lvl.price // tick) * tick for lvl in book.asks if lvl.qty >= window.target_size), ask_price)
+                band_floor = ((Decimal("2") * global_rewards.REWARD_MID_LOW - qual_bid + (Decimal("4") * tick)) // tick) * tick
+                loss_floor = ((min_exit - window.max_spread) // tick) * tick
+                max_scoring_ask = (((mid + window.max_spread) - (tick / Decimal("10"))) // tick) * tick
                 candidate_ask = max(qual_ask, band_floor)
                 clamped_ask = min(candidate_ask, max_scoring_ask) if max_scoring_ask > best_bid else candidate_ask
                 sell_price = max(clamped_ask, loss_floor) if mid < global_rewards.REWARD_MID_LOW else clamped_ask
             elif live_unwind_non_scoring:
-                loss_floor = ((min_exit - window.max_spread) // market.tick) * market.tick
+                loss_floor = ((min_exit - window.max_spread) // tick) * tick
                 max_scoring_ask = (
-                    ((mid + window.max_spread) - (market.tick / Decimal("10")))
-                    // market.tick
-                ) * market.tick
+                    ((mid + window.max_spread) - (tick / Decimal("10")))
+                    // tick
+                ) * tick
                 target_unwind_ask = min(min_exit, max_scoring_ask)
                 candidate_sell = max(ask_price, loss_floor, target_unwind_ask)
                 sell_price = (
@@ -226,17 +243,17 @@ def desired_quotes(
                 )
             elif window.max_spread is not None and (ask_price - bid_price) > window.max_spread and min_exit > Decimal("0"):
                 target_ask = max(min_exit, min(ask_price, bid_price + window.max_spread))
-                sell_price = (target_ask // market.tick) * market.tick
+                sell_price = (target_ask // tick) * tick
             else:
                 sell_price = max(ask_price, min_exit)
                 if ask_qty >= market.min_qty and (
                     ask_qty < window.target_size
-                    or (min_exit > Decimal("0") and (ask_price - min_exit) >= Decimal("3") * market.tick)
+                    or (min_exit > Decimal("0") and (ask_price - min_exit) >= Decimal("3") * tick)
                 ):
-                    stepped_ask = max(min_exit, ask_price - market.tick)
+                    stepped_ask = max(min_exit, ask_price - tick)
                     if stepped_ask > best_bid:
                         sell_price = stepped_ask
-            sell_price = min(sell_price, Decimal("1") - market.tick, Decimal("0.999"))
+            sell_price = min(sell_price, Decimal("1") - tick, Decimal("0.999"))
             if ask_qty >= market.min_qty and sell_price > best_bid:
                 quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=sell_price, qty=ask_qty))
 

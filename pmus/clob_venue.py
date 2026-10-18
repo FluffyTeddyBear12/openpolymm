@@ -626,11 +626,20 @@ class ClobVenueClient:
         except Exception:
             ts_ms = int(time.time() * 1000)
 
+        def positive_decimal(key: str) -> Decimal | None:
+            raw = data.get(key) if isinstance(data, dict) else None
+            if raw in (None, ""):
+                return None
+            value = Decimal(str(raw))
+            return value if value > Decimal("0") else None
+
         return Book(
             slug=token_id,
             bids=tuple(bids),
             asks=tuple(asks),
             ts_ms=ts_ms,
+            tick_size=positive_decimal("tick_size"),
+            last_trade_price=positive_decimal("last_trade_price"),
         )
 
     def fetch_book(self, token_id: str) -> Book:

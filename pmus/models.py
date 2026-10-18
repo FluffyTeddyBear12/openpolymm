@@ -28,6 +28,8 @@ class Book:
     bids: tuple[Level, ...]
     asks: tuple[Level, ...]
     ts_ms: int
+    tick_size: Decimal | None = None
+    last_trade_price: Decimal | None = None
 
 @dataclass(frozen=True)
 class IncentiveWindow:
