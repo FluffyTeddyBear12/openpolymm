@@ -82,7 +82,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "scraper_tracker",
         re.compile(
-            r"\b(?:ornn\s+h[12]00|h[12]00\s+index|ships\s+transit|bab\s+el-mandeb|west\s+nile|neuroinvasive|home\s+value|debut\s+at\s+a\s+score\s+of|output\s+(?:token\s+)?price\s+be\s+at\s+or\s+below|next\s+(?:fable|astra)\s+model|gpt\s+astra|approval\s+rating\s+hit|openrouter|tokens\s+the\s+week\s+of|rhine\s+river|return\s+to\s+normal\s+levels|approval\s+rating\s+be\s+between|critical\s+incident|senate\s+odds|house\s+odds|ai\s+agent\s+lab|humanity(?:'|\u2019)?s\s+last\s+exam|gemini\s+pro\s+model|volatility\s+index|us\s+dollar\s+index|dxy)\b"
+            r"\b(?:ornn\s+h[12]00|h[12]00\s+index|ships\s+transit|bab\s+el-mandeb|west\s+nile|neuroinvasive|home\s+value|debut\s+at\s+a\s+score\s+of|output\s+(?:token\s+)?price\s+be\s+at\s+or\s+(?:below|above)|next\s+(?:fable|astra)\s+model|claude\s+fable|gpt\s+astra|approval\s+rating\s+hit|openrouter|tokens\s+the\s+week\s+of|rhine\s+river|return\s+to\s+normal\s+levels|approval\s+rating\s+be\s+between|critical\s+incident|senate\s+odds|house\s+odds|ai\s+agent\s+lab|humanity(?:'|\u2019)?s\s+last\s+exam|gemini\s+pro\s+model|volatility\s+index|us\s+dollar\s+index|dxy)\b"
         ),
     ),
     (
