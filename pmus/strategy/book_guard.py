@@ -18,8 +18,8 @@ from pmus.models import Book, IncentiveWindow
 
 SUPPORT_DEPTH_TARGETS = Decimal("3")
 MIN_BOOK_DEPTH_TARGETS = Decimal("2")
-MIN_SUPPORT_SHARES = Decimal("150")
-MIN_NEAR_NOTIONAL_USD = Decimal("40")
+MIN_SUPPORT_SHARES = Decimal("250")
+MIN_NEAR_NOTIONAL_USD = Decimal("75")
 MAX_TICKS_ABOVE_SUPPORT = Decimal("2")
 LAST_TRADE_TOLERANCE_SPREADS = Decimal("1.25")
 

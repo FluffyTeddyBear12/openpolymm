@@ -10,7 +10,8 @@ from pmus.strategy.market_selector import AllocationResult, CandidateSide
 logger = logging.getLogger(__name__)
 
 SINGLE_SIDED_MIN_PRICE = Decimal("0.20")
-PAIR_LEG_MIN_PRICE = Decimal("0.10")
+PAIR_LEG_MIN_PRICE = Decimal("0.22")
+PAIR_LEG_MAX_PRICE = Decimal("0.75")
 PAIR_MIN_PRICE_SUM = Decimal("0.92")
 PAIR_MAX_PRICE_SUM = Decimal("0.98")
 MIN_COMPETITOR_SCORE = Decimal("45")
@@ -88,8 +89,8 @@ def evaluate_condition(
         p_yes, p_no = prices
         comp_q = global_rewards.competitor_q(yes_book, no_book, window)
         if (
-            p_yes >= PAIR_LEG_MIN_PRICE
-            and p_no >= PAIR_LEG_MIN_PRICE
+            PAIR_LEG_MIN_PRICE <= p_yes <= PAIR_LEG_MAX_PRICE
+            and PAIR_LEG_MIN_PRICE <= p_no <= PAIR_LEG_MAX_PRICE
             and PAIR_MIN_PRICE_SUM <= (p_yes + p_no) <= PAIR_MAX_PRICE_SUM
             and comp_q >= min(window.target_size, MIN_COMPETITOR_SCORE)
             and _admit(cond, yes_book, p_yes, yes_tick)

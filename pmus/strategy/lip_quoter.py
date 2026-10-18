@@ -223,13 +223,13 @@ def desired_quotes(
                 qual_bid = next((lvl.price for lvl in book.bids if lvl.qty >= window.target_size), best_bid)
                 qual_ask = next(((lvl.price // tick) * tick for lvl in book.asks if lvl.qty >= window.target_size), ask_price)
                 band_floor = ((Decimal("2") * global_rewards.REWARD_MID_LOW - qual_bid + (Decimal("4") * tick)) // tick) * tick
-                loss_floor = ((min_exit - window.max_spread) // tick) * tick
+                loss_floor = min_exit
                 max_scoring_ask = (((mid + window.max_spread) - (tick / Decimal("10"))) // tick) * tick
                 candidate_ask = max(qual_ask, band_floor)
                 clamped_ask = min(candidate_ask, max_scoring_ask) if max_scoring_ask > best_bid else candidate_ask
                 sell_price = max(clamped_ask, loss_floor) if mid < global_rewards.REWARD_MID_LOW else clamped_ask
             elif live_unwind_non_scoring:
-                loss_floor = ((min_exit - window.max_spread) // tick) * tick
+                loss_floor = min_exit
                 max_scoring_ask = (
                     ((mid + window.max_spread) - (tick / Decimal("10")))
                     // tick
@@ -253,6 +253,8 @@ def desired_quotes(
                     stepped_ask = max(min_exit, ask_price - tick)
                     if stepped_ask > best_bid:
                         sell_price = stepped_ask
+            if min_exit > Decimal("0"):
+                sell_price = max(sell_price, min_exit)
             sell_price = min(sell_price, Decimal("1") - tick, Decimal("0.999"))
             if ask_qty >= market.min_qty and sell_price > best_bid:
                 quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=sell_price, qty=ask_qty))

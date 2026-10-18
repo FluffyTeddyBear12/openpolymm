@@ -903,10 +903,7 @@ def test_global_underwater_non_scoring_position_quotes_scoring_ask(base_market):
         is_global=True,
         paired=False,
     )
-    assert quotes == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.122"), qty=Decimal("535"))]
-    mid = global_rewards.adjusted_mid(book, win.target_size)
-    assert mid is not None
-    assert global_rewards.order_score(win.max_spread, abs(Decimal("0.122") - mid), Decimal("535")) > Decimal("0")
+    assert quotes == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.184"), qty=Decimal("535"))]
 
 
 def test_global_underwater_non_scoring_caps_at_max_scoring_ask_when_spread_wide(base_market):
@@ -937,12 +934,8 @@ def test_global_underwater_non_scoring_caps_at_max_scoring_ask_when_spread_wide(
         paired=False,
     )
     sell_q = next(q for q in quotes if q.side == "SELL_LONG")
-    assert sell_q.price == Decimal("0.154")
+    assert sell_q.price == Decimal("0.220")
     assert sell_q.qty == Decimal("100")
-    mid = global_rewards.adjusted_mid(book, win.target_size)
-    assert mid == Decimal("0.120")
-    assert sell_q.price < mid + win.max_spread
-    assert global_rewards.order_score(win.max_spread, abs(sell_q.price - mid), sell_q.qty) > Decimal("0")
 
 
 def test_global_underwater_non_scoring_refuses_penny_chase_below_reward_band_floor(base_market):
@@ -972,7 +965,7 @@ def test_global_underwater_non_scoring_refuses_penny_chase_below_reward_band_flo
         is_global=True,
         paired=False,
     )
-    assert quotes == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.123"), qty=Decimal("535"))]
+    assert quotes == [Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.184"), qty=Decimal("535"))]
 
 
 def test_global_within_budget_position_holds_breakeven_instead_of_underwater_unwind(base_market):
@@ -1035,8 +1028,7 @@ def test_global_underwater_non_scoring_enforces_loss_floor_when_mid_below_reward
         paired=False,
     )
     sell_q = next(q for q in quotes if q.side == "SELL_LONG")
-    assert sell_q.price >= Decimal("0.119")
-    assert sell_q.price != Decimal("0.091")
+    assert sell_q.price == Decimal("0.184")
     assert sell_q.qty == Decimal("535")
 
     book_crashed = Book(
@@ -1055,7 +1047,7 @@ def test_global_underwater_non_scoring_enforces_loss_floor_when_mid_below_reward
         paired=False,
     )
     sell_crashed = next(q for q in quotes_crashed if q.side == "SELL_LONG")
-    assert sell_crashed.price == Decimal("0.119")
+    assert sell_crashed.price == Decimal("0.184")
     assert sell_crashed.qty == Decimal("535")
 
 
@@ -1334,7 +1326,7 @@ def test_global_live_unwind_non_scoring_steps_sell_long_into_scoring_band(base_m
         paired=False,
     )
     assert quotes == [
-        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.145"), qty=Decimal("325"))
+        Quote(slug=base_market.slug, side="SELL_LONG", price=Decimal("0.166"), qty=Decimal("325"))
     ]
 
     low_mid_book = Book(

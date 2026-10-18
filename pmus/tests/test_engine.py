@@ -1149,16 +1149,13 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
     book_drift = Book(
         slug="tok-1",
         bids=(
-            Level(Decimal("0.73"), Decimal("100")),
-            Level(Decimal("0.72"), Decimal("100")),
+            Level(Decimal("0.73"), Decimal("300")),
+            Level(Decimal("0.72"), Decimal("300")),
         ),
-        asks=(Level(Decimal("0.74"), Decimal("100")),),
+        asks=(Level(Decimal("0.74"), Decimal("300")),),
         ts_ms=int(t2 * 1000),
     )
     public_client.fetch_book.return_value = book_drift
-    auth_client.create_orders_batch.return_value = [
-        LiveOrder("o-new-2", "tok-1", "BUY_LONG", Decimal("0.72"), Decimal("55"))
-    ]
 
     engine._quote_market(
         slug="tok-1",
@@ -1172,13 +1169,44 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
         book=book_drift,
     )
 
+    auth_client.cancel_orders_batch.assert_not_called()
+    auth_client.create_orders_batch.assert_not_called()
+
+    t3 = t2 + 1.0
+    now3 = datetime.fromtimestamp(t3, timezone.utc)
+    book_outside_spread = Book(
+        slug="tok-1",
+        bids=(
+            Level(Decimal("0.75"), Decimal("300")),
+            Level(Decimal("0.74"), Decimal("300")),
+        ),
+        asks=(Level(Decimal("0.76"), Decimal("300")),),
+        ts_ms=int(t3 * 1000),
+    )
+    public_client.fetch_book.return_value = book_outside_spread
+    auth_client.create_orders_batch.return_value = [
+        LiveOrder("o-new-2", "tok-1", "BUY_LONG", Decimal("0.74"), Decimal("55"))
+    ]
+
+    engine._quote_market(
+        slug="tok-1",
+        now_dt=now3,
+        now_ts=t3,
+        now_ms=int(t3 * 1000),
+        exchange_open=[order_drift],
+        live_positions={},
+        buying_power=Decimal("500.00"),
+        realized_loss_today=Decimal("0"),
+        book=book_outside_spread,
+    )
+
     auth_client.cancel_orders_batch.assert_called_once()
     canceled_drift = auth_client.cancel_orders_batch.call_args[0][0]
     assert any(o.order_id == "o-drift" for o in canceled_drift)
 
     auth_client.create_orders_batch.assert_called_once()
     created_drift = auth_client.create_orders_batch.call_args[0][0]
-    assert any(q.side == "BUY_LONG" and q.price == Decimal("0.72") for q in created_drift)
+    assert any(q.side == "BUY_LONG" and q.price == Decimal("0.74") for q in created_drift)
 
 
 def test_live_engine_prepare_fee_buffer_global_vs_us(tmp_path):
@@ -1812,7 +1840,7 @@ def test_quote_market_sub_target_dust_neither_zeroes_bid_budget_nor_freezes_part
     engine.side_budgets[("y1", "bid")] = Decimal("50")
     engine.side_qtys[("y1", "bid")] = Decimal("65")
 
-    resting_y = LiveOrder("o-y", "y1", "BUY_LONG", Decimal("0.47"), Decimal("65"))
+    resting_y = LiveOrder("o-y", "y1", "BUY_LONG", Decimal("0.44"), Decimal("65"))
     engine.ledger.get_open_orders.side_effect = lambda slug=None: [resting_y] if slug == "y1" else []
     book_y = Book("y1", (Level(Decimal("0.49"), Decimal("200")),), (Level(Decimal("0.51"), Decimal("200")),), 1000)
 

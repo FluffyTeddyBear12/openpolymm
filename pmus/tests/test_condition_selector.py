@@ -5,6 +5,7 @@ import pytest
 from pmus.models import Book, ConditionMarket, IncentiveWindow, Level, Market, Position
 from pmus.strategy import global_rewards
 from pmus.strategy.condition_selector import (
+    PAIR_LEG_MAX_PRICE,
     PAIR_LEG_MIN_PRICE,
     SINGLE_SIDED_MIN_PRICE,
     allocate_conditions,
@@ -101,20 +102,32 @@ def test_two_sided_chosen_over_single_in_band_when_scoring_more():
 
 def test_tail_market_yields_two_sided_only():
     cond = make_condition(pool="200", target="50", max_spread="0.03")
-    yes_b = make_book([("0.12", "250")], [("0.14", "250")], slug=cond.yes.slug)
-    no_b = make_book([("0.86", "250")], [("0.88", "250")], slug=cond.no.slug)
+    yes_b = make_book([("0.24", "250")], [("0.26", "250")], slug=cond.yes.slug)
+    no_b = make_book([("0.74", "250")], [("0.76", "250")], slug=cond.no.slug)
 
     target = evaluate_condition(
         cond=cond,
         yes_book=yes_b,
         no_book=no_b,
         max_cost=Decimal("150"),
-        max_contracts=Decimal("500"),
+        max_contracts=Decimal("150"),
     )
     assert target is not None
     assert target.mode == "two_sided"
-    assert target.yes_price == Decimal("0.12")
-    assert target.no_price == Decimal("0.86")
+    assert target.yes_price == Decimal("0.24")
+    assert target.no_price == Decimal("0.74")
+
+    skewed_yes_b = make_book([("0.12", "250")], [("0.14", "250")], slug=cond.yes.slug)
+    skewed_no_b = make_book([("0.86", "250")], [("0.88", "250")], slug=cond.no.slug)
+    skewed_target = evaluate_condition(
+        cond=cond,
+        yes_book=skewed_yes_b,
+        no_book=skewed_no_b,
+        max_cost=Decimal("150"),
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+    )
+    assert skewed_target is None
 
     extreme_yes_b = make_book([("0.04", "100")], [("0.06", "100")], slug=cond.yes.slug)
     extreme_no_b = make_book([("0.94", "100")], [("0.96", "100")], slug=cond.no.slug)
@@ -451,19 +464,31 @@ def test_single_sided_tail_token_below_20c_blocked_while_two_sided_allowed():
     )
     assert target_blocked is None
 
-    target_paired = evaluate_condition(
+    target_skewed_pair = evaluate_condition(
         cond=cond,
         yes_book=yes_tight_b,
         no_book=no_tail_b,
         max_cost=Decimal("100"),
         max_contracts=Decimal("1000"),
+        pair_preference=Decimal("0.0"),
+    )
+    assert target_skewed_pair is None
+
+    yes_bal_b = make_book([("0.74", "100")], [("0.76", "100")], slug=cond.yes.slug)
+    no_bal_b = make_book([("0.24", "100")], [("0.26", "100")], slug=cond.no.slug)
+    target_paired = evaluate_condition(
+        cond=cond,
+        yes_book=yes_bal_b,
+        no_book=no_bal_b,
+        max_cost=Decimal("100"),
+        max_contracts=Decimal("1000"),
     )
     assert target_paired is not None
     assert target_paired.mode == "two_sided"
-    assert target_paired.yes_price == Decimal("0.83")
-    assert target_paired.no_price == Decimal("0.13")
-    assert target_paired.no_price >= PAIR_LEG_MIN_PRICE
-    assert target_paired.no_price < SINGLE_SIDED_MIN_PRICE
+    assert target_paired.yes_price == Decimal("0.73")
+    assert target_paired.no_price == Decimal("0.23")
+    assert PAIR_LEG_MIN_PRICE <= target_paired.no_price <= PAIR_LEG_MAX_PRICE
+    assert PAIR_LEG_MIN_PRICE <= target_paired.yes_price <= PAIR_LEG_MAX_PRICE
 
     no_extreme_b = make_book([("0.08", "100")], [("0.10", "100")], slug=cond.no.slug)
     target_extreme_blocked = evaluate_condition(
@@ -555,8 +580,8 @@ def test_zero_pair_preference_strictly_blocks_single_sided_fallback():
 
 def test_wide_spread_pair_below_92c_sum_rejected():
     cond = make_condition(pool="500", target="50", max_spread="0.05")
-    yes_b = make_book([("0.19", "100")], [("0.21", "100")], slug=cond.yes.slug)
-    no_b = make_book([("0.71", "100")], [("0.73", "100")], slug=cond.no.slug)
+    yes_b = make_book([("0.22", "100")], [("0.24", "100")], slug=cond.yes.slug)
+    no_b = make_book([("0.68", "100")], [("0.70", "100")], slug=cond.no.slug)
 
     target = evaluate_condition(
         cond=cond,
@@ -568,7 +593,7 @@ def test_wide_spread_pair_below_92c_sum_rejected():
     )
     assert target is None
 
-    yes_tight = make_book([("0.21", "100")], [("0.23", "100")], slug=cond.yes.slug)
+    yes_tight = make_book([("0.24", "100")], [("0.26", "100")], slug=cond.yes.slug)
     target_tight = evaluate_condition(
         cond=cond,
         yes_book=yes_tight,

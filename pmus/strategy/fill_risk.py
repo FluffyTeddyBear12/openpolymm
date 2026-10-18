@@ -34,7 +34,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "chart_rank",
         re.compile(
-            r"(?:be the (?:#\d+|\b\d+) (?:us|global) netflix (?:movie|show)|billboard hot 100 (?:#\d+|\b\d+) song|billboard 200 (?:#\d+|\b\d+) album|billboard (?:#\d+|\b\d+) top artist|(?:#\d+|\b\d+) song on the billboard|\bbe the top artist (?:in the us )?for \d{4}\b|\bbe the (?:#\d+|top) song (?:in the us|for \d{4}|globally)\b|\bmost streamed artist for \d{4}\b|\bsecond most streamed artist\b|\bnumber of monthly spotify listeners\b|(?:#\d+|\b\d+) (?:paid|free) app in the (?:us )?apple app store|\brank in google(?:'s|’s)? top \d+ most searched\b)"
+            r"(?:be the (?:#\d+|\b\d+) (?:us|global) netflix (?:movie|show)|billboard hot 100 (?:#\d+|\b\d+) song|billboard 200 (?:#\d+|\b\d+) album|billboard (?:#\d+|\b\d+) top artist|(?:#\d+|\b\d+) song on the billboard|\bbe the top artist (?:in the us )?for \d{4}\b|\bbe the (?:#\d+|top) song (?:in the us|for \d{4}|globally)\b|\bmost streamed artist for \d{4}\b|\bsecond most streamed artist\b|\bnumber of monthly spotify listeners\b|(?:#\d+|\b\d+) (?:paid|free) app in the (?:us )?apple app store|\brank in google(?:'s|’s)? top \d+ most searched\b|(?:(?<!\w)#\d+|\b(?:#\d+|number one|top)) (?:[a-z]+ ){0,2}(?:song|album|artist|show|movie|film|podcast|app|game|book)\b|\bbillboard hot 100\b|\bspotify (?:global|top|daily|weekly|charts?)\b)"
         ),
     ),
     (
@@ -83,6 +83,18 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "scraper_tracker",
         re.compile(
             r"\b(?:ornn\s+h[12]00|h[12]00\s+index|ships\s+transit|bab\s+el-mandeb|west\s+nile|neuroinvasive|home\s+value|debut\s+at\s+a\s+score\s+of|output\s+(?:token\s+)?price\s+be\s+at\s+or\s+below|next\s+(?:fable|astra)\s+model|gpt\s+astra|approval\s+rating\s+hit)\b"
+        ),
+    ),
+    (
+        "geopolitical_crisis",
+        re.compile(
+            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce)\b"
+        ),
+    ),
+    (
+        "macro_release",
+        re.compile(
+            r"\b(?:gdp|cpi|inflation|pce|unemployment rate|nonfarm payrolls?|consumer price index|interest rates?|rate hike|rate cut|\d+\s*bps)\b"
         ),
     ),
 )

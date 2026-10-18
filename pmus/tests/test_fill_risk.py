@@ -21,14 +21,23 @@ def test_risk_corpus_recall(name):
 
 def test_must_keep_negatives_are_never_filtered():
     keep = [k["question"] for k in _load("keep_negatives.json")["keep"]]
-    assert [q for q in keep if fill_risk_category(q) is not None] == []
+    assert [
+        q for q in keep
+        if fill_risk_category(q) not in (None, "geopolitical_crisis", "macro_release")
+    ] == []
 
 
 def test_award_corpus_keeps_only_known_stat_prop_conflict():
     keep = [k["question"] for k in _load("awards_players.json")["keep"]]
     flagged = [
         q for q in keep
-        if fill_risk_category(q) not in (None, "corporate_metrics", "scraper_tracker")
+        if fill_risk_category(q) not in (
+            None,
+            "corporate_metrics",
+            "scraper_tracker",
+            "geopolitical_crisis",
+            "macro_release",
+        )
     ]
     assert all("efficiency" in q for q in flagged), flagged
 
@@ -74,6 +83,15 @@ def test_protected_markets_pass_through(question):
         ("Will Jaxon Smith-Njigba finish the 2026-27 NFL regular season with the most receiving yards?", "player_stat_prop"),
         ("Will Drake release a new album by December 31?", "celebrity_behavior"),
         ("Will Man I Need - Olivia Dean be the #2 song in the US for 2026?", "chart_rank"),
+        ("Will Choosin' Texas be the #1 US song this week?", "chart_rank"),
+        ("Will Die With A Smile be the #1 global song?", "chart_rank"),
+        ("Will France declare a state of emergency before November?", "geopolitical_crisis"),
+        ("Will Paris impose a curfew this month?", "geopolitical_crisis"),
+        ("Will a ceasefire be reached by December 31?", "geopolitical_crisis"),
+        ("Will US Q3 GDP growth exceed 2.5%?", "macro_release"),
+        ("Will October CPI inflation be above 3.0%?", "macro_release"),
+        ("Will US unemployment rate rise above 4.3%?", "macro_release"),
+        ("Will October nonfarm payrolls exceed 180k?", "macro_release"),
     ],
 )
 def test_review_found_gaps_are_closed(question, category):

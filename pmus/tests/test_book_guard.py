@@ -198,3 +198,29 @@ def test_guard_rejects_walmart_single_order_bait_book():
     reason = quote_guard(wmt_no, w, D("0.51"), D("0.01"))
     assert reason is not None and ("support" in reason or "last trade" in reason)
 
+
+def test_guard_enforces_250_support_shares_and_75_near_notional():
+    from pmus.strategy.book_guard import MIN_NEAR_NOTIONAL_USD, MIN_SUPPORT_SHARES
+    assert MIN_SUPPORT_SHARES == D("250")
+    assert MIN_NEAR_NOTIONAL_USD == D("75")
+
+    w = window(target="20", max_spread="0.045")
+    shallow_support = book(
+        "shallow-sup",
+        [("0.40", "100"), ("0.39", "100"), ("0.20", "300")],
+        [("0.42", "200")],
+        tick="0.01",
+    )
+    reason_sup = quote_guard(shallow_support, w, D("0.40"), D("0.01"))
+    assert reason_sup is not None and "support" in reason_sup
+
+    low_notional = book(
+        "low-notional",
+        [("0.24", "150"), ("0.23", "130"), ("0.22", "10")],
+        [("0.26", "200")],
+        tick="0.01",
+    )
+    reason_notional = quote_guard(low_notional, w, D("0.24"), D("0.01"))
+    assert reason_notional is not None and "cliff book" in reason_notional
+
+

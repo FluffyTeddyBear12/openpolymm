@@ -160,7 +160,7 @@ def test_window_max_spread_divided_by_100_and_target_size_min_size():
             _make_sampling_market(
                 condition_id="0xspread_calc",
                 market_slug="slug-calc",
-                question="Will inflation drop?",
+                question="Will the home team win?",
                 daily_rate="300",
                 min_size="250",
                 max_spread="4.5",
@@ -175,7 +175,7 @@ def test_window_max_spread_divided_by_100_and_target_size_min_size():
     assert isinstance(c, ConditionMarket)
     assert c.condition_id == "0xspread_calc"
     assert c.event_id == "slug-calc"
-    assert c.question == "Will inflation drop?"
+    assert c.question == "Will the home team win?"
     assert c.window.slug == "0xspread_calc"
     assert c.window.program_id == "0xspread_calc"
     assert c.window.pool_usd == Decimal("300")

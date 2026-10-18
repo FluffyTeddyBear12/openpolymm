@@ -109,6 +109,17 @@ EXCLUDED_QUESTION_PATTERNS = (
     "next astra model",
     "gpt astra",
     "approval rating hit",
+    "ceasefire",
+    "state of emergency",
+    "curfew",
+    "martial law",
+    "#1 us song",
+    "#1 song",
+    "gdp",
+    "cpi",
+    "inflation",
+    "unemployment rate",
+    "nonfarm payroll",
 )
 
 logger = logging.getLogger(__name__)
