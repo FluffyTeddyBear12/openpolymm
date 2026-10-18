@@ -76,7 +76,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "corporate_metrics",
         re.compile(
-            r"\b(?:comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|q[1-4]\b.*?\b(?:revenue|sales|eps|margin|income|deliveries|profit|guidance))\b"
+            r"(?:\([a-z]{1,5}\)\s+(?:q[1-4]|fy\d{2,4})\b|\b(?:comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|gross dollar volume|q[1-4]\b.*?\b(?:revenue|sales|eps|margin|income|deliveries|profit|guidance|volume)))\b"
         ),
     ),
     (
