@@ -93,6 +93,7 @@ def test_dictionary_word_speed_is_not_a_streamer():
         ("Procter & Gamble (PG) Q1 organic sales growth 2.5% to 3.5%?", ("corporate_metrics",)),
         ("Coca-Cola (KO) Q3 organic revenue (non-GAAP) growth 5% to 6.5%?", ("corporate_metrics",)),
         ("Vertiv (VRT) Q3 adjusted operating margin 26% to 28%?", ("corporate_metrics",)),
+        ("Will Apple (AAPL) Q4 Greater China revenue be above $17B?", ("corporate_metrics",)),
         ("Will the Ornn H200 Index hit $3.75 (LOW) by December 31, 2026?", ("scraper_tracker",)),
         ("Will 170-189 ships transit the Bab el-Mandeb Strait between October 19-October 25?", ("scraper_tracker",)),
     ],
