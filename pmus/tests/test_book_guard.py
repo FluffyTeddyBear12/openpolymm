@@ -207,7 +207,7 @@ def test_guard_enforces_wave20_support_notional_and_front_shield():
     )
     assert MIN_SUPPORT_SHARES == D("80")
     assert MIN_NEAR_NOTIONAL_USD == D("35")
-    assert MULTI_LEVEL_SUPPORT_TARGETS == D("4")
+    assert MULTI_LEVEL_SUPPORT_TARGETS == D("2")
 
     w = window(target="20", max_spread="0.045")
     shallow_support = book(

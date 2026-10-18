@@ -17,7 +17,7 @@ from decimal import Decimal
 from pmus.models import Book, IncentiveWindow
 
 SUPPORT_DEPTH_TARGETS = Decimal("3")
-MULTI_LEVEL_SUPPORT_TARGETS = Decimal("4")
+MULTI_LEVEL_SUPPORT_TARGETS = Decimal("2")
 MIN_BOOK_DEPTH_TARGETS = Decimal("2")
 MIN_SUPPORT_SHARES = Decimal("80")
 MIN_NEAR_NOTIONAL_USD = Decimal("35")

@@ -124,6 +124,8 @@ EXCLUDED_QUESTION_PATTERNS = (
     "nonfarm payroll",
     "openrouter",
     "tokens the week of",
+    "ukmto",
+    "notices between",
     "rhine river",
     "return to normal levels",
     "approval rating be between",
