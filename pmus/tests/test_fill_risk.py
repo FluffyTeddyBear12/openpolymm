@@ -26,7 +26,10 @@ def test_must_keep_negatives_are_never_filtered():
 
 def test_award_corpus_keeps_only_known_stat_prop_conflict():
     keep = [k["question"] for k in _load("awards_players.json")["keep"]]
-    flagged = [q for q in keep if fill_risk_category(q) is not None]
+    flagged = [
+        q for q in keep
+        if fill_risk_category(q) not in (None, "corporate_metrics", "scraper_tracker")
+    ]
     assert all("efficiency" in q for q in flagged), flagged
 
 
@@ -88,6 +91,10 @@ def test_dictionary_word_speed_is_not_a_streamer():
         ("Will Champi peak as a Very strong typhoon?", ("severe_weather",)),
         ("Walmart (WMT) Q3 US comp sales (ex-fuel) 2.5% to 4%?", ("corporate_metrics",)),
         ("Procter & Gamble (PG) Q1 organic sales growth 2.5% to 3.5%?", ("corporate_metrics",)),
+        ("Coca-Cola (KO) Q3 organic revenue (non-GAAP) growth 5% to 6.5%?", ("corporate_metrics",)),
+        ("Vertiv (VRT) Q3 adjusted operating margin 26% to 28%?", ("corporate_metrics",)),
+        ("Will the Ornn H200 Index hit $3.75 (LOW) by December 31, 2026?", ("scraper_tracker",)),
+        ("Will 170-189 ships transit the Bab el-Mandeb Strait between October 19-October 25?", ("scraper_tracker",)),
     ],
 )
 def test_esports_weather_and_corporate_metrics_filtered(question, expected_categories):

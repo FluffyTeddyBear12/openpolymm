@@ -76,7 +76,13 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "corporate_metrics",
         re.compile(
-            r"\b(?:comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume)\b"
+            r"\b(?:comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|q[1-4]\s+(?:us\s+|worldwide\s+|global\s+)?(?:revenue|sales|eps|margin|income|deliveries))\b"
+        ),
+    ),
+    (
+        "scraper_tracker",
+        re.compile(
+            r"\b(?:ornn\s+h[12]00|h[12]00\s+index|ships\s+transit|bab\s+el-mandeb|west\s+nile|neuroinvasive|home\s+value|debut\s+at\s+a\s+score\s+of|output\s+(?:token\s+)?price\s+be\s+at\s+or\s+below|next\s+(?:fable|astra)\s+model|gpt\s+astra|approval\s+rating\s+hit)\b"
         ),
     ),
 )
