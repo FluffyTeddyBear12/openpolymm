@@ -723,7 +723,7 @@ def test_render_live_hud_displays_today_est_and_all_time_lip_yield(tmp_path):
         )
     )
 
-    settings = Settings(venue="global")
+    settings = Settings(venue="global", data_dir=tmp_path)
     with patch("pmus.dashboard.st") as mock_st, \
          patch("pmus.dashboard.is_database_empty", return_value=False), \
          patch("pmus.dashboard._get_live_buying_power", return_value=Decimal("100.00")), \
@@ -733,8 +733,197 @@ def test_render_live_hud_displays_today_est_and_all_time_lip_yield(tmp_path):
         fn(ledger, settings)
         metric_calls = [call.kwargs for call in mock_st.metric.call_args_list]
         pool_metric = next(m for m in metric_calls if m.get("label") == "Pool Rewards Earned")
-        assert pool_metric["value"] == "$15.0000"
+        assert pool_metric["value"] == "$5.0000"
         assert pool_metric["delta"] == "Today Est: $5.00 | All-Time: $15.00"
+        exit_metric = next(m for m in metric_calls if m.get("label") == "Total Exit Value")
+        assert exit_metric["value"] == "$105.00"
+
+
+def test_epoch_cutoff_and_custom_reset_persistence(tmp_path):
+    from pmus.dashboard import (
+        DEFAULT_RESET_EPOCH_MS,
+        FRESH_START_TODAY_0700_UTC_MS,
+        get_effective_reset_epoch_ms,
+        set_custom_reset_epoch_ms,
+    )
+
+    assert DEFAULT_RESET_EPOCH_MS == 1792281600000
+    assert FRESH_START_TODAY_0700_UTC_MS == 1792308000000
+
+    settings = Settings(data_dir=tmp_path)
+    assert get_effective_reset_epoch_ms(settings) == DEFAULT_RESET_EPOCH_MS
+
+    set_custom_reset_epoch_ms(settings, 1792310000000)
+    assert get_effective_reset_epoch_ms(settings) == 1792310000000
+
+
+def test_compute_kpis_total_exit_value_exact_user_example(tmp_path):
+    ledger = Ledger(tmp_path / "exit_value.db")
+    t0 = 1792281600000 + 10_000
+
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="buy-loss",
+            order_id="o-buy",
+            slug="mkt-loss",
+            side="BUY_LONG",
+            price=Decimal("0.50"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=t0,
+        )
+    )
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="sell-loss",
+            order_id="o-sell",
+            slug="mkt-loss",
+            side="SELL_LONG",
+            price=Decimal("0.45"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=t0 + 1000,
+        )
+    )
+    ledger.record_lip_snapshot(
+        LipSnapshot(
+            ts_ms=t0,
+            slug="mkt-loss",
+            program_id="p-1",
+            trader_bid_score=Decimal("50"),
+            total_bid_score=Decimal("100"),
+            trader_ask_score=Decimal("50"),
+            total_ask_score=Decimal("100"),
+            qualifies=True,
+            reward_usd=Decimal("14.00"),
+            bid_qualifies=True,
+            ask_qualifies=True,
+        )
+    )
+
+    kpis = compute_kpis(
+        ledger,
+        since_ms=1792281600000,
+        buying_power=Decimal("150.00"),
+        held_positions_usd=Decimal("50.00"),
+        is_global=True,
+    )
+    assert kpis["portfolio_value_usd"] == Decimal("200.00")
+    assert kpis["active_lip_rewards"] == Decimal("14.00")
+    assert kpis["realized_pnl"] == Decimal("-5.00")
+    assert kpis["maker_rebates"] == Decimal("0")
+    assert kpis["taker_fees"] == Decimal("0")
+    assert kpis["total_exit_value_usd"] == Decimal("209.00")
+
+
+def test_format_held_positions_table_with_and_without_sell_orders(monkeypatch):
+    from pmus.dashboard import _TITLE_CACHE, format_held_positions_table
+
+    _TITLE_CACHE["token-1"] = "Will Market 1 Resolve Yes?"
+    _TITLE_CACHE["token-2"] = "Will Market 2 Resolve Yes?"
+    _TITLE_CACHE["token-3"] = "Will Market 3 Resolve Yes?"
+
+    positions = [
+        Position(slug="token-1", net_qty=Decimal("180.86"), avg_price=Decimal("0.3800")),
+        Position(slug="token-2", net_qty=Decimal("100"), avg_price=Decimal("0.5000")),
+        Position(slug="token-3", net_qty=Decimal("50"), avg_price=Decimal("0.4000")),
+    ]
+    open_orders = [
+        LiveOrder(
+            order_id="sell-1",
+            slug="token-1",
+            side="SELL_LONG",
+            price=Decimal("0.4020"),
+            qty_open=Decimal("180.86"),
+        ),
+        LiveOrder(
+            order_id="sell-2",
+            slug="token-2",
+            side="SELL_LONG",
+            price=Decimal("0.5000"),
+            qty_open=Decimal("100"),
+        ),
+    ]
+
+    rows = format_held_positions_table(positions, open_orders)
+    assert len(rows) == 3
+
+    r1 = rows[0]
+    assert "Slug" not in r1 and "Market Slug" not in r1 and "slug" not in r1
+    assert r1["Market Question"] == "Will Market 1 Resolve Yes?"
+    assert r1["Shares Held"] == "180.86"
+    assert r1["Avg Entry Price"] == "$0.3800"
+    assert r1["Cost Paid"] == "$68.73"
+    assert r1["Limit Sell Order"] == "SELL 180.86 @ $0.4020"
+    assert r1["Break-Even Price"] == "$0.3800"
+    assert r1["Projected Revenue"] == "$72.71"
+    assert r1["Projected Net Profit / Loss"] == "+$3.98 (+5.8%)"
+
+    r2 = rows[1]
+    assert r2["Limit Sell Order"] == "SELL 100 @ $0.5000"
+    assert r2["Projected Revenue"] == "$50.00"
+    assert r2["Projected Net Profit / Loss"] == "$0.00 (Break-Even)"
+
+    r3 = rows[2]
+    assert r3["Limit Sell Order"] == "Pending Unwind Quote"
+    assert r3["Projected Revenue"] == "$20.00"
+    assert r3["Projected Net Profit / Loss"] == "$0.00 (Break-Even)"
+
+
+def test_render_mobile_cards_html_and_ui_slug_exclusion(tmp_path):
+    from pmus.dashboard import _TITLE_CACHE, render_mobile_cards_html
+
+    _TITLE_CACHE["tok-abc"] = "Will Bitcoin hit $100k?"
+    html_out = render_mobile_cards_html(
+        [
+            {
+                "Market Question": "Will Bitcoin hit $100k?",
+                "Slug": "tok-abc",
+                "Shares Held": "100",
+                "Limit Sell Order": "SELL 100 @ $0.5200",
+            }
+        ],
+        title_key="Market Question",
+        badge_key="Limit Sell Order",
+    )
+    assert "Will Bitcoin hit $100k?" in html_out
+    assert "SELL 100 @ $0.5200" in html_out
+    assert "tok-abc" not in html_out
+
+    ledger = Ledger(tmp_path / "ui_no_slug.db")
+    t_now = 1792281600000 + 5000
+    ledger.record_order(LiveOrder(order_id="o1", slug="tok-abc", side="BUY_LONG", price=Decimal("0.48"), qty_open=Decimal("50")))
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f1",
+            order_id="o1",
+            slug="tok-abc",
+            side="BUY_LONG",
+            price=Decimal("0.48"),
+            qty=Decimal("50"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=t_now,
+        )
+    )
+    ledger.update_position(Position(slug="tok-abc", net_qty=Decimal("50"), avg_price=Decimal("0.48")), t_now)
+
+    settings = Settings(venue="global", data_dir=tmp_path)
+    with patch("pmus.dashboard.st") as mock_st, \
+         patch("pmus.dashboard.is_database_empty", return_value=False), \
+         patch("pmus.dashboard._get_live_buying_power", return_value=Decimal("200.00")), \
+         patch("pmus.dashboard._get_official_daily_earnings", return_value=Decimal("10.00")):
+        mock_st.columns.side_effect = lambda n: [MagicMock() for _ in range(n)]
+        fn = getattr(render_live_hud, "__wrapped__", render_live_hud)
+        fn(ledger, settings)
+        assert mock_st.dataframe.call_count >= 3
+        for call in mock_st.dataframe.call_args_list:
+            df = call.args[0]
+            for col in df.columns:
+                assert col not in ("Slug", "slug", "Market Slug")
+
 
 
 
