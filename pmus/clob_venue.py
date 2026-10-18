@@ -144,6 +144,9 @@ EXCLUDED_QUESTION_PATTERNS = (
     "first week sales",
     " arr ",
     "military action",
+    "highest-scoring rb",
+    "highest-scoring wr",
+    "highest-scoring qb",
 )
 
 logger = logging.getLogger(__name__)
