@@ -724,7 +724,17 @@ class LiveEngine:
         batch_books: dict[str, Book] = {}
         if hasattr(self.public_client, "fetch_books_batch") and active_slugs:
             try:
-                res = self.public_client.fetch_books_batch(active_slugs)
+                books_to_fetch = list(active_slugs)
+                active_set = set(active_slugs)
+                for y_s, n_s in self.condition_pairs:
+                    if y_s in active_set or n_s in active_set:
+                        if y_s not in active_set:
+                            books_to_fetch.append(y_s)
+                            active_set.add(y_s)
+                        if n_s not in active_set:
+                            books_to_fetch.append(n_s)
+                            active_set.add(n_s)
+                res = self.public_client.fetch_books_batch(books_to_fetch)
                 if isinstance(res, dict):
                     batch_books = res
             except Exception as exc:
@@ -848,6 +858,26 @@ class LiveEngine:
                 orders.setdefault(o.order_id, o)
         return list(orders.values())
 
+    def _slug_open_orders(self, slug: str, exchange_open: list[LiveOrder]) -> list[LiveOrder]:
+        merged: list[LiveOrder] = []
+        seen_ids: set[str] = set()
+        for o in exchange_open:
+            if o.slug == slug and o.order_id not in self.recent_cancels:
+                merged.append(o)
+                if o.order_id:
+                    seen_ids.add(o.order_id)
+        try:
+            local_orders = self.ledger.get_open_orders(slug)
+            if isinstance(local_orders, (list, tuple)):
+                for o in local_orders:
+                    if isinstance(o, LiveOrder) and o.order_id not in self.recent_cancels and o.order_id not in seen_ids:
+                        merged.append(o)
+                        if o.order_id:
+                            seen_ids.add(o.order_id)
+        except Exception:
+            pass
+        return merged
+
     def _cancel_targets(self, now_ts: float, slugs: list[str] | None = None) -> None:
         target_slugs = slugs if slugs is not None else self.target_slugs
         if not target_slugs:
@@ -905,9 +935,7 @@ class LiveEngine:
                 else self.side_budgets.get((slug, "bid"), Decimal("0"))
             )
 
-            resting_on_slug = [
-                o for o in exchange_open if o.slug == slug and o.order_id not in self.recent_cancels
-            ] or self.ledger.get_open_orders(slug)
+            resting_on_slug = self._slug_open_orders(slug, exchange_open)
             orders_to_strip = (
                 resting_on_slug
                 if book.bids
@@ -936,8 +964,13 @@ class LiveEngine:
                 quote_size=self.side_qtys.get((slug, "bid")),
             )
 
-            if self.settings.venue == "global" and slug in self.paired_slugs:
-                other_slug = None
+            other_slug: str | None = None
+            is_binary_cond = (
+                slug in self.paired_slugs
+                or any(slug in pair for pair in self.condition_pairs)
+                or (slug, "bid") in getattr(self, "side_prices", {})
+            )
+            if self.settings.venue == "global" and is_binary_cond:
                 is_yes_leg = True
                 for y, n in self.condition_pairs:
                     if y == slug:
@@ -971,12 +1004,7 @@ class LiveEngine:
                         else market.min_qty
                     )
                     other_bids = [
-                        o.price for o in exchange_open
-                        if o.slug == other_slug
-                        and o.side in ("BUY", "BUY_LONG")
-                        and o.order_id not in self.recent_cancels
-                    ] or [
-                        o.price for o in self.ledger.get_open_orders(other_slug)
+                        o.price for o in self._slug_open_orders(other_slug, exchange_open)
                         if o.side in ("BUY", "BUY_LONG")
                     ]
                     other_filled = other_pos.net_qty >= other_target_size
@@ -995,16 +1023,14 @@ class LiveEngine:
                         freeze_cap = max(existing_buy_prices)
                         max_allowed = min(max_allowed, freeze_cap) if max_allowed is not None else freeze_cap
                     if (
-                        not other_filled
+                        slug in self.paired_slugs
+                        and not other_filled
                         and batch_books is not None
                         and other_slug in batch_books
                         and window is not None
                     ):
                         other_raw_book = batch_books[other_slug]
-                        other_resting = [
-                            o for o in exchange_open
-                            if o.slug == other_slug and o.order_id not in self.recent_cancels
-                        ] or self.ledger.get_open_orders(other_slug)
+                        other_resting = self._slug_open_orders(other_slug, exchange_open)
                         other_orders_to_strip = (
                             other_resting
                             if other_raw_book.bids
@@ -1031,11 +1057,22 @@ class LiveEngine:
                             sym_cap = pair_px[0] if is_yes_leg else pair_px[1]
                             max_allowed = min(max_allowed, sym_cap) if max_allowed is not None else sym_cap
                 if max_allowed is not None:
+                    mid_check = (
+                        global_rewards.adjusted_mid(quote_book, window.target_size)
+                        if (window is not None and window.max_spread is not None)
+                        else None
+                    )
                     clamped_quotes: list[Quote] = []
                     for q in quotes:
                         if q.side == "BUY_LONG" and q.price > max_allowed:
                             clamped_px = (max_allowed // tick) * tick
-                            if clamped_px > Decimal("0"):
+                            in_spread = (
+                                window is None
+                                or window.max_spread is None
+                                or mid_check is None
+                                or abs(clamped_px - mid_check) <= window.max_spread
+                            )
+                            if clamped_px > Decimal("0") and in_spread:
                                 clamped_quotes.append(dataclasses.replace(q, price=clamped_px))
                         else:
                             clamped_quotes.append(q)
@@ -1044,14 +1081,18 @@ class LiveEngine:
             to_create, to_cancel, _ = reconcile_quotes(self.ledger.get_open_orders(slug), quotes)
 
             # Active resting order ejection against cross-book arbitrage exploit
-            if self.settings.venue == "global" and slug in self.paired_slugs and other_slug and batch_books is not None:
+            if self.settings.venue == "global" and other_slug and batch_books is not None:
                 opp_raw_book = batch_books.get(other_slug)
                 if opp_raw_book is not None and opp_raw_book.bids:
                     opp_market_bid = opp_raw_book.bids[0].price
                     for o in resting_on_slug:
-                        if o.side in ("BUY", "BUY_LONG") and (o.price + opp_market_bid) >= Decimal("0.990"):
+                        if o.side in ("BUY", "BUY_LONG") and (o.price + opp_market_bid) > global_rewards.CROSS_MAX_SUM:
                             if o not in to_cancel:
                                 to_cancel.append(o)
+                    to_create = [
+                        q for q in to_create
+                        if not (q.side in ("BUY", "BUY_LONG") and (q.price + opp_market_bid) > global_rewards.CROSS_MAX_SUM)
+                    ]
 
             if (
                 self.settings.venue == "global"
@@ -1073,7 +1114,7 @@ class LiveEngine:
                             if other_slug and batch_books is not None:
                                 opp_raw_book = batch_books.get(other_slug)
                                 if opp_raw_book is not None and opp_raw_book.bids:
-                                    if (old_o.price + opp_raw_book.bids[0].price) >= Decimal("0.990"):
+                                    if (old_o.price + opp_raw_book.bids[0].price) > global_rewards.CROSS_MAX_SUM:
                                         continue
                             for new_q in to_create:
                                 if (

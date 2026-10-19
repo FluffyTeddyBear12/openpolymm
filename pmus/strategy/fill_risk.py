@@ -88,7 +88,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "geopolitical_crisis",
         re.compile(
-            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action|hormuz|us-iran|us x iran|debate live|(?:second|third|fourth)-most seats in the \d{4} israeli|united arab list|ra'am)\b"
+            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action|hormuz|us-iran|us x iran|debate live|(?:first-|second-|third-|fourth-)?most seats in the \d{4} israeli|(?:us|u\.s\.|israel)\s+(?:strikes?|attacks?|bombs?)\s+iran|united arab list|ra'am)\b"
         ),
     ),
     (
@@ -101,13 +101,14 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "crypto_token_airdrop",
         re.compile(
             r"\b(?:"
-            r"launch (?:a|an|its|their|the)?\s*(?:crypto\s*)?(?:token|airdrop|coin|\$[a-z0-9]+)|"
-            r"(?:token|airdrop|coin)\s+launch|"
-            r"(?:conduct|do|have|announce)\s+(?:an?|their|its)?\s*(?:token\s+)?airdrop|"
+            r"launch (?:a|an|its|their|the)?\s*(?:[a-z]+\s+)?(?:tokens?|airdrops?|coins?|\$[a-z0-9]+)|"
+            r"(?:tokens?|airdrops?|coins?)\s+launch|"
+            r"(?:conduct|do|have|announce|release|introduce|issue)\s+(?:an?|their|its)?\s*(?:[a-z]+\s+)?(?:tokens?|airdrops?)|"
             r"token\s+generation\s+event|"
             r"\btge\b|"
-            r"[a-z0-9_-]+\s+(?:token|airdrop)\s+by\b|"
-            r"will there be (?:a|an)\s+[a-z0-9_-]+\s+(?:token|airdrop)"
+            r"[a-z0-9_.-]+\s+(?:tokens?|airdrops?)\s+(?:by|in|before|on)\b|"
+            r"will there be (?:a|an)\s+[a-z0-9_.-]+\s+(?:tokens?|airdrops?)|"
+            r"\bfdv\b.*?\bafter launch\b"
             r")\b"
         ),
     ),
@@ -116,8 +117,8 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(
             r"\b(?:"
             r"(?:us|u\.s\.|eu|europe|uk|g7)?\s*imports?\s+russian\s+(?:diesel|oil|petroleum|gas|crude|fuel|lng|energy)|"
-            r"russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|lng|energy)\s+(?:imports?|exports?|ban|embargo|price\s+cap)|"
-            r"sanctions?\s+on\s+russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|energy|banks?|assets?|exports?)|"
+            r"(?:ban|embargo|sanctions?|price\s+cap)\s+(?:on\s+)?russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|lng|energy|banks?|assets?|exports?)|"
+            r"russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|lng|energy)\s+(?:imports?|exports?|ban|embargo|sanctions?|price\s+cap)|"
             r"russian\s+sanctions?"
             r")\b"
         ),

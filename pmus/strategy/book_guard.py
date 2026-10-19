@@ -66,8 +66,8 @@ def quote_guard(
 ) -> str | None:
     if other_book is not None and other_book.bids:
         opp_bid = other_book.bids[0].price
-        if price + opp_bid >= Decimal("0.99"):
-            return f"cross-book arbitrage: price {price} + opp bid {opp_bid} >= 0.99"
+        if price + opp_bid > Decimal("0.99"):
+            return f"cross-book arbitrage: price {price} + opp bid {opp_bid} > 0.99"
     total_depth = sum((lvl.qty for lvl in book.bids), Decimal("0"))
     min_depth = MIN_BOOK_DEPTH_TARGETS * window.target_size
     if total_depth < min_depth:
@@ -97,10 +97,15 @@ def quote_guard(
     if multi_level:
         if (
             price >= book.bids[0].price - tick
-            and book.bids[1].price >= support
             and (book.bids[0].price - book.bids[1].price) > max(Decimal("3") * tick, Decimal("0.03"))
         ):
             return f"cliff book: top bid gap {book.bids[0].price - book.bids[1].price} above 3 ticks"
+        for i in range(len(book.bids) - 1):
+            if book.bids[i].price <= support or book.bids[i].price < price - tick:
+                break
+            gap = book.bids[i].price - book.bids[i + 1].price
+            if gap > max(Decimal("3") * tick, Decimal("0.03")):
+                return f"cliff book: bid gap {gap} between {book.bids[i].price} and {book.bids[i + 1].price}"
         near_notional = sum(
             (lvl.price * lvl.qty for lvl in book.bids if lvl.price >= price - max_support_gap),
             Decimal("0"),

@@ -737,3 +737,29 @@ def test_waterfill_min_tier_prevents_20_share_dust_allocations():
 
     assert WATERFILL_COST_TIERS[0] >= Decimal("36")
 
+
+def test_targets_to_allocation_retains_condition_pairs_for_single_leg_completion():
+    cond1 = make_condition(cond_id="c1", pool="200", target="50")
+    books = {
+        cond1.yes.slug: make_book([("0.48", "500")], [("0.52", "500")], slug=cond1.yes.slug),
+        cond1.no.slug: make_book([("0.48", "500")], [("0.52", "500")], slug=cond1.no.slug),
+    }
+    positions = {
+        cond1.yes.slug: Position(slug=cond1.yes.slug, net_qty=Decimal("50"), avg_price=Decimal("0.49")),
+    }
+    targets = allocate_conditions(
+        conditions=[cond1],
+        books=books,
+        total_budget=Decimal("100.00"),
+        max_cost_per_condition=Decimal("55.00"),
+        max_markets=1,
+        max_contracts=Decimal("1000"),
+        positions=positions,
+    )
+    assert len(targets) == 1
+    assert targets[0].mode == "no_only"
+    alloc = targets_to_allocation(targets)
+    assert alloc.condition_pairs == ((cond1.yes.slug, cond1.no.slug),)
+    assert alloc.side_prices[(cond1.no.slug, "bid")] == targets[0].no_price
+
+

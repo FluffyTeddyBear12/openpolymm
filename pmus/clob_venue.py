@@ -177,6 +177,9 @@ EXCLUDED_QUESTION_PATTERNS = (
     "imports russian",
     "russian oil",
     "russian petroleum",
+    "russian lng",
+    "russian gas",
+    "russian crude",
 )
 
 logger = logging.getLogger(__name__)

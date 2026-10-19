@@ -246,3 +246,29 @@ def test_guard_enforces_wave20_support_notional_and_front_shield():
     reason_shield = quote_guard(thin_front_shield, w, D("0.49"), D("0.01"))
     assert reason_shield is not None and "thin front shield" in reason_shield
 
+
+def test_guard_rejects_single_whale_top_bid_cliff_and_allows_exact_099_cross_sum():
+    w = window(target="20", max_spread="0.045")
+    whale_cliff = book(
+        "whale-cliff",
+        [("0.50", "400"), ("0.15", "100")],
+        [("0.52", "200")],
+        tick="0.01",
+    )
+    reason_cliff = quote_guard(whale_cliff, w, D("0.49"), D("0.01"))
+    assert reason_cliff is not None and "cliff book" in reason_cliff
+
+    deep_book = book(
+        "deep-y",
+        [("0.49", "200"), ("0.48", "200")],
+        [("0.51", "200")],
+        tick="0.01",
+    )
+    opp_at_051 = book("opp-n", [("0.51", "200")], [("0.53", "200")], tick="0.01")
+    assert quote_guard(deep_book, w, D("0.48"), D("0.01"), other_book=opp_at_051) is None
+
+    opp_at_052 = book("opp-n2", [("0.52", "200")], [("0.54", "200")], tick="0.01")
+    reason_cross = quote_guard(deep_book, w, D("0.48"), D("0.01"), other_book=opp_at_052)
+    assert reason_cross is not None and "cross-book arbitrage" in reason_cross
+
+

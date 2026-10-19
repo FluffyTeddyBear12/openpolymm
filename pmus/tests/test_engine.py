@@ -2447,4 +2447,64 @@ def test_allocate_markets_caps_effective_max_conditions_to_prevent_dust_waterfil
     assert all(qty >= Decimal("35") for qty in alloc_res.side_qtys.values())
 
 
+def test_wave24_completion_leg_clamps_cross_book_and_drops_out_of_spread_clamped_quote():
+    from pmus.risk import RiskGateResult
+    logger = logging.getLogger("test_wave24_engine")
+    mkt_y = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    mkt_n = Market(slug="n1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    w = IncentiveWindow("n1", "p1", Decimal("100"), Decimal("0.30"), Decimal("20"), Decimal("0.045"), datetime.now(timezone.utc), None, "active")
+
+    client = MagicMock()
+    auth_client = MagicMock()
+    auth_client.create_orders_batch.return_value = []
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logger,
+    )
+    engine.markets["y1"] = mkt_y
+    engine.markets["n1"] = mkt_n
+    engine.active_windows["n1"] = w
+    # Single-leg completion mode: n1 is NOT in paired_slugs, but IS in condition_pairs
+    engine.paired_slugs = frozenset()
+    engine.condition_pairs = (("y1", "n1"),)
+    engine.side_budgets[("n1", "bid")] = Decimal("25")
+    engine.side_qtys[("n1", "bid")] = Decimal("50")
+    engine.side_prices[("n1", "bid")] = Decimal("0.29")
+
+    # Opposing YES book bid spikes to 0.83 while NO book still sits at 0.29/0.31 (mid=0.30)
+    book_n = Book("n1", (Level(Decimal("0.29"), Decimal("300")), Level(Decimal("0.28"), Decimal("300"))), (Level(Decimal("0.31"), Decimal("300")),), 1000)
+    book_y = Book("y1", (Level(Decimal("0.83"), Decimal("300")),), (Level(Decimal("0.85"), Decimal("300")),), 1000)
+    resting_n = LiveOrder("ord-n1", "n1", "BUY_LONG", Decimal("0.29"), Decimal("50"))
+    engine.ledger.get_open_orders.return_value = [resting_n]
+
+    engine._quote_market(
+        slug="n1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[resting_n],
+        live_positions={"y1": Position("y1", Decimal("50"), Decimal("0.68")), "n1": Position("n1", Decimal("0"), Decimal("0"))},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_n,
+        batch_books={"y1": book_y, "n1": book_n},
+    )
+
+    # Clamped price 0.99 - 0.83 = 0.16 is outside max_spread (|0.16 - 0.30| = 0.14 > 0.045), so NO new order is created,
+    # and the resting order at 0.29 (0.29 + 0.83 = 1.12 > 0.99) is immediately cancelled!
+    auth_client.create_orders_batch.assert_not_called()
+    canceled_orders = auth_client.cancel_orders_batch.call_args[0][0]
+    assert [o.order_id for o in canceled_orders] == ["ord-n1"]
+
+
+
 

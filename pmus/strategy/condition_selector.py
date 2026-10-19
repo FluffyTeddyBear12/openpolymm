@@ -93,7 +93,7 @@ def evaluate_condition(
         if (
             PAIR_LEG_MIN_PRICE <= p_yes <= PAIR_LEG_MAX_PRICE
             and PAIR_LEG_MIN_PRICE <= p_no <= PAIR_LEG_MAX_PRICE
-            and PAIR_MIN_PRICE_SUM <= (p_yes + p_no) <= PAIR_MAX_PRICE_SUM
+            and PAIR_MIN_PRICE_SUM <= (p_yes + p_no) <= global_rewards.pair_max_sum(window)
             and (p_yes + opp_no_bid) <= global_rewards.CROSS_MAX_SUM
             and (p_no + opp_yes_bid) <= global_rewards.CROSS_MAX_SUM
             and comp_q >= min(window.target_size, MIN_COMPETITOR_SCORE)
@@ -499,7 +499,7 @@ def targets_to_allocation(targets: list[ConditionTarget]) -> AllocationResult:
             selected_candidates.append(candidate)
 
     unfunded_reason = "no condition clears payout floor within budget" if not targets else None
-    pairs = tuple((t.condition.yes.slug, t.condition.no.slug) for t in targets if t.mode == "two_sided")
+    pairs = tuple(dict.fromkeys((t.condition.yes.slug, t.condition.no.slug) for t in targets))
 
     return AllocationResult(
         candidates=selected_candidates,

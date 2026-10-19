@@ -158,9 +158,9 @@ def pair_quote_prices(
 
     if p_yes <= ZERO or p_no <= ZERO or p_yes + p_no >= Decimal("1"):
         return None
+    mid_yes = adjusted_mid(yes_book, window.target_size)
+    mid_no = adjusted_mid(no_book, window.target_size)
     if p_yes + p_no > target_max_sum and window.max_spread is not None:
-        mid_yes = adjusted_mid(yes_book, window.target_size)
-        mid_no = adjusted_mid(no_book, window.target_size)
         if mid_yes is not None and mid_no is not None:
             for _ in range(60):
                 if p_yes + p_no <= target_max_sum:
@@ -175,8 +175,16 @@ def pair_quote_prices(
                     p_no = cand_no
                 else:
                     break
-    if p_yes + p_no >= Decimal("1"):
+    if p_yes + p_no > target_max_sum:
         return None
+    if window.max_spread is not None:
+        if (
+            mid_yes is None
+            or mid_no is None
+            or abs(p_yes - mid_yes) >= window.max_spread
+            or abs(p_no - mid_no) >= window.max_spread
+        ):
+            return None
     return (p_yes, p_no)
 
 
