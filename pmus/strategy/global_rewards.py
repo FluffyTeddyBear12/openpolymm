@@ -19,6 +19,7 @@ MIN_DAILY_PAYOUT_USD = Decimal(os.getenv("PMUS_GLOBAL_MIN_DAILY_REWARD", "1.00")
 MAX_CUSHION_SPREAD_RATIO = Decimal("0.60")
 PAIR_MAX_SUM = Decimal("0.98")
 WIDE_SPREAD_PAIR_MAX_SUM = Decimal("0.97")
+CROSS_MAX_SUM = Decimal("0.99")
 ZERO = Decimal("0")
 
 
@@ -141,11 +142,22 @@ def pair_quote_prices(
     yes_tick: Decimal,
     no_tick: Decimal,
 ) -> tuple[Decimal, Decimal] | None:
+    opp_no_top = no_book.bids[0].price if no_book.bids else None
+    opp_yes_top = yes_book.bids[0].price if yes_book.bids else None
+    if opp_no_top is None or opp_yes_top is None:
+        return None
+
     p_yes = bid_price(yes_book, window, yes_tick)
     p_no = bid_price(no_book, window, no_tick)
     if p_yes is None or p_no is None or p_yes + p_no >= Decimal("1"):
         return None
+
     target_max_sum = pair_max_sum(window)
+    p_yes = (min(p_yes, CROSS_MAX_SUM - opp_no_top) // yes_tick) * yes_tick
+    p_no = (min(p_no, CROSS_MAX_SUM - opp_yes_top) // no_tick) * no_tick
+
+    if p_yes <= ZERO or p_no <= ZERO or p_yes + p_no >= Decimal("1"):
+        return None
     if p_yes + p_no > target_max_sum and window.max_spread is not None:
         mid_yes = adjusted_mid(yes_book, window.target_size)
         mid_no = adjusted_mid(no_book, window.target_size)

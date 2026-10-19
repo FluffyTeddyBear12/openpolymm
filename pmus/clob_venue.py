@@ -173,6 +173,10 @@ EXCLUDED_QUESTION_PATTERNS = (
     "most seats in the 2026 israeli",
     "united arab list",
     "ra'am",
+    "russian diesel",
+    "imports russian",
+    "russian oil",
+    "russian petroleum",
 )
 
 logger = logging.getLogger(__name__)

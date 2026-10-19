@@ -57,7 +57,17 @@ def last_trade_reference(book: Book, support: Decimal | None = None) -> Decimal 
     return last if abs(last - mid) <= abs(flipped - mid) else flipped
 
 
-def quote_guard(book: Book, window: IncentiveWindow, price: Decimal, tick: Decimal) -> str | None:
+def quote_guard(
+    book: Book,
+    window: IncentiveWindow,
+    price: Decimal,
+    tick: Decimal,
+    other_book: Book | None = None,
+) -> str | None:
+    if other_book is not None and other_book.bids:
+        opp_bid = other_book.bids[0].price
+        if price + opp_bid >= Decimal("0.99"):
+            return f"cross-book arbitrage: price {price} + opp bid {opp_bid} >= 0.99"
     total_depth = sum((lvl.qty for lvl in book.bids), Decimal("0"))
     min_depth = MIN_BOOK_DEPTH_TARGETS * window.target_size
     if total_depth < min_depth:

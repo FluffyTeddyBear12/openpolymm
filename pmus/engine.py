@@ -985,6 +985,12 @@ class LiveEngine:
                     if other_bids:
                         other_cap = global_rewards.pair_max_sum(window) - max(other_bids)
                         max_allowed = min(max_allowed, other_cap) if max_allowed is not None else other_cap
+                    if batch_books is not None and other_slug in batch_books:
+                        opp_raw_book = batch_books.get(other_slug)
+                        if opp_raw_book is not None and opp_raw_book.bids:
+                            opp_market_bid = opp_raw_book.bids[0].price
+                            cross_cap = global_rewards.CROSS_MAX_SUM - opp_market_bid
+                            max_allowed = min(max_allowed, cross_cap) if max_allowed is not None else cross_cap
                     if other_filled and existing_buy_prices:
                         freeze_cap = max(existing_buy_prices)
                         max_allowed = min(max_allowed, freeze_cap) if max_allowed is not None else freeze_cap
@@ -1037,6 +1043,16 @@ class LiveEngine:
 
             to_create, to_cancel, _ = reconcile_quotes(self.ledger.get_open_orders(slug), quotes)
 
+            # Active resting order ejection against cross-book arbitrage exploit
+            if self.settings.venue == "global" and slug in self.paired_slugs and other_slug and batch_books is not None:
+                opp_raw_book = batch_books.get(other_slug)
+                if opp_raw_book is not None and opp_raw_book.bids:
+                    opp_market_bid = opp_raw_book.bids[0].price
+                    for o in resting_on_slug:
+                        if o.side in ("BUY", "BUY_LONG") and (o.price + opp_market_bid) >= Decimal("0.990"):
+                            if o not in to_cancel:
+                                to_cancel.append(o)
+
             if (
                 self.settings.venue == "global"
                 and slug in self.paired_slugs
@@ -1054,6 +1070,11 @@ class LiveEngine:
                     kept_create_sides: set[str] = set()
                     for old_o in to_cancel:
                         if old_o.side == "BUY_LONG":
+                            if other_slug and batch_books is not None:
+                                opp_raw_book = batch_books.get(other_slug)
+                                if opp_raw_book is not None and opp_raw_book.bids:
+                                    if (old_o.price + opp_raw_book.bids[0].price) >= Decimal("0.990"):
+                                        continue
                             for new_q in to_create:
                                 if (
                                     new_q.side == "BUY_LONG"

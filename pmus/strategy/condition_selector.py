@@ -49,8 +49,8 @@ def _single_size(
     return size
 
 
-def _admit(cond: ConditionMarket, book: Book, price: Decimal, tick: Decimal) -> bool:
-    reason = book_guard.quote_guard(book, cond.window, price, tick)
+def _admit(cond: ConditionMarket, book: Book, price: Decimal, tick: Decimal, other_book: Book | None = None) -> bool:
+    reason = book_guard.quote_guard(book, cond.window, price, tick, other_book=other_book)
     if reason is not None:
         logger.debug("Guard rejected %s bid on %s: %s", book.slug, cond.question, reason)
     return reason is None
@@ -88,13 +88,17 @@ def evaluate_condition(
     if prices is not None:
         p_yes, p_no = prices
         comp_q = global_rewards.competitor_q(yes_book, no_book, window)
+        opp_yes_bid = yes_book.bids[0].price if yes_book.bids else Decimal("0")
+        opp_no_bid = no_book.bids[0].price if no_book.bids else Decimal("0")
         if (
             PAIR_LEG_MIN_PRICE <= p_yes <= PAIR_LEG_MAX_PRICE
             and PAIR_LEG_MIN_PRICE <= p_no <= PAIR_LEG_MAX_PRICE
             and PAIR_MIN_PRICE_SUM <= (p_yes + p_no) <= PAIR_MAX_PRICE_SUM
+            and (p_yes + opp_no_bid) <= global_rewards.CROSS_MAX_SUM
+            and (p_no + opp_yes_bid) <= global_rewards.CROSS_MAX_SUM
             and comp_q >= min(window.target_size, MIN_COMPETITOR_SCORE)
-            and _admit(cond, yes_book, p_yes, yes_tick)
-            and _admit(cond, no_book, p_no, no_tick)
+            and _admit(cond, yes_book, p_yes, yes_tick, other_book=no_book)
+            and _admit(cond, no_book, p_no, no_tick, other_book=yes_book)
         ):
             size = global_rewards.pair_size(max_cost, p_yes, p_no, min_size, lot, max_contracts)
             cost = size * (p_yes + p_no)
@@ -115,7 +119,7 @@ def evaluate_condition(
     if pair_preference > Decimal("0"):
         if yes_held < min_size:
             p_yes = global_rewards.bid_price(yes_book, window, yes_tick)
-            opp_no_bid = next((lvl.price for lvl in no_book.bids if lvl.qty >= min_size), no_book.bids[0].price) if no_book.bids else Decimal("0")
+            opp_no_bid = no_book.bids[0].price if no_book.bids else Decimal("0")
             held_no_px = no_pos.avg_price if (no_held > Decimal("0") and no_pos is not None and no_pos.avg_price > Decimal("0")) else Decimal("0")
             if (
                 p_yes is not None
@@ -123,7 +127,7 @@ def evaluate_condition(
                 and (p_yes + opp_no_bid) <= global_rewards.pair_max_sum(window)
                 and (p_yes + held_no_px) < Decimal("1")
                 and not (no_held >= min_size and held_no_px > Decimal("0") and (p_yes + held_no_px) > PAIR_MAX_PRICE_SUM)
-                and _admit(cond, yes_book, p_yes, yes_tick)
+                and _admit(cond, yes_book, p_yes, yes_tick, other_book=no_book)
             ):
                 size_yes = _single_size(max_cost, p_yes, min_size, lot, max_contracts)
                 cost_yes = size_yes * p_yes
@@ -143,7 +147,7 @@ def evaluate_condition(
 
         if no_held < min_size:
             p_no = global_rewards.bid_price(no_book, window, no_tick)
-            opp_yes_bid = next((lvl.price for lvl in yes_book.bids if lvl.qty >= min_size), yes_book.bids[0].price) if yes_book.bids else Decimal("0")
+            opp_yes_bid = yes_book.bids[0].price if yes_book.bids else Decimal("0")
             held_yes_px = yes_pos.avg_price if (yes_held > Decimal("0") and yes_pos is not None and yes_pos.avg_price > Decimal("0")) else Decimal("0")
             if (
                 p_no is not None
@@ -151,7 +155,7 @@ def evaluate_condition(
                 and (p_no + opp_yes_bid) <= global_rewards.pair_max_sum(window)
                 and (p_no + held_yes_px) < Decimal("1")
                 and not (yes_held >= min_size and held_yes_px > Decimal("0") and (p_no + held_yes_px) > PAIR_MAX_PRICE_SUM)
-                and _admit(cond, no_book, p_no, no_tick)
+                and _admit(cond, no_book, p_no, no_tick, other_book=yes_book)
             ):
                 size_no = _single_size(max_cost, p_no, min_size, cond.no.min_qty, max_contracts)
                 cost_no = size_no * p_no

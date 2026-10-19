@@ -97,6 +97,31 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"\b(?:gdp|cpi|inflation|pce|unemployment rate|nonfarm payrolls?|consumer price index|interest rates?|rate hike|rate cut|\d+\s*bps)\b"
         ),
     ),
+    (
+        "crypto_token_airdrop",
+        re.compile(
+            r"\b(?:"
+            r"launch (?:a|an|its|their|the)?\s*(?:crypto\s*)?(?:token|airdrop|coin|\$[a-z0-9]+)|"
+            r"(?:token|airdrop|coin)\s+launch|"
+            r"(?:conduct|do|have|announce)\s+(?:an?|their|its)?\s*(?:token\s+)?airdrop|"
+            r"token\s+generation\s+event|"
+            r"\btge\b|"
+            r"[a-z0-9_-]+\s+(?:token|airdrop)\s+by\b|"
+            r"will there be (?:a|an)\s+[a-z0-9_-]+\s+(?:token|airdrop)"
+            r")\b"
+        ),
+    ),
+    (
+        "sanctions_commodities",
+        re.compile(
+            r"\b(?:"
+            r"(?:us|u\.s\.|eu|europe|uk|g7)?\s*imports?\s+russian\s+(?:diesel|oil|petroleum|gas|crude|fuel|lng|energy)|"
+            r"russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|lng|energy)\s+(?:imports?|exports?|ban|embargo|price\s+cap)|"
+            r"sanctions?\s+on\s+russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|energy|banks?|assets?|exports?)|"
+            r"russian\s+sanctions?"
+            r")\b"
+        ),
+    ),
 )
 
 
