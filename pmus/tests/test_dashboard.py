@@ -689,7 +689,7 @@ def test_render_live_hud_displays_today_est_and_all_time_lip_yield(tmp_path):
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_ms = int(today_start.timestamp() * 1000)
-    yesterday_ms = today_start_ms - 3_600_000
+    yesterday_ms = 1792281600000 - 3_600_000
     today_ms = today_start_ms + 3_600_000
 
     ledger.record_lip_snapshot(

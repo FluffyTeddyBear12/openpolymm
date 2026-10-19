@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
@@ -31,6 +31,7 @@ class AllocationResult:
     unfunded_reason: str | None = None
     paired_slugs: frozenset[str] = frozenset()
     condition_pairs: tuple[tuple[str, str], ...] = ()
+    side_prices: dict[tuple[str, str], Decimal] = field(default_factory=dict)
 
 def extract_event_id(slug: str, slug_to_event_map: dict[str, str] | None = None) -> str:
     if slug_to_event_map and slug in slug_to_event_map:

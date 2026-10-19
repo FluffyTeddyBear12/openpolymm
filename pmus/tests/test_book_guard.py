@@ -205,9 +205,9 @@ def test_guard_enforces_wave20_support_notional_and_front_shield():
         MIN_SUPPORT_SHARES,
         MULTI_LEVEL_SUPPORT_TARGETS,
     )
-    assert MIN_SUPPORT_SHARES == D("80")
-    assert MIN_NEAR_NOTIONAL_USD == D("35")
-    assert MULTI_LEVEL_SUPPORT_TARGETS == D("2")
+    assert MIN_SUPPORT_SHARES == D("250")
+    assert MIN_NEAR_NOTIONAL_USD == D("75")
+    assert MULTI_LEVEL_SUPPORT_TARGETS == D("4")
 
     w = window(target="20", max_spread="0.045")
     shallow_support = book(
@@ -219,23 +219,30 @@ def test_guard_enforces_wave20_support_notional_and_front_shield():
     reason_sup = quote_guard(shallow_support, w, D("0.40"), D("0.01"))
     assert reason_sup is not None and "support" in reason_sup
 
-    low_notional = book(
-        "low-notional",
-        [("0.24", "60"), ("0.23", "50")],
-        [("0.26", "200")],
+    oxy_shallow_two_level = book(
+        "oxy-shallow",
+        [("0.47", "50"), ("0.46", "50")],
+        [("0.50", "100")],
         tick="0.01",
     )
-    reason_notional = quote_guard(low_notional, w, D("0.24"), D("0.01"))
+    reason_oxy = quote_guard(oxy_shallow_two_level, w, D("0.47"), D("0.01"))
+    assert reason_oxy is not None and "post-discount support depth" in reason_oxy
+
+    low_notional = book(
+        "low-notional",
+        [("0.15", "100"), ("0.14", "250")],
+        [("0.17", "200")],
+        tick="0.01",
+    )
+    reason_notional = quote_guard(low_notional, w, D("0.15"), D("0.01"))
     assert reason_notional is not None and "cliff book" in reason_notional
 
     thin_front_shield = book(
         "thin-shield",
-        [("0.50", "15"), ("0.49", "20"), ("0.48", "100")],
+        [("0.50", "15"), ("0.49", "20"), ("0.48", "300")],
         [("0.52", "200")],
         tick="0.01",
     )
     reason_shield = quote_guard(thin_front_shield, w, D("0.49"), D("0.01"))
     assert reason_shield is not None and "thin front shield" in reason_shield
-
-
 

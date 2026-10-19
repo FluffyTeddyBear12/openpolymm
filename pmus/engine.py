@@ -454,6 +454,7 @@ class LiveEngine:
         self.active_windows: dict[str, IncentiveWindow] = {}
         self.side_budgets: dict[tuple[str, str], Decimal] = {}
         self.side_qtys: dict[tuple[str, str], Decimal] = {}
+        self.side_prices: dict[tuple[str, str], Decimal] = {}
         self.paired_slugs: frozenset[str] = frozenset()
         self.condition_pairs: tuple[tuple[str, str], ...] = ()
         self.markets: dict[str, Market] = {}
@@ -566,6 +567,7 @@ class LiveEngine:
         self.target_slugs = list(alloc_res.selected_slugs)
         self.side_budgets = dict(alloc_res.side_budgets)
         self.side_qtys = dict(alloc_res.side_qtys)
+        self.side_prices = dict(getattr(alloc_res, "side_prices", {}) or {})
         self.paired_slugs = alloc_res.paired_slugs
         self.condition_pairs = alloc_res.condition_pairs
         if pos_map is not None:
@@ -950,7 +952,13 @@ class LiveEngine:
                     o.price for o in resting_on_slug
                     if o.side in ("BUY", "BUY_LONG")
                 ]
-                max_allowed: Decimal | None = None
+                alloc_px = getattr(self, "side_prices", {}).get((slug, "bid"))
+                max_allowed: Decimal | None = alloc_px
+                if existing_buy_prices and window is not None and window.max_spread is not None:
+                    min_existing = min(existing_buy_prices)
+                    mid_curr = global_rewards.adjusted_mid(quote_book, window.target_size)
+                    if mid_curr is not None and abs(min_existing - mid_curr) < window.max_spread:
+                        max_allowed = min(max_allowed, min_existing) if max_allowed is not None else min_existing
                 if other_slug:
                     other_pos = live_positions.get(
                         other_slug,
@@ -975,7 +983,8 @@ class LiveEngine:
                     if other_filled and other_pos.avg_price > Decimal("0"):
                         other_bids = list(other_bids) + [other_pos.avg_price]
                     if other_bids:
-                        max_allowed = global_rewards.pair_max_sum(window) - max(other_bids)
+                        other_cap = global_rewards.pair_max_sum(window) - max(other_bids)
+                        max_allowed = min(max_allowed, other_cap) if max_allowed is not None else other_cap
                     if other_filled and existing_buy_prices:
                         freeze_cap = max(existing_buy_prices)
                         max_allowed = min(max_allowed, freeze_cap) if max_allowed is not None else freeze_cap

@@ -10,11 +10,11 @@ from pmus.strategy.market_selector import AllocationResult, CandidateSide
 logger = logging.getLogger(__name__)
 
 SINGLE_SIDED_MIN_PRICE = Decimal("0.20")
-PAIR_LEG_MIN_PRICE = Decimal("0.18")
-PAIR_LEG_MAX_PRICE = Decimal("0.78")
-PAIR_MIN_PRICE_SUM = Decimal("0.88")
+PAIR_LEG_MIN_PRICE = Decimal("0.22")
+PAIR_LEG_MAX_PRICE = Decimal("0.75")
+PAIR_MIN_PRICE_SUM = Decimal("0.92")
 PAIR_MAX_PRICE_SUM = Decimal("0.98")
-MIN_COMPETITOR_SCORE = Decimal("6")
+MIN_COMPETITOR_SCORE = Decimal("45")
 
 
 @dataclass(frozen=True)
@@ -447,6 +447,7 @@ def targets_to_allocation(targets: list[ConditionTarget]) -> AllocationResult:
     selected_slugs: list[str] = []
     side_budgets: dict[tuple[str, str], Decimal] = {}
     side_qtys: dict[tuple[str, str], Decimal] = {}
+    side_prices: dict[tuple[str, str], Decimal] = {}
     paired_slugs: set[str] = set()
     selected_candidates: list[CandidateSide] = []
 
@@ -475,6 +476,7 @@ def targets_to_allocation(targets: list[ConditionTarget]) -> AllocationResult:
             tok_cost = t.size * price
             side_budgets[(slug, "bid")] = tok_cost
             side_qtys[(slug, "bid")] = t.size
+            side_prices[(slug, "bid")] = price
             eff = (tok_reward / tok_cost) if tok_cost > Decimal("0") else Decimal("0")
             candidate = CandidateSide(
                 slug=slug,
@@ -504,4 +506,5 @@ def targets_to_allocation(targets: list[ConditionTarget]) -> AllocationResult:
         unfunded_reason=unfunded_reason,
         paired_slugs=frozenset(paired_slugs),
         condition_pairs=pairs,
+        side_prices=side_prices,
     )

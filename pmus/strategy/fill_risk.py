@@ -64,7 +64,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "esports",
         re.compile(
-            r"\b(?:valorant|first bloods?|cs2|counter-strike|dota(?: 2)?|league of legends|lol worlds|vct|champions 202\d|most kills|most deaths|pentakill|first baron|first dragon)\b"
+            r"\b(?:valorant|first bloods?|cs2|counter-strike|dota(?: 2)?|league of legends|lol worlds|vct|champions 202\d|most kills|most deaths|pentakill|first baron|first dragon|cloud9|sentinels|fnatic|paper rex|100 thieves|karmine corp|team vitality|team heretics|evil geniuses|faze clan|natus vincere|astralis|virtus\.pro|play for [a-z0-9 .'-]+ in 202\d)\b"
         ),
     ),
     (
@@ -76,7 +76,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "corporate_metrics",
         re.compile(
-            r"(?:\([a-z]{1,5}\)\s+(?:q[1-4]|fy\d{2,4})\b|\b(?:arr|comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|gross dollar volume|q[1-4]\b.*?\b(?:revenue|revenues|sales|eps|margin|income|deliveries|profit|guidance|volume|bookings|arr|rpo)))\b"
+            r"(?:\([a-z]{1,5}\)\s+(?:q[1-4]|fy\d{2,4})\b|\b(?:market capitalization be between|market cap be between|arr|comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|gross dollar volume|q[1-4]\b.*?\b(?:revenue|revenues|sales|eps|margin|income|deliveries|profit|guidance|volume|bookings|arr|rpo)))\b"
         ),
     ),
     (
@@ -88,7 +88,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "geopolitical_crisis",
         re.compile(
-            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action)\b"
+            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action|hormuz|us-iran|us x iran|debate live|(?:second|third|fourth)-most seats in the \d{4} israeli|united arab list|ra'am)\b"
         ),
     ),
     (

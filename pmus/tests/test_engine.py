@@ -719,7 +719,7 @@ def test_allocate_markets_prioritizes_affordable_pair_target_size_and_strips_ope
     books = {
         cond_a.yes.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_a.yes.slug),
         cond_a.no.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_a.no.slug),
-        cond_b.yes.slug: make_book([("0.49", "80"), ("0.47", "200")], [("0.51", "250")], slug=cond_b.yes.slug),
+        cond_b.yes.slug: make_book([("0.49", "80"), ("0.47", "250")], [("0.51", "250")], slug=cond_b.yes.slug),
         cond_b.no.slug: make_book([("0.47", "250")], [("0.51", "250")], slug=cond_b.no.slug),
     }
 
@@ -1156,8 +1156,6 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
         ts_ms=int(t2 * 1000),
     )
     public_client.fetch_book.return_value = book_drift
-    order_reprice = LiveOrder("o-reprice", "tok-1", "BUY_LONG", Decimal("0.72"), Decimal("55"))
-    auth_client.create_orders_batch.return_value = [order_reprice]
 
     engine._quote_market(
         slug="tok-1",
@@ -1171,10 +1169,8 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
         book=book_drift,
     )
 
-    auth_client.cancel_orders_batch.assert_called_once()
-    auth_client.create_orders_batch.assert_called_once()
-    created_reprice = auth_client.create_orders_batch.call_args[0][0]
-    assert any(q.side == "BUY_LONG" and q.price == Decimal("0.72") for q in created_reprice)
+    auth_client.cancel_orders_batch.assert_not_called()
+    auth_client.create_orders_batch.assert_not_called()
 
     auth_client.cancel_orders_batch.reset_mock()
     auth_client.create_orders_batch.reset_mock()
@@ -1200,7 +1196,7 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
         now_dt=now3,
         now_ts=t3,
         now_ms=int(t3 * 1000),
-        exchange_open=[order_reprice],
+        exchange_open=[order_drift],
         live_positions={},
         buying_power=Decimal("500.00"),
         realized_loss_today=Decimal("0"),
@@ -1209,7 +1205,7 @@ def test_live_engine_anti_chase_keeps_resting_scoring_buy_order_when_bid_rises(t
 
     auth_client.cancel_orders_batch.assert_called_once()
     canceled_drift = auth_client.cancel_orders_batch.call_args[0][0]
-    assert any(o.order_id == "o-reprice" for o in canceled_drift)
+    assert any(o.order_id == "o-drift" for o in canceled_drift)
 
     auth_client.create_orders_batch.assert_called_once()
     created_drift = auth_client.create_orders_batch.call_args[0][0]
