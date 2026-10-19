@@ -180,6 +180,7 @@ EXCLUDED_QUESTION_PATTERNS = (
     "russian lng",
     "russian gas",
     "russian crude",
+    "blockade",
 )
 
 logger = logging.getLogger(__name__)

@@ -88,7 +88,7 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "geopolitical_crisis",
         re.compile(
-            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action|hormuz|us-iran|us x iran|debate live|(?:first-|second-|third-|fourth-)?most seats in the \d{4} israeli|(?:us|u\.s\.|israel)\s+(?:strikes?|attacks?|bombs?)\s+iran|united arab list|ra'am)\b"
+            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action|blockade|hormuz|us-iran|us x iran|debate live|(?:first-|second-|third-|fourth-)?most seats in the \d{4} israeli|(?:us|u\.s\.|israel)\s+(?:strikes?|attacks?|bombs?)\s+iran|united arab list|ra'am)\b"
         ),
     ),
     (
