@@ -763,3 +763,42 @@ def test_targets_to_allocation_retains_condition_pairs_for_single_leg_completion
     assert alloc.side_prices[(cond1.no.slug, "bid")] == targets[0].no_price
 
 
+def test_evaluate_condition_rejects_excessive_spread_and_waterfill_sweeps_remainder():
+    cond_wide = make_condition(cond_id="c-wide", pool="500", target="20", max_spread="0.04")
+    yes_wide = make_book([("0.42", "500")], [("0.58", "500")], slug=cond_wide.yes.slug)
+    no_wide = make_book([("0.42", "500")], [("0.58", "500")], slug=cond_wide.no.slug)
+    assert (
+        evaluate_condition(
+            cond=cond_wide,
+            yes_book=yes_wide,
+            no_book=no_wide,
+            max_cost=Decimal("100"),
+            max_contracts=Decimal("1000"),
+            pair_preference=Decimal("0.0"),
+        )
+        is None
+    )
+
+    conds = [
+        make_condition(cond_id=f"c{i}", pool=str(300 - i * 10), target="20", max_spread="0.04")
+        for i in range(4)
+    ]
+    books = {}
+    for c in conds:
+        books[c.yes.slug] = make_book([("0.47", "500")], [("0.50", "500")], slug=c.yes.slug)
+        books[c.no.slug] = make_book([("0.47", "500")], [("0.50", "500")], slug=c.no.slug)
+
+    targets = allocate_conditions(
+        conditions=conds,
+        books=books,
+        total_budget=Decimal("235.00"),
+        max_cost_per_condition=Decimal("58.75"),
+        max_markets=4,
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+    )
+    total_deployed = sum((t.cost for t in targets), Decimal("0"))
+    assert total_deployed >= Decimal("225.00")
+
+
+

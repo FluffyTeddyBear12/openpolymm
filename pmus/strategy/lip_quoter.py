@@ -8,11 +8,27 @@ from pmus.strategy import book_guard, global_rewards
 logger = logging.getLogger(__name__)
 
 
-def _guarded_bid_price(book: Book, window: IncentiveWindow, tick: Decimal) -> Decimal | None:
+def _guarded_bid_price(
+    book: Book,
+    window: IncentiveWindow,
+    tick: Decimal,
+    other_book: Book | None = None,
+    max_bid_price: Decimal | None = None,
+) -> Decimal | None:
     price = global_rewards.bid_price(book, window, tick)
     if price is None:
         return None
-    reason = book_guard.quote_guard(book, window, price, tick)
+    if max_bid_price is not None and tick > Decimal("0"):
+        clamped_cap = (max_bid_price // tick) * tick
+        if clamped_cap < price:
+            if clamped_cap <= Decimal("0"):
+                return None
+            if window.max_spread is not None:
+                mid_curr = global_rewards.adjusted_mid(book, window.target_size)
+                if mid_curr is not None and abs(clamped_cap - mid_curr) > window.max_spread:
+                    return None
+            price = clamped_cap
+    reason = book_guard.quote_guard(book, window, price, tick, other_book=other_book)
     if reason is not None:
         logger.debug("Guard pulled %s bid: %s", book.slug, reason)
         return None
@@ -34,6 +50,8 @@ def desired_quotes(
     is_global: bool = False,
     paired: bool = False,
     quote_size: Decimal | None = None,
+    other_book: Book | None = None,
+    max_bid_price: Decimal | None = None,
 ) -> list[Quote]:
     if window is None or window.status.lower() != "active":
         return []
@@ -141,7 +159,13 @@ def desired_quotes(
             target_sz = quote_size if quote_size is not None else window.target_size
             if net < window.target_size and target_sz >= window.target_size:
                 remaining = max(window.target_size, target_sz - net)
-                price = _guarded_bid_price(book, window, tick)
+                price = _guarded_bid_price(
+                    book,
+                    window,
+                    tick,
+                    other_book=other_book,
+                    max_bid_price=max_bid_price,
+                )
                 qty = min(remaining, max_bid_contracts)
                 budget_blocked = budget > Decimal("0") and adverse_freeze and (net * position.avg_price >= budget)
                 adverse_blocked = (
@@ -160,7 +184,13 @@ def desired_quotes(
         else:
             spread_ok = window.max_spread is None or (ask_price - bid_price) <= (Decimal("2") * window.max_spread)
             if spread_ok and quote_bid and global_rewards.reward_eligible(book, window.target_size):
-                price = _guarded_bid_price(book, window, tick)
+                price = _guarded_bid_price(
+                    book,
+                    window,
+                    tick,
+                    other_book=other_book,
+                    max_bid_price=max_bid_price,
+                )
                 if price is not None and price > Decimal("0"):
                     held_cost = max(Decimal("0"), net) * (
                         position.avg_price

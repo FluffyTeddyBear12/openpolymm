@@ -17,7 +17,7 @@ class Settings:
     total_budget: Decimal = Decimal("60.00")
     max_markets: int = 4
     max_contracts_per_market: int = 6000
-    max_open_orders: int = 20
+    max_open_orders: int = 40
     pre_start_cancel_seconds: int = 300
     quote_live_periods: bool = False
     daily_loss_limit: Decimal = Decimal("5.00")
@@ -114,7 +114,7 @@ class Settings:
             total_budget=total_budget,
             max_markets=int(os.getenv("PMUS_MAX_MARKETS", "4")),
             max_contracts_per_market=int(os.getenv("PMUS_MAX_CONTRACTS_PER_MARKET", "6000")),
-            max_open_orders=int(os.getenv("PMUS_MAX_OPEN_ORDERS", "20")),
+            max_open_orders=int(os.getenv("PMUS_MAX_OPEN_ORDERS", "40")),
             pre_start_cancel_seconds=int(os.getenv("PMUS_PRE_START_CANCEL_SECONDS", "300")),
             quote_live_periods=os.getenv("PMUS_QUOTE_LIVE_PERIODS", "false").strip().lower() in ("true", "1"),
             daily_loss_limit=Decimal(os.getenv("PMUS_DAILY_LOSS_LIMIT", "5.00")),

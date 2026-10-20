@@ -32,6 +32,9 @@ REALLOCATE_SECONDS = 3600
 YIELD_COLLAPSE_COOLDOWN_SECONDS = 90.0
 YIELD_COLLAPSE_RATIO = Decimal("0.55")
 YIELD_COLLAPSE_TICKS = 15
+CAPITAL_UTILIZATION_RATIO = Decimal("0.85")
+CAPITAL_UNDERDEPLOYED_TICKS = 10
+DEGRADED_SLUG_COOLDOWN_SECONDS = 300.0
 
 def reconcile_quotes(
     current_orders: list[LiveOrder],
@@ -113,6 +116,7 @@ def allocate_markets(
     available_budget: Decimal | None = None,
     positions: dict[str, Position] | None = None,
     open_orders: list[LiveOrder] | None = None,
+    excluded_slugs: set[str] | frozenset[str] | None = None,
 ) -> tuple[dict[str, IncentiveWindow], AllocationResult]:
     budget = available_budget if available_budget is not None else settings.total_budget
     is_global = settings.venue == "global"
@@ -148,7 +152,13 @@ def allocate_markets(
             active_windows[cond.yes.slug] = dataclasses.replace(cond.window, slug=cond.yes.slug)
             active_windows[cond.no.slug] = dataclasses.replace(cond.window, slug=cond.no.slug)
 
-        allocatable = [c for c in conditions if "temperature in " not in c.question.lower()]
+        excl = set(excluded_slugs) if excluded_slugs else set()
+        allocatable = [
+            c for c in conditions
+            if "temperature in " not in c.question.lower()
+            and c.yes.slug not in excl
+            and c.no.slug not in excl
+        ]
         allocatable.sort(
             key=lambda c: (
                 c.window.target_size <= max_affordable_contracts,
@@ -471,6 +481,8 @@ class LiveEngine:
         self.expected_portfolio_rate_sec: Decimal = Decimal("0")
         self.last_prepare_ts: float = 0.0
         self.yield_collapse_streak: int = 0
+        self.underdeployed_streak: int = 0
+        self.degraded_slugs_until: dict[str, float] = {}
         self.dead_unwind_slugs: set[str] = set()
 
     def run(self, duration_seconds: int | None = None) -> None:
@@ -551,7 +563,7 @@ class LiveEngine:
                     )
                     dynamic_leg_col = max(
                         self.settings.max_collateral_per_market,
-                        (est_cond_cap * Decimal("0.55")).quantize(Decimal("1.00")),
+                        (est_cond_cap * Decimal("0.80")).quantize(Decimal("1.00")),
                     )
                     if hasattr(self.risk_manager, "update_dynamic_limits"):
                         self.risk_manager.update_dynamic_limits(
@@ -587,20 +599,42 @@ class LiveEngine:
                     pos_map = {}
                 pos_map[slug] = opt_pos
 
+        self.degraded_slugs_until = {
+            s: ts for s, ts in self.degraded_slugs_until.items() if ts > now_prep
+        }
+        excl_slugs = set(self.degraded_slugs_until.keys())
         try:
+            alloc_kwargs: dict[str, Any] = {
+                "available_budget": effective_budget,
+                "positions": pos_map,
+                "open_orders": open_orders,
+            }
+            if excl_slugs:
+                alloc_kwargs["excluded_slugs"] = excl_slugs
             self.active_windows, alloc_res = allocate_markets(
                 self.settings,
                 self.public_client,
                 self.logger,
-                available_budget=effective_budget,
-                positions=pos_map,
-                open_orders=open_orders,
+                **alloc_kwargs,
             )
+            if (
+                excl_slugs
+                and sum(alloc_res.side_budgets.values(), Decimal("0")) < effective_budget * Decimal("0.80")
+            ):
+                self.active_windows, alloc_res = allocate_markets(
+                    self.settings,
+                    self.public_client,
+                    self.logger,
+                    available_budget=effective_budget,
+                    positions=pos_map,
+                    open_orders=open_orders,
+                )
         except Exception as exc:
             if is_realloc:
                 self.logger.warning("Reallocation failed, retaining current targets: %s", exc)
                 self.last_prepare_ts = time.time()
                 self.yield_collapse_streak = 0
+                self.underdeployed_streak = 0
                 return
             raise
         self.expected_portfolio_rate_sec = sum(
@@ -609,6 +643,7 @@ class LiveEngine:
         )
         self.last_prepare_ts = time.time()
         self.yield_collapse_streak = 0
+        self.underdeployed_streak = 0
         self.target_slugs = list(alloc_res.selected_slugs)
         self.side_budgets = dict(alloc_res.side_budgets)
         self.side_qtys = dict(alloc_res.side_qtys)
@@ -803,6 +838,7 @@ class LiveEngine:
             )
             live_portfolio_rate_sec += mkt_rate
 
+        scored_bid_slugs: set[str] = set()
         if self.condition_pairs:
             for yes_slug, no_slug in self.condition_pairs:
                 if yes_slug in pair_inputs and no_slug in pair_inputs:
@@ -810,13 +846,15 @@ class LiveEngine:
                     no_book, _, no_orders = pair_inputs[no_slug]
                     for snap in estimate_global_pair_score(yes_book, no_book, window, yes_orders + no_orders, ts_ms=now_ms):
                         self.ledger.record_lip_snapshot(snap)
+                        if snap.trader_bid_score > Decimal("0"):
+                            scored_bid_slugs.add(snap.slug)
                         if snap.qualifies:
                             live_portfolio_rate_sec += snap.reward_usd
 
         if self.expected_portfolio_rate_sec > Decimal("0"):
             if self.last_prepare_ts <= 0.0:
                 self.last_prepare_ts = now_ts
-            if len(active_slugs) == len(self.target_slugs):
+            if active_slugs:
                 if live_portfolio_rate_sec < (self.expected_portfolio_rate_sec * YIELD_COLLAPSE_RATIO):
                     self.yield_collapse_streak += 1
                 else:
@@ -832,6 +870,60 @@ class LiveEngine:
                     self.yield_collapse_streak,
                 )
                 self.yield_collapse_streak = 0
+                self.last_prepare_ts = now_ts
+                self.prepare(is_realloc=True)
+                return 1.0
+
+        allocated_bid_budget = sum(
+            (v for (s, side), v in self.side_budgets.items() if side == "bid"),
+            Decimal("0"),
+        )
+        if self.settings.venue == "global" and allocated_bid_budget > Decimal("0") and active_slugs:
+            if self.last_prepare_ts <= 0.0:
+                self.last_prepare_ts = now_ts
+            post_tick_open = self.ledger.get_open_orders()
+            open_buy_slugs = {
+                o.slug for o in post_tick_open if o.side in ("BUY", "BUY_LONG")
+            }
+            deployed_buy_col = sum(
+                (o.price * o.qty_open for o in post_tick_open if o.side in ("BUY", "BUY_LONG")),
+                Decimal("0"),
+            )
+            filled_cond_credit = Decimal("0")
+            for s in self.target_slugs:
+                p_curr = live_positions.get(s)
+                w_curr = self.active_windows.get(s)
+                if (
+                    (p_curr is not None and w_curr is not None and p_curr.net_qty >= w_curr.target_size)
+                    or (s in scored_bid_slugs and s not in open_buy_slugs)
+                ):
+                    filled_cond_credit += self.side_budgets.get((s, "bid"), Decimal("0"))
+            effective_deployed = deployed_buy_col + filled_cond_credit
+            if effective_deployed < (allocated_bid_budget * CAPITAL_UTILIZATION_RATIO):
+                self.underdeployed_streak += 1
+            else:
+                self.underdeployed_streak = 0
+            if (
+                self.underdeployed_streak >= CAPITAL_UNDERDEPLOYED_TICKS
+                and (now_ts - self.last_prepare_ts) >= YIELD_COLLAPSE_COOLDOWN_SECONDS
+            ):
+                for (s, side), b_val in self.side_budgets.items():
+                    if side == "bid" and b_val > Decimal("0") and s not in open_buy_slugs and s not in scored_bid_slugs:
+                        p_curr = live_positions.get(s)
+                        w_curr = self.active_windows.get(s)
+                        if not (p_curr is not None and w_curr is not None and p_curr.net_qty >= w_curr.target_size):
+                            self.degraded_slugs_until[s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
+                            for y_s, n_s in self.condition_pairs:
+                                if s in (y_s, n_s):
+                                    self.degraded_slugs_until[y_s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
+                                    self.degraded_slugs_until[n_s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
+                self.logger.info(
+                    "Capital under-deployment detected: deployed $%s < 85%% of allocated $%s for %d ticks; rotating conditions",
+                    effective_deployed,
+                    allocated_bid_budget,
+                    self.underdeployed_streak,
+                )
+                self.underdeployed_streak = 0
                 self.last_prepare_ts = now_ts
                 self.prepare(is_realloc=True)
 
@@ -999,24 +1091,10 @@ class LiveEngine:
                 self.side_budgets.get((slug, "bid"), Decimal("0")),
                 dyn_market_col,
             )
-            quotes = desired_quotes(
-                market=market,
-                book=quote_book,
-                window=window,
-                position=pos,
-                budget=market_budget,
-                max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
-                now=now_dt,
-                pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
-                quote_live_periods=self.settings.quote_live_periods,
-                bid_budget=effective_bid_budget,
-                ask_budget=self.side_budgets.get((slug, "ask"), Decimal("0")),
-                is_global=(self.settings.venue == "global"),
-                paired=(slug in self.paired_slugs),
-                quote_size=self.side_qtys.get((slug, "bid")),
-            )
 
             other_slug: str | None = None
+            other_quote_book: Book | None = None
+            max_allowed: Decimal | None = None
             is_binary_cond = (
                 slug in self.paired_slugs
                 or any(slug in pair for pair in self.condition_pairs)
@@ -1038,10 +1116,23 @@ class LiveEngine:
                     if o.side in ("BUY", "BUY_LONG")
                 ]
                 alloc_px = getattr(self, "side_prices", {}).get((slug, "bid"))
-                max_allowed: Decimal | None = alloc_px
+                mid_curr = (
+                    global_rewards.adjusted_mid(quote_book, window.target_size)
+                    if (window is not None and window.max_spread is not None)
+                    else None
+                )
+                if (
+                    alloc_px is not None
+                    and mid_curr is not None
+                    and window is not None
+                    and window.max_spread is not None
+                    and abs(alloc_px - mid_curr) > window.max_spread
+                ):
+                    max_allowed = None
+                else:
+                    max_allowed = alloc_px
                 if existing_buy_prices and window is not None and window.max_spread is not None:
                     min_existing = min(existing_buy_prices)
-                    mid_curr = global_rewards.adjusted_mid(quote_book, window.target_size)
                     if mid_curr is not None and abs(min_existing - mid_curr) < window.max_spread:
                         max_allowed = min(max_allowed, min_existing) if max_allowed is not None else min_existing
                 if other_slug:
@@ -1067,32 +1158,31 @@ class LiveEngine:
                         max_allowed = min(max_allowed, other_cap) if max_allowed is not None else other_cap
                     if batch_books is not None and other_slug in batch_books:
                         opp_raw_book = batch_books.get(other_slug)
-                        if opp_raw_book is not None and opp_raw_book.bids:
-                            opp_market_bid = opp_raw_book.bids[0].price
-                            cross_cap = global_rewards.CROSS_MAX_SUM - opp_market_bid
-                            max_allowed = min(max_allowed, cross_cap) if max_allowed is not None else cross_cap
+                        if opp_raw_book is not None:
+                            other_resting = self._slug_open_orders(other_slug, exchange_open)
+                            other_orders_to_strip = (
+                                other_resting
+                                if opp_raw_book.bids
+                                else [o for o in other_resting if o.side in ("BUY", "BUY_LONG")]
+                            )
+                            other_quote_book = (
+                                global_rewards.strip_orders_from_book(opp_raw_book, other_orders_to_strip)
+                                if other_orders_to_strip
+                                else opp_raw_book
+                            )
+                            if opp_raw_book.bids:
+                                opp_market_bid = opp_raw_book.bids[0].price
+                                cross_cap = global_rewards.CROSS_MAX_SUM - opp_market_bid
+                                max_allowed = min(max_allowed, cross_cap) if max_allowed is not None else cross_cap
                     if other_filled and existing_buy_prices:
                         freeze_cap = max(existing_buy_prices)
                         max_allowed = min(max_allowed, freeze_cap) if max_allowed is not None else freeze_cap
                     if (
                         slug in self.paired_slugs
                         and not other_filled
-                        and batch_books is not None
-                        and other_slug in batch_books
+                        and other_quote_book is not None
                         and window is not None
                     ):
-                        other_raw_book = batch_books[other_slug]
-                        other_resting = self._slug_open_orders(other_slug, exchange_open)
-                        other_orders_to_strip = (
-                            other_resting
-                            if other_raw_book.bids
-                            else [o for o in other_resting if o.side in ("BUY", "BUY_LONG")]
-                        )
-                        other_quote_book = (
-                            global_rewards.strip_orders_from_book(other_raw_book, other_orders_to_strip)
-                            if other_orders_to_strip
-                            else other_raw_book
-                        )
                         yes_qb, no_qb = (
                             (quote_book, other_quote_book)
                             if is_yes_leg
@@ -1108,27 +1198,51 @@ class LiveEngine:
                         if pair_px is not None:
                             sym_cap = pair_px[0] if is_yes_leg else pair_px[1]
                             max_allowed = min(max_allowed, sym_cap) if max_allowed is not None else sym_cap
-                if max_allowed is not None:
-                    mid_check = (
-                        global_rewards.adjusted_mid(quote_book, window.target_size)
-                        if (window is not None and window.max_spread is not None)
-                        else None
-                    )
-                    clamped_quotes: list[Quote] = []
-                    for q in quotes:
-                        if q.side == "BUY_LONG" and q.price > max_allowed:
-                            clamped_px = (max_allowed // tick) * tick
-                            in_spread = (
-                                window is None
-                                or window.max_spread is None
-                                or mid_check is None
-                                or abs(clamped_px - mid_check) <= window.max_spread
-                            )
-                            if clamped_px > Decimal("0") and in_spread:
-                                clamped_quotes.append(dataclasses.replace(q, price=clamped_px))
-                        else:
-                            clamped_quotes.append(q)
-                    quotes = clamped_quotes
+
+            extra_dq_kwargs: dict[str, Any] = {}
+            if self.settings.venue == "global" and is_binary_cond:
+                extra_dq_kwargs["other_book"] = other_quote_book
+                extra_dq_kwargs["max_bid_price"] = max_allowed
+
+            quotes = desired_quotes(
+                market=market,
+                book=quote_book,
+                window=window,
+                position=pos,
+                budget=market_budget,
+                max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
+                now=now_dt,
+                pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,
+                quote_live_periods=self.settings.quote_live_periods,
+                bid_budget=effective_bid_budget,
+                ask_budget=self.side_budgets.get((slug, "ask"), Decimal("0")),
+                is_global=(self.settings.venue == "global"),
+                paired=(slug in self.paired_slugs),
+                quote_size=self.side_qtys.get((slug, "bid")),
+                **extra_dq_kwargs,
+            )
+
+            if self.settings.venue == "global" and is_binary_cond and max_allowed is not None:
+                mid_check = (
+                    global_rewards.adjusted_mid(quote_book, window.target_size)
+                    if (window is not None and window.max_spread is not None)
+                    else None
+                )
+                clamped_quotes: list[Quote] = []
+                for q in quotes:
+                    if q.side == "BUY_LONG" and q.price > max_allowed:
+                        clamped_px = (max_allowed // tick) * tick
+                        in_spread = (
+                            window is None
+                            or window.max_spread is None
+                            or mid_check is None
+                            or abs(clamped_px - mid_check) <= window.max_spread
+                        )
+                        if clamped_px > Decimal("0") and in_spread:
+                            clamped_quotes.append(dataclasses.replace(q, price=clamped_px))
+                    else:
+                        clamped_quotes.append(q)
+                quotes = clamped_quotes
 
             to_create, to_cancel, _ = reconcile_quotes(self.ledger.get_open_orders(slug), quotes)
 

@@ -1437,3 +1437,69 @@ def test_global_empty_bid_book_emits_sell_long_unwind():
         Quote(slug="mkt-empty-bid", side="SELL_LONG", price=Decimal("0.22"), qty=Decimal("65"))
     ]
 
+
+def test_desired_quotes_pre_guard_max_bid_price_and_other_book():
+    market = Market(
+        slug="yes-1",
+        event_id="ev-1",
+        category="sports",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    win = IncentiveWindow(
+        slug="yes-1",
+        program_id="prog-1",
+        pool_usd=Decimal("100"),
+        discount=Decimal("0.30"),
+        target_size=Decimal("20"),
+        max_spread=Decimal("0.04"),
+        start=datetime.now(timezone.utc),
+        end=None,
+        status="active",
+    )
+    yes_book = Book(
+        slug="yes-1",
+        bids=(Level(Decimal("0.51"), Decimal("500")),),
+        asks=(Level(Decimal("0.53"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    no_book = Book(
+        slug="no-1",
+        bids=(Level(Decimal("0.49"), Decimal("500")),),
+        asks=(Level(Decimal("0.51"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    quotes_unclamped = desired_quotes(
+        market=market,
+        book=yes_book,
+        window=win,
+        position=Position(slug="yes-1", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("50"),
+        bid_budget=Decimal("50"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("50"),
+        other_book=no_book,
+    )
+    assert quotes_unclamped == []
+
+    quotes_clamped = desired_quotes(
+        market=market,
+        book=yes_book,
+        window=win,
+        position=Position(slug="yes-1", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("50"),
+        bid_budget=Decimal("50"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("50"),
+        other_book=no_book,
+        max_bid_price=Decimal("0.50"),
+    )
+    assert len(quotes_clamped) == 1
+    assert quotes_clamped[0].side == "BUY_LONG"
+    assert quotes_clamped[0].price == Decimal("0.50")
+    assert quotes_clamped[0].qty == Decimal("50")
+
+

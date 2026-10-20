@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from pmus.models import Book, ConditionMarket, Position
 from pmus.strategy import book_guard, global_rewards
@@ -56,6 +56,17 @@ def _admit(cond: ConditionMarket, book: Book, price: Decimal, tick: Decimal, oth
     return reason is None
 
 
+def _book_spread_ok(book: Book, window: Any, tick: Decimal) -> bool:
+    if not book.bids or not book.asks:
+        return False
+    if window is not None and window.max_spread is not None and tick > Decimal("0"):
+        bid_px = (book.bids[0].price // tick) * tick
+        ask_px = (book.asks[0].price // tick) * tick
+        if (ask_px - bid_px) > (Decimal("2") * window.max_spread):
+            return False
+    return True
+
+
 def evaluate_condition(
     cond: ConditionMarket,
     yes_book: Book,
@@ -97,6 +108,8 @@ def evaluate_condition(
             and (p_yes + opp_no_bid) <= global_rewards.CROSS_MAX_SUM
             and (p_no + opp_yes_bid) <= global_rewards.CROSS_MAX_SUM
             and comp_q >= min(window.target_size, MIN_COMPETITOR_SCORE)
+            and _book_spread_ok(yes_book, window, yes_tick)
+            and _book_spread_ok(no_book, window, no_tick)
             and _admit(cond, yes_book, p_yes, yes_tick, other_book=no_book)
             and _admit(cond, no_book, p_no, no_tick, other_book=yes_book)
         ):
@@ -127,6 +140,7 @@ def evaluate_condition(
                 and (p_yes + opp_no_bid) <= global_rewards.pair_max_sum(window)
                 and (p_yes + held_no_px) < Decimal("1")
                 and not (no_held >= min_size and held_no_px > Decimal("0") and (p_yes + held_no_px) > PAIR_MAX_PRICE_SUM)
+                and _book_spread_ok(yes_book, window, yes_tick)
                 and _admit(cond, yes_book, p_yes, yes_tick, other_book=no_book)
             ):
                 size_yes = _single_size(max_cost, p_yes, min_size, lot, max_contracts)
@@ -155,6 +169,7 @@ def evaluate_condition(
                 and (p_no + opp_yes_bid) <= global_rewards.pair_max_sum(window)
                 and (p_no + held_yes_px) < Decimal("1")
                 and not (yes_held >= min_size and held_yes_px > Decimal("0") and (p_no + held_yes_px) > PAIR_MAX_PRICE_SUM)
+                and _book_spread_ok(no_book, window, no_tick)
                 and _admit(cond, no_book, p_no, no_tick, other_book=yes_book)
             ):
                 size_no = _single_size(max_cost, p_no, min_size, cond.no.min_qty, max_contracts)
@@ -368,6 +383,38 @@ def _waterfill_conditions(
             ):
                 remaining_budget -= topped.cost - cur_target.cost
                 selected[idx_sel] = topped
+
+    if remaining_budget >= Decimal("4.50") and len(selected) >= 2 and max_contracts >= Decimal("200"):
+        for idx_sel, cur_target in enumerate(selected):
+            if remaining_budget < Decimal("4.50"):
+                break
+            cond = cur_target.condition
+            held_cost = _condition_held_cost(cond, positions)
+            if held_cost > Decimal("0"):
+                continue
+            sweep_cap = min(
+                max_cost + Decimal("15.00"),
+                cur_target.cost + remaining_budget,
+            )
+            if sweep_cap <= cur_target.cost:
+                continue
+            swept = evaluate_condition(
+                cond=cond,
+                yes_book=books[cond.yes.slug],
+                no_book=books[cond.no.slug],
+                max_cost=sweep_cap,
+                max_contracts=max_contracts,
+                pair_preference=pair_preference,
+                positions=positions,
+            )
+            if (
+                swept is not None
+                and swept.cost > cur_target.cost
+                and (swept.cost - cur_target.cost) <= remaining_budget
+                and swept.expected_reward_sec > cur_target.expected_reward_sec
+            ):
+                remaining_budget -= swept.cost - cur_target.cost
+                selected[idx_sel] = swept
 
     selected.sort(key=lambda t: _rank_score(t, pair_preference), reverse=True)
     return selected

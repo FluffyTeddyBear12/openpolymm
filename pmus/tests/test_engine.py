@@ -2550,6 +2550,128 @@ def test_dynamic_capital_auto_scaling_at_high_balance(tmp_path):
     assert engine.risk_manager.dynamic_max_collateral_per_market >= Decimal("36.00")
 
 
+def test_live_engine_quote_market_passes_pre_guard_clamp_and_other_book():
+    from pmus.risk import RiskGateResult
+
+    logger = logging.getLogger("test_pre_guard_engine")
+    mkt_y = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    mkt_n = Market(slug="n1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    w_y = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("20"), Decimal("0.04"), datetime.now(timezone.utc), None, "active")
+    w_n = IncentiveWindow("n1", "p1", Decimal("100"), Decimal("0.30"), Decimal("20"), Decimal("0.04"), datetime.now(timezone.utc), None, "active")
+
+    client = MagicMock()
+    auth_client = MagicMock()
+    auth_client.create_orders_batch.return_value = [
+        LiveOrder("ord-y1", "y1", "BUY_LONG", Decimal("0.50"), Decimal("50"))
+    ]
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logger,
+    )
+    engine.markets["y1"] = mkt_y
+    engine.markets["n1"] = mkt_n
+    engine.active_windows["y1"] = w_y
+    engine.active_windows["n1"] = w_n
+    engine.paired_slugs = frozenset({"y1", "n1"})
+    engine.condition_pairs = (("y1", "n1"),)
+    engine.side_budgets[("y1", "bid")] = Decimal("25.00")
+    engine.side_qtys[("y1", "bid")] = Decimal("50")
+    engine.side_prices[("y1", "bid")] = Decimal("0.50")
+    engine.ledger.get_open_orders.return_value = []
+
+    book_y = Book(
+        "y1",
+        (Level(Decimal("0.51"), Decimal("30")), Level(Decimal("0.50"), Decimal("500"))),
+        (Level(Decimal("0.53"), Decimal("500")),),
+        1000,
+    )
+    book_n = Book(
+        "n1",
+        (Level(Decimal("0.46"), Decimal("500")),),
+        (Level(Decimal("0.48"), Decimal("500")),),
+        1000,
+    )
+    engine._quote_market(
+        slug="y1",
+        now_dt=datetime.now(timezone.utc),
+        now_ts=1000.0,
+        now_ms=1000000,
+        exchange_open=[],
+        live_positions={"y1": Position("y1", Decimal("0"), Decimal("0")), "n1": Position("n1", Decimal("0"), Decimal("0"))},
+        buying_power=Decimal("500"),
+        realized_loss_today=Decimal("0"),
+        pair_inputs={},
+        book=book_y,
+        batch_books={"y1": book_y, "n1": book_n},
+    )
+    auth_client.create_orders_batch.assert_called_once()
+    created = auth_client.create_orders_batch.call_args[0][0]
+    assert len(created) == 1
+    assert created[0].price == Decimal("0.50")
+    assert created[0].qty == Decimal("50")
+
+
+def test_live_engine_underdeployed_capital_triggers_reallocation_and_excludes_degraded_slugs():
+    from pmus.risk import RiskGateResult
+
+    logger = logging.getLogger("test_underdeployed_realloc")
+    w_y = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("20"), Decimal("0.04"), datetime.now(timezone.utc), None, "active")
+    w_n = IncentiveWindow("n1", "p1", Decimal("100"), Decimal("0.30"), Decimal("20"), Decimal("0.04"), datetime.now(timezone.utc), None, "active")
+
+    client = MagicMock()
+    client.fetch_books_batch.return_value = {
+        "y1": Book("y1", (), (), 1000),
+        "n1": Book("n1", (), (), 1000),
+    }
+    auth_client = MagicMock()
+    auth_client.get_buying_power.return_value = Decimal("200")
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_fills.return_value = []
+
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = []
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    settings = Settings(venue="global", total_budget=Decimal("200"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logger,
+    )
+    engine.target_slugs = ["y1", "n1"]
+    engine.active_windows = {"y1": w_y, "n1": w_n}
+    engine.paired_slugs = frozenset({"y1", "n1"})
+    engine.condition_pairs = (("y1", "n1"),)
+    engine.side_budgets = {("y1", "bid"): Decimal("50"), ("n1", "bid"): Decimal("50")}
+    engine.side_qtys = {("y1", "bid"): Decimal("100"), ("n1", "bid"): Decimal("100")}
+    engine.last_prepare_ts = 1000.0
+    engine.underdeployed_streak = 9
+
+    with patch.object(engine, "prepare") as mock_prepare:
+        engine.tick(1100.0)
+        mock_prepare.assert_called_once_with(is_realloc=True)
+        assert "y1" in engine.degraded_slugs_until
+        assert "n1" in engine.degraded_slugs_until
+
+
+
 
 
 
