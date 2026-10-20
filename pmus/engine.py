@@ -28,7 +28,7 @@ FALLBACK_BOOK_CONDITION_LIMIT = 150
 FILL_LOOKBACK_SECONDS = 60
 FILL_WINDOW_SECONDS = 3600
 LOCAL_FILL_POSITION_TTL_SECONDS = 60.0
-REALLOCATE_SECONDS = 300
+REALLOCATE_SECONDS = 3600
 YIELD_COLLAPSE_COOLDOWN_SECONDS = 90.0
 YIELD_COLLAPSE_RATIO = Decimal("0.55")
 YIELD_COLLAPSE_TICKS = 15
@@ -119,12 +119,22 @@ def allocate_markets(
     if is_global and hasattr(client, "fetch_reward_conditions"):
         conditions = client.fetch_reward_conditions()
         base_cond_cap = min(settings.max_per_market, settings.max_collateral_per_market)
-        num_pairs = max(1, settings.max_markets // 2)
-        max_cost_per_condition = (
-            max(base_cond_cap, budget / Decimal(str(num_pairs)))
-            if available_budget is not None
-            else base_cond_cap
-        )
+        if is_global and budget >= Decimal("100") and settings.pair_preference <= Decimal("0") and settings.max_markets <= 4:
+            num_pairs = max(2, min(8, int(budget // Decimal("55"))))
+            effective_max_conditions = num_pairs
+            max_cost_per_condition = max(base_cond_cap, budget / Decimal(str(num_pairs)))
+        else:
+            num_pairs = max(1, settings.max_markets // 2)
+            max_cost_per_condition = (
+                max(base_cond_cap, budget / Decimal(str(num_pairs)))
+                if available_budget is not None
+                else base_cond_cap
+            )
+            effective_max_conditions = (
+                min(settings.max_markets, max(1, max(settings.max_markets // 2, int(budget // Decimal("48")))))
+                if (settings.pair_preference <= Decimal("0") and available_budget is not None)
+                else settings.max_markets
+            )
         max_contracts = Decimal(str(settings.max_contracts_per_market))
         if settings.pair_preference <= Decimal("0") and max_cost_per_condition > Decimal("0"):
             max_affordable_contracts = min(
@@ -225,11 +235,6 @@ def allocate_markets(
                 if slug in candidate_books:
                     candidate_books[slug] = global_rewards.strip_orders_from_book(candidate_books[slug], s_orders)
 
-        effective_max_conditions = (
-            min(settings.max_markets, max(1, max(settings.max_markets // 2, int(budget // Decimal("48")))))
-            if (settings.pair_preference <= Decimal("0") and available_budget is not None)
-            else settings.max_markets
-        )
         targets = allocate_conditions(
             conditions=allocatable,
             books=candidate_books,
@@ -492,7 +497,12 @@ class LiveEngine:
                         datetime.fromtimestamp(tick_start, timezone.utc)
                     )
                 )
-                if not paused and tick_start - self.last_prepare_ts >= REALLOCATE_SECONDS:
+                realloc_interval = (
+                    REALLOCATE_SECONDS
+                    if REALLOCATE_SECONDS != 3600
+                    else getattr(self.settings, "reallocate_seconds", 3600)
+                )
+                if not paused and tick_start - self.last_prepare_ts >= realloc_interval:
                     self.prepare(is_realloc=True)
                     if self.last_prepare_ts < tick_start:
                         self.last_prepare_ts = tick_start
@@ -516,12 +526,47 @@ class LiveEngine:
             except Exception:
                 pass
             if bp > Decimal("0"):
-                fee_buffer = (
-                    Decimal("2.50")
-                    if self.settings.venue == "global"
-                    else max(Decimal("3.00"), bp * Decimal("0.05"))
-                )
-                effective_budget = min(self.settings.total_budget, max(Decimal("0"), bp - fee_buffer))
+                if self.settings.venue == "global":
+                    cash_buffer = max(Decimal("3.00"), min(Decimal("10.00"), bp * Decimal("0.03")))
+                    avail_cash = max(Decimal("0"), bp - cash_buffer)
+                    if self.settings.total_budget <= Decimal("0"):
+                        effective_budget = avail_cash
+                    else:
+                        effective_budget = min(self.settings.total_budget, avail_cash)
+
+                    dynamic_stop = max(self.settings.daily_loss_stop, bp * Decimal("0.08"))
+                    dynamic_max_col = max(effective_budget, self.settings.max_collateral)
+                    est_pairs = (
+                        max(2, min(8, int(effective_budget // Decimal("55"))))
+                        if effective_budget >= Decimal("100")
+                        else max(1, self.settings.max_markets // 2)
+                    )
+                    est_cond_cap = (
+                        min(
+                            Decimal("85.00"),
+                            max(Decimal("36.00"), (effective_budget / Decimal(str(est_pairs))) * Decimal("1.15")),
+                        )
+                        if est_pairs > 0
+                        else self.settings.max_per_market
+                    )
+                    dynamic_leg_col = max(
+                        self.settings.max_collateral_per_market,
+                        (est_cond_cap * Decimal("0.55")).quantize(Decimal("1.00")),
+                    )
+                    if hasattr(self.risk_manager, "update_dynamic_limits"):
+                        self.risk_manager.update_dynamic_limits(
+                            total_budget=effective_budget,
+                            max_collateral=dynamic_max_col,
+                            max_collateral_per_market=dynamic_leg_col,
+                            daily_loss_stop=dynamic_stop,
+                        )
+                    self.logger.info(
+                        "Dynamic capital scaling applied: bp=$%s buffer=$%s budget=$%s stop=$%s leg_col=$%s",
+                        bp, cash_buffer, effective_budget, dynamic_stop, dynamic_leg_col,
+                    )
+                else:
+                    fee_buffer = max(Decimal("3.00"), bp * Decimal("0.05"))
+                    effective_budget = min(self.settings.total_budget, max(Decimal("0"), bp - fee_buffer))
         except Exception as exc:
             self.logger.warning("Could not fetch buying power for allocation: %s", exc)
         held_positions = None
@@ -947,12 +992,19 @@ class LiveEngine:
                 else book
             )
 
+            dyn_col = getattr(self.risk_manager, "dynamic_max_collateral_per_market", None)
+            dyn_market_col = dyn_col if isinstance(dyn_col, Decimal) else Decimal("0")
+            market_budget = max(
+                self.settings.max_per_market,
+                self.side_budgets.get((slug, "bid"), Decimal("0")),
+                dyn_market_col,
+            )
             quotes = desired_quotes(
                 market=market,
                 book=quote_book,
                 window=window,
                 position=pos,
-                budget=self.settings.max_per_market,
+                budget=market_budget,
                 max_contracts_cap=Decimal(str(self.settings.max_contracts_per_market)),
                 now=now_dt,
                 pre_start_cancel_seconds=self.settings.pre_start_cancel_seconds,

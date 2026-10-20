@@ -37,6 +37,7 @@ class Settings:
     order_sync_grace_seconds: int = 20
     pair_preference: Decimal = Decimal("0.0")
     dashboard_password: str = ""
+    reallocate_seconds: int = 3600
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -92,6 +93,15 @@ class Settings:
         ).strip()
         dashboard_password = os.getenv("PMUS_DASHBOARD_PASSWORD", "").strip()
 
+        raw_budget = (os.getenv("PMUS_TOTAL_BUDGET") or "auto").strip().lower()
+        if raw_budget in ("auto", "dynamic", "max", "0", "0.0", "0.00", ""):
+            total_budget = Decimal("0.00")
+        else:
+            try:
+                total_budget = Decimal(raw_budget)
+            except Exception:
+                total_budget = Decimal("0.00")
+
         return cls(
             key_id=os.getenv("PMUS_KEY_ID", "").strip(),
             secret_key=os.getenv("PMUS_SECRET_KEY", "").strip(),
@@ -101,7 +111,7 @@ class Settings:
             max_collateral=Decimal(os.getenv("PMUS_MAX_COLLATERAL", "70.00")),
             max_per_market=Decimal(os.getenv("PMUS_MAX_PER_MARKET", "25.00")),
             max_collateral_per_market=Decimal(os.getenv("PMUS_MAX_COLLATERAL_PER_MARKET", "30.00")),
-            total_budget=Decimal(os.getenv("PMUS_TOTAL_BUDGET", "60.00")),
+            total_budget=total_budget,
             max_markets=int(os.getenv("PMUS_MAX_MARKETS", "4")),
             max_contracts_per_market=int(os.getenv("PMUS_MAX_CONTRACTS_PER_MARKET", "6000")),
             max_open_orders=int(os.getenv("PMUS_MAX_OPEN_ORDERS", "20")),
@@ -124,4 +134,5 @@ class Settings:
             order_sync_grace_seconds=int(os.getenv("PMUS_ORDER_SYNC_GRACE_SECONDS", "20")),
             pair_preference=Decimal(os.getenv("PMUS_PAIR_PREFERENCE", "0.0")),
             dashboard_password=dashboard_password,
+            reallocate_seconds=int(os.getenv("PMUS_REALLOCATE_SECONDS", "3600")),
         )

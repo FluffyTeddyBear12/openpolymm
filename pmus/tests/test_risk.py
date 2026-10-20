@@ -182,3 +182,25 @@ def test_sell_long_exceeding_held_inventory_is_blocked(risk_settings):
     assert res2.allowed is False
     assert "SELL_LONG exceeds held inventory" in res2.reason
 
+
+def test_dynamic_limits_override_settings(risk_settings):
+    rm = RiskManager(risk_settings)
+    # Default settings: total_budget=60, max_collateral=70, max_collateral_per_market=30, daily_loss_stop=10
+    # Update dynamic limits to scale for a $240 wallet
+    rm.update_dynamic_limits(
+        total_budget=Decimal("235.00"),
+        max_collateral=Decimal("235.00"),
+        max_collateral_per_market=Decimal("50.00"),
+        daily_loss_stop=Decimal("19.38"),
+    )
+    # A $120 order would have failed default $60 budget and $70 collateral, but passes dynamic limits
+    quotes = [Quote(slug="mkt-1", side="BUY_LONG", price=Decimal("0.400"), qty=Decimal("100"))] # $40 collateral
+    res = rm.check_pre_submit(quotes, [], {}, Decimal("242.00"), Decimal("15.00"))
+    assert res.allowed is True
+
+    # Realized loss of $15 is less than dynamic stop $19.38 (passes), but $20 exceeds it (fails)
+    res_loss = rm.check_daily_loss(Decimal("20.00"))
+    assert res_loss.allowed is False
+    assert "Daily realized loss stop reached: $20.00 >= $19.38" in res_loss.reason
+
+

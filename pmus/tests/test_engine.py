@@ -1249,7 +1249,7 @@ def test_live_engine_prepare_fee_buffer_global_vs_us(tmp_path):
     with patch("pmus.engine.allocate_markets") as mock_alloc:
         mock_alloc.return_value = ({}, MagicMock(selected_slugs=[], active_windows={}, condition_pairs=(), side_budgets={}, side_qtys={}, paired_slugs=frozenset()))
         engine_global.prepare()
-        assert mock_alloc.call_args.kwargs["available_budget"] == Decimal("97.50")
+        assert mock_alloc.call_args.kwargs["available_budget"] == Decimal("97.00")
 
     settings_us = Settings(
         venue="us",
@@ -1877,7 +1877,7 @@ def test_live_engine_yield_collapse_early_reallocation():
     from pmus.models import LipSnapshot
     from pmus.strategy.market_selector import CandidateSide
 
-    assert REALLOCATE_SECONDS == 300
+    assert REALLOCATE_SECONDS == 3600
 
     logger = logging.getLogger("test_yield_collapse")
     now = datetime(2026, 10, 12, 15, 0, tzinfo=timezone.utc)
@@ -2504,6 +2504,51 @@ def test_wave24_completion_leg_clamps_cross_book_and_drops_out_of_spread_clamped
     auth_client.create_orders_batch.assert_not_called()
     canceled_orders = auth_client.cancel_orders_batch.call_args[0][0]
     assert [o.order_id for o in canceled_orders] == ["ord-n1"]
+
+
+def test_dynamic_capital_auto_scaling_at_high_balance(tmp_path):
+    from pmus.risk import RiskManager
+    settings = Settings(
+        total_budget=Decimal("0.00"),  # Auto/dynamic mode
+        max_collateral=Decimal("70.00"),
+        max_per_market=Decimal("25.00"),
+        max_collateral_per_market=Decimal("30.00"),
+        daily_loss_stop=Decimal("10.00"),
+        venue="global",
+        data_dir=tmp_path / "data",
+    )
+    auth_client = MagicMock()
+    auth_client.get_buying_power.return_value = Decimal("242.31")
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_positions.return_value = []
+
+    public_client = MagicMock()
+    public_client.fetch_reward_conditions.return_value = []
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=MagicMock(),
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=RiskManager(settings),
+        logger=logging.getLogger("test_scaling"),
+    )
+    engine.prepare()
+
+    # Cash buffer = max(3.00, min(10.00, 242.31 * 0.03)) = 7.2693
+    # Effective budget = 242.31 - 7.2693 = 235.0407
+    assert engine.risk_manager.dynamic_total_budget is not None
+    assert engine.risk_manager.dynamic_total_budget > Decimal("235.00")
+    assert engine.risk_manager.dynamic_total_budget < Decimal("235.10")
+
+    # Dynamic daily loss stop = max(10.00, 242.31 * 0.08) = 19.3848
+    assert engine.risk_manager.dynamic_daily_loss_stop is not None
+    assert engine.risk_manager.dynamic_daily_loss_stop > Decimal("19.38")
+
+    # Dynamic leg collateral should be scaled up from 30.00
+    assert engine.risk_manager.dynamic_max_collateral_per_market is not None
+    assert engine.risk_manager.dynamic_max_collateral_per_market >= Decimal("36.00")
+
 
 
 

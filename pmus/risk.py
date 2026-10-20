@@ -15,6 +15,26 @@ class RiskManager:
     def __init__(self, settings: Settings, stop_file_path: Path | None = None):
         self.settings = settings
         self.stop_file = stop_file_path or (settings.data_dir.parent / "STOP")
+        self.dynamic_total_budget: Decimal | None = None
+        self.dynamic_max_collateral: Decimal | None = None
+        self.dynamic_max_collateral_per_market: Decimal | None = None
+        self.dynamic_daily_loss_stop: Decimal | None = None
+
+    def update_dynamic_limits(
+        self,
+        total_budget: Decimal | None = None,
+        max_collateral: Decimal | None = None,
+        max_collateral_per_market: Decimal | None = None,
+        daily_loss_stop: Decimal | None = None,
+    ) -> None:
+        if total_budget is not None:
+            self.dynamic_total_budget = total_budget
+        if max_collateral is not None:
+            self.dynamic_max_collateral = max_collateral
+        if max_collateral_per_market is not None:
+            self.dynamic_max_collateral_per_market = max_collateral_per_market
+        if daily_loss_stop is not None:
+            self.dynamic_daily_loss_stop = daily_loss_stop
 
     def is_maintenance_active(self, now: datetime | None = None) -> bool:
         if now is None:
@@ -35,10 +55,15 @@ class RiskManager:
         return data_stop.exists() or parent_stop.exists()
 
     def check_daily_loss(self, realized_loss_today: Decimal) -> RiskGateResult:
-        if realized_loss_today >= self.settings.daily_loss_stop:
+        loss_limit = (
+            self.dynamic_daily_loss_stop
+            if self.dynamic_daily_loss_stop is not None
+            else self.settings.daily_loss_stop
+        )
+        if realized_loss_today >= loss_limit:
             return RiskGateResult(
                 False,
-                f"Daily realized loss stop reached: ${realized_loss_today} >= ${self.settings.daily_loss_stop}",
+                f"Daily realized loss stop reached: ${realized_loss_today} >= ${loss_limit}",
             )
         return RiskGateResult(True)
 
@@ -98,15 +123,30 @@ class RiskManager:
             market_collateral[q.slug] = market_collateral.get(q.slug, Decimal("0")) + quote_col
 
         if new_collateral > Decimal("0"):
-            if total_collateral > self.settings.total_budget:
+            budget_limit = (
+                self.dynamic_total_budget
+                if self.dynamic_total_budget is not None
+                else self.settings.total_budget
+            )
+            if budget_limit <= Decimal("0"):
+                budget_limit = buying_power
+            if total_collateral > budget_limit:
                 return RiskGateResult(
                     False,
-                    f"Exceeds total budget collateral: ${total_collateral} > ${self.settings.total_budget}",
+                    f"Exceeds total budget collateral: ${total_collateral} > ${budget_limit}",
                 )
-            if total_collateral > self.settings.max_collateral:
+
+            collateral_limit = (
+                self.dynamic_max_collateral
+                if self.dynamic_max_collateral is not None
+                else self.settings.max_collateral
+            )
+            if collateral_limit <= Decimal("0"):
+                collateral_limit = buying_power
+            if total_collateral > collateral_limit:
                 return RiskGateResult(
                     False,
-                    f"Exceeds max collateral: ${total_collateral} > ${self.settings.max_collateral}",
+                    f"Exceeds max collateral: ${total_collateral} > ${collateral_limit}",
                 )
             if total_collateral > buying_power:
                 return RiskGateResult(
@@ -114,7 +154,11 @@ class RiskManager:
                     f"Exceeds account buying power: ${total_collateral} > ${buying_power}",
                 )
 
-        max_market_col = getattr(self.settings, "max_collateral_per_market", None)
+        max_market_col = (
+            self.dynamic_max_collateral_per_market
+            if self.dynamic_max_collateral_per_market is not None
+            else getattr(self.settings, "max_collateral_per_market", None)
+        )
         if max_market_col is not None:
             buy_quote_slugs = {q.slug for q in new_quotes if q.side in ("BUY_LONG", "BUY_SHORT")}
             for slug, m_col in market_collateral.items():
