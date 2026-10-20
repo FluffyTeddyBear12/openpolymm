@@ -32,7 +32,7 @@ REALLOCATE_SECONDS = 3600
 YIELD_COLLAPSE_COOLDOWN_SECONDS = 90.0
 YIELD_COLLAPSE_RATIO = Decimal("0.55")
 YIELD_COLLAPSE_TICKS = 15
-CAPITAL_UTILIZATION_RATIO = Decimal("0.85")
+CAPITAL_UTILIZATION_RATIO = Decimal("0.92")
 CAPITAL_UNDERDEPLOYED_TICKS = 10
 DEGRADED_SLUG_COOLDOWN_SECONDS = 300.0
 
@@ -135,7 +135,7 @@ def allocate_markets(
                 else base_cond_cap
             )
             effective_max_conditions = (
-                min(settings.max_markets, max(1, max(settings.max_markets // 2, int(budget // Decimal("48")))))
+                num_pairs if settings.max_markets <= 6 else min(settings.max_markets, max(1, max(settings.max_markets // 2, int(budget // Decimal("48")))))
                 if (settings.pair_preference <= Decimal("0") and available_budget is not None)
                 else settings.max_markets
             )

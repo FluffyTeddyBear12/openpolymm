@@ -384,9 +384,9 @@ def _waterfill_conditions(
                 remaining_budget -= topped.cost - cur_target.cost
                 selected[idx_sel] = topped
 
-    if remaining_budget >= Decimal("4.50") and len(selected) >= 2 and max_contracts >= Decimal("200"):
+    if remaining_budget >= Decimal("3.00") and len(selected) >= 2 and max_contracts >= Decimal("200"):
         for idx_sel, cur_target in enumerate(selected):
-            if remaining_budget < Decimal("4.50"):
+            if remaining_budget < Decimal("3.00"):
                 break
             cond = cur_target.condition
             held_cost = _condition_held_cost(cond, positions)
