@@ -2671,6 +2671,278 @@ def test_live_engine_underdeployed_capital_triggers_reallocation_and_excludes_de
         assert "n1" in engine.degraded_slugs_until
 
 
+def test_sell_long_hysteresis_prevents_every_second_penny_undercut_churn(tmp_path):
+    from pmus.risk import RiskGateResult
+
+    slug = "62623338983593514042006374122625975153564840035785327772201440284928019729864"
+    now = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+    market = Market(
+        slug=slug,
+        event_id="ev-unwind",
+        category="sports",
+        tick=Decimal("0.001"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    window = IncentiveWindow(
+        slug=slug,
+        program_id="unwind",
+        pool_usd=Decimal("0"),
+        discount=Decimal("0"),
+        target_size=Decimal("5"),
+        max_spread=Decimal("0.04"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    pos = Position(slug=slug, net_qty=Decimal("79.9911"), avg_price=Decimal("0.566"))
+    resting_sell = LiveOrder("ord-sell-1", slug, "SELL_LONG", Decimal("0.587"), Decimal("75"))
+
+    ledger = Ledger(tmp_path / "test_hyst.db")
+    ledger.update_position(pos, ts_ms=1000)
+    ledger.record_order(resting_sell, status="OPEN", ts_ms=1000)
+
+    client = MagicMock()
+    auth_client = MagicMock()
+    auth_client.create_orders_batch.side_effect = lambda qs, *a: [
+        LiveOrder("ord-sell-2", q.slug, q.side, q.price, q.qty) for q in qs
+    ]
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("200"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logging.getLogger("test_sell_hyst"),
+    )
+    engine.target_slugs = [slug]
+    engine.markets[slug] = market
+    engine.active_windows[slug] = window
+    engine.side_budgets = {(slug, "bid"): Decimal("0"), (slug, "ask"): Decimal("0")}
+
+    book_undercut = Book(
+        slug=slug,
+        bids=(Level(Decimal("0.560"), Decimal("200")),),
+        asks=(Level(Decimal("0.587"), Decimal("75")), Level(Decimal("0.582"), Decimal("100"))),
+        ts_ms=2000,
+        tick_size=Decimal("0.001"),
+    )
+    engine._quote_market(
+        slug=slug,
+        now_dt=now,
+        now_ts=1001.0,
+        now_ms=1001000,
+        exchange_open=[resting_sell],
+        live_positions={slug: pos},
+        buying_power=Decimal("200"),
+        realized_loss_today=Decimal("0"),
+        book=book_undercut,
+    )
+    auth_client.cancel_orders_batch.assert_not_called()
+    auth_client.create_orders_batch.assert_not_called()
+
+    book_big_shift = Book(
+        slug=slug,
+        bids=(Level(Decimal("0.560"), Decimal("200")),),
+        asks=(Level(Decimal("0.570"), Decimal("200")),),
+        ts_ms=3000,
+        tick_size=Decimal("0.001"),
+    )
+    engine._quote_market(
+        slug=slug,
+        now_dt=now,
+        now_ts=1002.0,
+        now_ms=1002000,
+        exchange_open=[resting_sell],
+        live_positions={slug: pos},
+        buying_power=Decimal("200"),
+        realized_loss_today=Decimal("0"),
+        book=book_big_shift,
+    )
+    auth_client.cancel_orders_batch.assert_called_once()
+    auth_client.create_orders_batch.assert_called_once()
+
+
+def test_external_sell_cancel_grants_grace_window_and_adopts_manual_sell_above_breakeven(tmp_path):
+    from pmus.risk import RiskGateResult
+
+    slug = "62623338983593514042006374122625975153564840035785327772201440284928019729864"
+    now = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+    t0 = now.timestamp()
+    market = Market(
+        slug=slug,
+        event_id="ev-unwind",
+        category="sports",
+        tick=Decimal("0.001"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    window = IncentiveWindow(
+        slug=slug,
+        program_id="unwind",
+        pool_usd=Decimal("0"),
+        discount=Decimal("0"),
+        target_size=Decimal("5"),
+        max_spread=Decimal("0.04"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    pos = Position(slug=slug, net_qty=Decimal("79.9911"), avg_price=Decimal("0.566"))
+    bot_sell = LiveOrder("bot-sell-1", slug, "SELL_LONG", Decimal("0.587"), Decimal("75"))
+
+    ledger = Ledger(tmp_path / "test_manual_sell.db")
+    ledger.update_position(pos, ts_ms=int((t0 - 60) * 1000))
+    ledger.record_order(bot_sell, status="OPEN", ts_ms=int((t0 - 60) * 1000))
+
+    book = Book(
+        slug=slug,
+        bids=(Level(Decimal("0.560"), Decimal("200")),),
+        asks=(Level(Decimal("0.588"), Decimal("200")),),
+        ts_ms=int(t0 * 1000),
+        tick_size=Decimal("0.001"),
+    )
+    client = MagicMock()
+    client.fetch_books_batch.return_value = {slug: book}
+    client.get_market.return_value = market
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = [pos]
+    auth_client.get_buying_power.return_value = Decimal("200")
+
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("200"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logging.getLogger("test_manual_sell"),
+    )
+    engine.target_slugs = [slug]
+    engine.markets[slug] = market
+    engine.active_windows[slug] = window
+    engine.side_budgets = {(slug, "bid"): Decimal("0"), (slug, "ask"): Decimal("0")}
+    engine.order_created_at["bot-sell-1"] = t0 - 60.0
+
+    engine.tick(t0)
+
+    assert ledger.get_open_orders(slug) == []
+    assert engine.manual_sell_cooldown_until.get(slug) == t0 + 90.0
+    auth_client.create_orders_batch.assert_not_called()
+
+    manual_sell = LiveOrder("manual-sell-1", slug, "SELL", Decimal("0.620"), Decimal("79.99"))
+    auth_client.get_open_orders.return_value = [manual_sell]
+
+    engine.tick(t0 + 15.0)
+
+    assert "manual-sell-1" in engine.manual_sell_order_ids
+    open_after = ledger.get_open_orders(slug)
+    assert len(open_after) == 1
+    assert open_after[0].order_id == "manual-sell-1"
+    assert open_after[0].price == Decimal("0.620")
+    auth_client.cancel_orders_batch.assert_not_called()
+    auth_client.create_orders_batch.assert_not_called()
+
+    engine._cancel_targets(t0 + 20.0, slugs=[slug])
+    assert len(ledger.get_open_orders(slug)) == 1
+    auth_client.cancel_orders_batch.assert_not_called()
+
+
+def test_untracked_sell_below_breakeven_is_rejected_and_canceled(tmp_path):
+    from pmus.risk import RiskGateResult
+
+    slug = "62623338983593514042006374122625975153564840035785327772201440284928019729864"
+    now = datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc)
+    t0 = now.timestamp()
+    market = Market(
+        slug=slug,
+        event_id="ev-unwind",
+        category="sports",
+        tick=Decimal("0.001"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    window = IncentiveWindow(
+        slug=slug,
+        program_id="unwind",
+        pool_usd=Decimal("0"),
+        discount=Decimal("0"),
+        target_size=Decimal("5"),
+        max_spread=Decimal("0.04"),
+        start=now - timedelta(hours=1),
+        end=now + timedelta(hours=23),
+        status="active",
+    )
+    pos = Position(slug=slug, net_qty=Decimal("79.9911"), avg_price=Decimal("0.566"))
+    bad_sell = LiveOrder("bad-sell-1", slug, "SELL", Decimal("0.550"), Decimal("75"))
+
+    ledger = Ledger(tmp_path / "test_bad_sell.db")
+    ledger.update_position(pos, ts_ms=int((t0 - 60) * 1000))
+
+    book = Book(
+        slug=slug,
+        bids=(Level(Decimal("0.560"), Decimal("200")),),
+        asks=(Level(Decimal("0.588"), Decimal("200")),),
+        ts_ms=int(t0 * 1000),
+        tick_size=Decimal("0.001"),
+    )
+    client = MagicMock()
+    client.fetch_books_batch.return_value = {slug: book}
+    client.get_market.return_value = market
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = [bad_sell]
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = [pos]
+    auth_client.get_buying_power.return_value = Decimal("200")
+    auth_client.create_orders_batch.side_effect = lambda qs, *a: [
+        LiveOrder("bot-sell-new", q.slug, q.side, q.price, q.qty) for q in qs
+    ]
+
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(venue="global", total_budget=Decimal("200"), max_per_market=Decimal("50"))
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logging.getLogger("test_bad_sell"),
+    )
+    engine.target_slugs = [slug]
+    engine.markets[slug] = market
+    engine.active_windows[slug] = window
+    engine.side_budgets = {(slug, "bid"): Decimal("0"), (slug, "ask"): Decimal("0")}
+
+    engine.tick(t0)
+
+    assert "bad-sell-1" not in engine.manual_sell_order_ids
+    auth_client.cancel_orders_batch.assert_called_once_with([bad_sell])
+    auth_client.create_orders_batch.assert_called_once()
+    created_q = auth_client.create_orders_batch.call_args[0][0][0]
+    assert created_q.side == "SELL_LONG"
+    assert created_q.price >= Decimal("0.566")
+
+
+
 
 
 

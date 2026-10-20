@@ -35,6 +35,8 @@ YIELD_COLLAPSE_TICKS = 15
 CAPITAL_UTILIZATION_RATIO = Decimal("0.92")
 CAPITAL_UNDERDEPLOYED_TICKS = 10
 DEGRADED_SLUG_COOLDOWN_SECONDS = 300.0
+MANUAL_SELL_EDIT_GRACE_SECONDS = 90.0
+SELL_HYSTERESIS_BAND = Decimal("0.015")
 
 def reconcile_quotes(
     current_orders: list[LiveOrder],
@@ -484,6 +486,28 @@ class LiveEngine:
         self.underdeployed_streak: int = 0
         self.degraded_slugs_until: dict[str, float] = {}
         self.dead_unwind_slugs: set[str] = set()
+        self.manual_sell_order_ids: set[str] = set()
+        self.manual_sell_cooldown_until: dict[str, float] = {}
+        self.recent_cancel_orders: dict[str, tuple[LiveOrder, float]] = {}
+
+    def _min_exit_price(self, slug: str, pos: Position | None = None) -> Decimal:
+        if pos is None:
+            try:
+                pos = self.ledger.get_position(slug)
+            except Exception:
+                pos = None
+        if (
+            pos is None
+            or not isinstance(getattr(pos, "net_qty", None), Decimal)
+            or not isinstance(getattr(pos, "avg_price", None), Decimal)
+            or pos.net_qty <= Decimal("0")
+            or pos.avg_price <= Decimal("0")
+        ):
+            return Decimal("0")
+        tick = self.markets[slug].tick if slug in self.markets else Decimal("0.001")
+        if tick > Decimal("0"):
+            return ((pos.avg_price + tick - Decimal("1e-12")) // tick) * tick
+        return pos.avg_price
 
     def run(self, duration_seconds: int | None = None) -> None:
         if not self.auth_client.is_available:
@@ -694,6 +718,16 @@ class LiveEngine:
         if not is_realloc:
             self.logger.info("Scoped startup cancel for target slugs: %s", self.target_slugs)
             self.started_at = time.time()
+            if isinstance(open_orders, list) and pos_map:
+                for o in open_orders:
+                    if isinstance(o, LiveOrder) and o.side in ("SELL", "SELL_LONG", "SELL_SHORT") and o.slug in pos_map:
+                        p = pos_map[o.slug]
+                        min_exit = self._min_exit_price(o.slug, p)
+                        if p.net_qty > Decimal("0") and min_exit > Decimal("0") and o.price >= min_exit:
+                            adopted = dataclasses.replace(o, side="SELL_LONG") if o.side == "SELL" else o
+                            self.ledger.record_order(adopted, status="OPEN", ts_ms=int(self.started_at * 1000))
+                            self.order_created_at[adopted.order_id] = self.started_at
+                            self.manual_sell_order_ids.add(adopted.order_id)
             self._cancel_targets(self.started_at)
             target_set = set(self.target_slugs)
             all_open = open_orders
@@ -703,7 +737,10 @@ class LiveEngine:
                 except Exception as exc:
                     self.logger.warning("Could not fetch open orders for startup cancel: %s", exc)
                     all_open = []
-            non_target_orders = [o for o in all_open if o.slug not in target_set]
+            non_target_orders = [
+                o for o in all_open
+                if o.slug not in target_set and o.order_id not in self.manual_sell_order_ids
+            ]
             if non_target_orders:
                 self.logger.warning(
                     "Startup cancel for %d orphaned orders on non-target slugs: %s",
@@ -716,6 +753,7 @@ class LiveEngine:
                     self.logger.warning("Startup non-target cancel failed: %s", exc)
                 for o in non_target_orders:
                     self.recent_cancels[o.order_id] = self.started_at
+                    self.recent_cancel_orders[o.order_id] = (o, self.started_at)
         else:
             dropped_slugs = [s for s in old_targets if s not in self.target_slugs]
             downsized_slugs = [
@@ -779,7 +817,7 @@ class LiveEngine:
                 self.local_fill_positions.pop(slug, None)
             else:
                 live_positions[slug] = opt_pos
-        self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms)
+        self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms, live_positions=live_positions)
         raw_realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
         baseline = getattr(self.settings, "daily_loss_baseline", Decimal("0"))
         realized_loss_today = max(Decimal("0"), raw_realized_loss_today - baseline)
@@ -960,7 +998,14 @@ class LiveEngine:
                 self.notifier.notify_fill(f)
                 self.logger.info("Fill recorded: %s %s %s @ %s (order %s)", f.slug, f.side, f.qty, f.price, f.order_id)
 
-    def _sync_orders(self, exchange_open: list[LiveOrder], filled_order_ids: set[str], now_ts: float, now_ms: int) -> None:
+    def _sync_orders(
+        self,
+        exchange_open: list[LiveOrder],
+        filled_order_ids: set[str],
+        now_ts: float,
+        now_ms: int,
+        live_positions: dict[str, Position] | None = None,
+    ) -> None:
         exchange_ids = {o.order_id for o in exchange_open}
         local_open = self.ledger.get_open_orders()
         for o in local_open:
@@ -969,24 +1014,99 @@ class LiveEngine:
             status = "FILLED" if o.order_id in filled_order_ids else "CANCELED"
             self.ledger.close_order(o.order_id, status=status, ts_ms=now_ms)
             self.order_created_at.pop(o.order_id, None)
+            self.manual_sell_order_ids.discard(o.order_id)
             self.logger.info("Order %s marked %s from exchange sync", o.order_id, status)
+            if (
+                status == "CANCELED"
+                and o.side in ("SELL", "SELL_LONG", "SELL_SHORT")
+                and o.order_id not in self.recent_cancels
+            ):
+                has_replacement_sell = any(
+                    eo.slug == o.slug and eo.side in ("SELL", "SELL_LONG", "SELL_SHORT")
+                    for eo in exchange_open
+                )
+                if not has_replacement_sell:
+                    self.manual_sell_cooldown_until[o.slug] = now_ts + MANUAL_SELL_EDIT_GRACE_SECONDS
+                    self.logger.info(
+                        "External SELL cancel detected on %s (order %s); pausing bot SELL placement for %ds to allow manual price adjustment",
+                        o.slug,
+                        o.order_id,
+                        int(MANUAL_SELL_EDIT_GRACE_SECONDS),
+                    )
 
         local_ids = {o.order_id for o in local_open}
-        orphans = [
-            o for o in exchange_open
-            if o.slug in self.target_slugs and o.order_id not in local_ids and o.order_id not in self.recent_cancels
-        ]
+        orphans: list[LiveOrder] = []
+        for o in exchange_open:
+            if o.order_id in local_ids or o.order_id in self.recent_cancels:
+                continue
+            if o.side in ("SELL", "SELL_LONG", "SELL_SHORT"):
+                pos = live_positions.get(o.slug) if live_positions else None
+                if pos is None:
+                    try:
+                        cand_pos = self.ledger.get_position(o.slug)
+                        if isinstance(getattr(cand_pos, "net_qty", None), Decimal):
+                            pos = cand_pos
+                    except Exception:
+                        pos = None
+                min_exit = (
+                    self._min_exit_price(o.slug, pos)
+                    if pos is not None and isinstance(getattr(pos, "net_qty", None), Decimal)
+                    else Decimal("0")
+                )
+                if (
+                    pos is not None
+                    and isinstance(getattr(pos, "net_qty", None), Decimal)
+                    and pos.net_qty > Decimal("0")
+                    and min_exit > Decimal("0")
+                    and o.price >= min_exit
+                ):
+                    adopted = dataclasses.replace(o, side="SELL_LONG") if o.side == "SELL" else o
+                    self.ledger.record_order(adopted, status="OPEN", ts_ms=now_ms)
+                    self.order_created_at[adopted.order_id] = now_ts
+                    self.manual_sell_order_ids.add(adopted.order_id)
+                    self.manual_sell_cooldown_until.pop(adopted.slug, None)
+                    local_ids.add(adopted.order_id)
+                    self.logger.info(
+                        "Adopted manual SELL order %s on %s: %s @ %s (min_exit=%s)",
+                        adopted.order_id,
+                        adopted.slug,
+                        adopted.qty_open,
+                        adopted.price,
+                        min_exit,
+                    )
+                    continue
+                elif (
+                    pos is not None
+                    and isinstance(getattr(pos, "net_qty", None), Decimal)
+                    and pos.net_qty > Decimal("0")
+                    and min_exit > Decimal("0")
+                    and o.price < min_exit
+                ):
+                    self.logger.warning(
+                        "Untracked SELL order %s on %s at %s is below break-even %s; canceling",
+                        o.order_id,
+                        o.slug,
+                        o.price,
+                        min_exit,
+                    )
+                    self.manual_sell_cooldown_until.pop(o.slug, None)
+            if o.slug in self.target_slugs:
+                orphans.append(o)
         if orphans:
             self.logger.warning("Canceling %s untracked exchange orders: %s", len(orphans), [o.order_id for o in orphans])
             try:
                 self.auth_client.cancel_orders_batch(orphans)
                 for o in orphans:
                     self.recent_cancels[o.order_id] = now_ts
+                    self.recent_cancel_orders[o.order_id] = (o, now_ts)
             except Exception as exc:
                 self.logger.warning("Orphan cancel failed: %s", exc)
 
         grace = self.settings.order_sync_grace_seconds
         self.recent_cancels = {oid: ts for oid, ts in self.recent_cancels.items() if now_ts - ts < grace}
+        self.recent_cancel_orders = {
+            oid: (ord_obj, ts) for oid, (ord_obj, ts) in self.recent_cancel_orders.items() if now_ts - ts < grace
+        }
 
     def _risk_open_orders(self, exchange_open: list[LiveOrder], now_ts: float) -> list[LiveOrder]:
         orders = {o.order_id: o for o in exchange_open if o.order_id not in self.recent_cancels}
@@ -1019,8 +1139,22 @@ class LiveEngine:
         target_slugs = slugs if slugs is not None else self.target_slugs
         if not target_slugs:
             return
-        canceled = set(self.auth_client.cancel_all_scoped(target_slugs))
-        local = [o for slug in target_slugs for o in self.ledger.get_open_orders(slug)]
+        protected_slugs: set[str] = set()
+        if self.manual_sell_order_ids:
+            for s in target_slugs:
+                open_on_s = self.ledger.get_open_orders(s)
+                if isinstance(open_on_s, (list, tuple)) and any(
+                    getattr(o, "order_id", None) in self.manual_sell_order_ids for o in open_on_s
+                ):
+                    protected_slugs.add(s)
+        normal_slugs = [s for s in target_slugs if s not in protected_slugs]
+        canceled = set(self.auth_client.cancel_all_scoped(normal_slugs)) if normal_slugs else set()
+        local = [
+            o
+            for slug in target_slugs
+            for o in (self.ledger.get_open_orders(slug) or [])
+            if getattr(o, "order_id", None) not in self.manual_sell_order_ids
+        ]
         leftover = [o for o in local if o.order_id not in canceled]
         if leftover:
             self.auth_client.cancel_orders_batch(leftover)
@@ -1029,6 +1163,7 @@ class LiveEngine:
             self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
             self.order_created_at.pop(o.order_id, None)
             self.recent_cancels[o.order_id] = now_ts
+            self.recent_cancel_orders[o.order_id] = (o, now_ts)
 
     def _market(self, slug: str) -> Market:
         if slug not in self.markets:
@@ -1073,10 +1208,18 @@ class LiveEngine:
             )
 
             resting_on_slug = self._slug_open_orders(slug, exchange_open)
+            recent_slug_cancels = [
+                ord_obj
+                for oid, (ord_obj, ts) in self.recent_cancel_orders.items()
+                if ord_obj.slug == slug
+                and (now_ts - ts) < min(3.0, float(self.settings.order_sync_grace_seconds))
+                and all(r.order_id != oid for r in resting_on_slug)
+            ]
+            strip_candidates = resting_on_slug + recent_slug_cancels
             orders_to_strip = (
-                resting_on_slug
+                strip_candidates
                 if book.bids
-                else [o for o in resting_on_slug if o.side in ("BUY", "BUY_LONG")]
+                else [o for o in strip_candidates if o.side in ("BUY", "BUY_LONG")]
             )
             quote_book = (
                 global_rewards.strip_orders_from_book(book, orders_to_strip)
@@ -1246,6 +1389,24 @@ class LiveEngine:
 
             to_create, to_cancel, _ = reconcile_quotes(self.ledger.get_open_orders(slug), quotes)
 
+            min_exit_px = self._min_exit_price(slug, pos)
+            open_on_slug = self.ledger.get_open_orders(slug)
+            if not isinstance(open_on_slug, (list, tuple)):
+                open_on_slug = []
+            manual_sells_on_slug = [
+                o for o in open_on_slug
+                if isinstance(o, LiveOrder)
+                and o.order_id in self.manual_sell_order_ids
+                and o.side in ("SELL", "SELL_LONG", "SELL_SHORT")
+                and o.price >= min_exit_px
+            ]
+            if manual_sells_on_slug:
+                manual_ids = {o.order_id for o in manual_sells_on_slug}
+                to_cancel = [o for o in to_cancel if o.order_id not in manual_ids]
+                to_create = [q for q in to_create if q.side not in ("SELL", "SELL_LONG", "SELL_SHORT")]
+            elif now_ts < self.manual_sell_cooldown_until.get(slug, 0.0):
+                to_create = [q for q in to_create if q.side not in ("SELL", "SELL_LONG", "SELL_SHORT")]
+
             # Active resting order ejection against cross-book arbitrage exploit
             if self.settings.venue == "global" and other_slug and batch_books is not None:
                 opp_raw_book = batch_books.get(other_slug)
@@ -1297,6 +1458,24 @@ class LiveEngine:
                         to_cancel = [o for o in to_cancel if o.order_id not in kept_cancel_ids]
                         to_create = [q for q in to_create if q.side not in kept_create_sides]
 
+            if to_create and to_cancel and pos.net_qty > Decimal("0"):
+                best_bid_px = quote_book.bids[0].price if quote_book.bids else Decimal("0")
+                kept_sell_cancel_ids: set[str] = set()
+                kept_sell_create_sides: set[str] = set()
+                for old_o in to_cancel:
+                    if old_o.side in ("SELL", "SELL_LONG") and old_o.price >= min_exit_px and old_o.price > best_bid_px:
+                        for new_q in to_create:
+                            if (
+                                new_q.side == "SELL_LONG"
+                                and new_q.qty == old_o.remaining_qty
+                                and abs(new_q.price - old_o.price) <= SELL_HYSTERESIS_BAND
+                            ):
+                                kept_sell_cancel_ids.add(old_o.order_id)
+                                kept_sell_create_sides.add("SELL_LONG")
+                if kept_sell_cancel_ids:
+                    to_cancel = [o for o in to_cancel if o.order_id not in kept_sell_cancel_ids]
+                    to_create = [q for q in to_create if q.side not in kept_sell_create_sides]
+
             cancel_ids = {o.order_id for o in to_cancel if o.order_id}
             risk_open = self._risk_open_orders(exchange_open, now_ts)
             post_cancel_open = [o for o in risk_open if o.order_id not in cancel_ids]
@@ -1320,6 +1499,7 @@ class LiveEngine:
                     self.ledger.close_order(o.order_id, status="CANCELED", ts_ms=now_ms)
                     self.order_created_at.pop(o.order_id, None)
                     self.recent_cancels[o.order_id] = now_ts
+                    self.recent_cancel_orders[o.order_id] = (o, now_ts)
 
             if to_create:
                 created = self.auth_client.create_orders_batch(to_create, {slug: tick}, {slug: market.min_qty})
