@@ -21,6 +21,9 @@ MULTI_LEVEL_SUPPORT_TARGETS = Decimal("4")
 MIN_BOOK_DEPTH_TARGETS = Decimal("2")
 MIN_SUPPORT_SHARES = Decimal("250")
 MIN_NEAR_NOTIONAL_USD = Decimal("75")
+MIN_FRONT_SHIELD_USD = Decimal("25")
+ASK_OVERHANG_MIN_ASK_USD = Decimal("500")
+MIN_BID_TO_ASK_USD_RATIO = Decimal("0.08")
 MAX_TICKS_ABOVE_SUPPORT = Decimal("2")
 LAST_TRADE_TOLERANCE_SPREADS = Decimal("1.25")
 
@@ -63,6 +66,7 @@ def quote_guard(
     price: Decimal,
     tick: Decimal,
     other_book: Book | None = None,
+    hysteresis: Decimal = Decimal("1.0"),
 ) -> str | None:
     if other_book is not None and other_book.bids:
         opp_bid = other_book.bids[0].price
@@ -94,6 +98,23 @@ def quote_guard(
     )
     if price > support + max_support_gap:
         return f"bid {price} more than {MAX_TICKS_ABOVE_SUPPORT} ticks above support {support}"
+    near_bid_usd = sum(
+        (lvl.price * lvl.qty for lvl in book.bids if lvl.price >= price - max_support_gap),
+        Decimal("0"),
+    )
+    if book.asks and book.bids:
+        top_ask_usd = book.asks[0].price * book.asks[0].qty
+        top_bid_usd = book.bids[0].price * book.bids[0].qty
+        ask_band = max(Decimal("2") * tick, Decimal("0.02"))
+        near_ask_usd = sum(
+            (lvl.price * lvl.qty for lvl in book.asks if lvl.price <= book.asks[0].price + ask_band),
+            Decimal("0"),
+        )
+        min_ratio = MIN_BID_TO_ASK_USD_RATIO * hysteresis
+        if top_ask_usd >= ASK_OVERHANG_MIN_ASK_USD and max(top_bid_usd, near_bid_usd) < top_ask_usd * min_ratio:
+            return f"ask overhang: top bid notional {top_bid_usd} vs top ask {top_ask_usd}"
+        if near_ask_usd >= ASK_OVERHANG_MIN_ASK_USD and near_bid_usd < near_ask_usd * min_ratio:
+            return f"ask overhang: near bid notional {near_bid_usd} vs near ask {near_ask_usd}"
     if multi_level:
         if (
             price >= book.bids[0].price - tick
@@ -106,16 +127,19 @@ def quote_guard(
             gap = book.bids[i].price - book.bids[i + 1].price
             if gap > max(Decimal("3") * tick, Decimal("0.03")):
                 return f"cliff book: bid gap {gap} between {book.bids[i].price} and {book.bids[i + 1].price}"
-        near_notional = sum(
-            (lvl.price * lvl.qty for lvl in book.bids if lvl.price >= price - max_support_gap),
-            Decimal("0"),
-        )
-        if near_notional < MIN_NEAR_NOTIONAL_USD:
-            return f"cliff book: near bid notional {near_notional} below {MIN_NEAR_NOTIONAL_USD}"
+        min_near_usd = MIN_NEAR_NOTIONAL_USD * hysteresis
+        if near_bid_usd < min_near_usd:
+            return f"cliff book: near bid notional {near_bid_usd} below {min_near_usd}"
         ahead_qty = sum((lvl.qty for lvl in book.bids if lvl.price > price), Decimal("0"))
         at_or_ahead_qty = sum((lvl.qty for lvl in book.bids if lvl.price >= price), Decimal("0"))
-        if ahead_qty < window.target_size and at_or_ahead_qty < Decimal("2") * window.target_size:
-            return f"thin front shield: ahead {ahead_qty} and at_or_ahead {at_or_ahead_qty} below target {window.target_size}"
+        req_ahead = window.target_size * hysteresis
+        req_at_or_ahead = Decimal("2") * window.target_size * hysteresis
+        if ahead_qty < req_ahead and at_or_ahead_qty < req_at_or_ahead:
+            return f"thin front shield: ahead {ahead_qty} and at_or_ahead {at_or_ahead_qty} below target {req_ahead}"
+        at_or_ahead_usd = sum((lvl.price * lvl.qty for lvl in book.bids if lvl.price >= price), Decimal("0"))
+        min_shield_usd = MIN_FRONT_SHIELD_USD * hysteresis
+        if at_or_ahead_usd < min_shield_usd:
+            return f"thin front shield: notional {at_or_ahead_usd} below {min_shield_usd}"
     ref = last_trade_reference(book, support=support)
     if ref is not None and window.max_spread is not None and price > ref + LAST_TRADE_TOLERANCE_SPREADS * window.max_spread:
         return f"bid {price} above last trade reference {ref} by more than {window.max_spread}"

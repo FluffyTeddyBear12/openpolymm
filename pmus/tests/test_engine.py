@@ -2005,17 +2005,17 @@ def test_live_engine_yield_collapse_early_reallocation():
         assert engine.yield_collapse_streak == 19
 
     with patch("pmus.engine.estimate_global_pair_score", return_value=healthy_snaps), patch.object(engine, "prepare") as mock_prep:
-        engine.tick(t0 + 85.0)
+        engine.tick(t0 + 165.0)
         mock_prep.assert_not_called()
         assert engine.yield_collapse_streak == 0
 
     with patch("pmus.engine.estimate_global_pair_score", return_value=collapsed_snaps), patch.object(engine, "prepare") as mock_prep:
         for i in range(14):
-            engine.tick(t0 + 90.0 + float(i))
+            engine.tick(t0 + 170.0 + float(i))
         mock_prep.assert_not_called()
         assert engine.yield_collapse_streak == 14
 
-        engine.tick(t0 + 105.0)
+        engine.tick(t0 + 185.0)
         mock_prep.assert_called_once_with(is_realloc=True)
         assert engine.yield_collapse_streak == 0
 
@@ -2662,10 +2662,10 @@ def test_live_engine_underdeployed_capital_triggers_reallocation_and_excludes_de
     engine.side_budgets = {("y1", "bid"): Decimal("50"), ("n1", "bid"): Decimal("50")}
     engine.side_qtys = {("y1", "bid"): Decimal("100"), ("n1", "bid"): Decimal("100")}
     engine.last_prepare_ts = 1000.0
-    engine.underdeployed_streak = 9
+    engine.underdeployed_streak = 29
 
     with patch.object(engine, "prepare") as mock_prepare:
-        engine.tick(1100.0)
+        engine.tick(1200.0)
         mock_prepare.assert_called_once_with(is_realloc=True)
         assert "y1" in engine.degraded_slugs_until
         assert "n1" in engine.degraded_slugs_until
@@ -2861,7 +2861,7 @@ def test_external_sell_cancel_grants_grace_window_and_adopts_manual_sell_above_b
     auth_client.cancel_orders_batch.assert_not_called()
 
 
-def test_untracked_sell_below_breakeven_is_rejected_and_canceled(tmp_path):
+def test_untracked_sell_below_breakeven_is_adopted_and_protected(tmp_path):
     from pmus.risk import RiskGateResult
 
     slug = "62623338983593514042006374122625975153564840035785327772201440284928019729864"
@@ -2887,15 +2887,15 @@ def test_untracked_sell_below_breakeven_is_rejected_and_canceled(tmp_path):
         status="active",
     )
     pos = Position(slug=slug, net_qty=Decimal("79.9911"), avg_price=Decimal("0.566"))
-    bad_sell = LiveOrder("bad-sell-1", slug, "SELL", Decimal("0.550"), Decimal("75"))
+    manual_below_be = LiveOrder("manual-below-be-1", slug, "SELL", Decimal("0.550"), Decimal("75"))
 
-    ledger = Ledger(tmp_path / "test_bad_sell.db")
+    ledger = Ledger(tmp_path / "test_manual_below_be.db")
     ledger.update_position(pos, ts_ms=int((t0 - 60) * 1000))
 
     book = Book(
         slug=slug,
-        bids=(Level(Decimal("0.560"), Decimal("200")),),
-        asks=(Level(Decimal("0.588"), Decimal("200")),),
+        bids=(Level(Decimal("0.540"), Decimal("200")),),
+        asks=(Level(Decimal("0.550"), Decimal("200")),),
         ts_ms=int(t0 * 1000),
         tick_size=Decimal("0.001"),
     )
@@ -2905,13 +2905,10 @@ def test_untracked_sell_below_breakeven_is_rejected_and_canceled(tmp_path):
 
     auth_client = MagicMock()
     auth_client.is_available = True
-    auth_client.get_open_orders.return_value = [bad_sell]
+    auth_client.get_open_orders.return_value = [manual_below_be]
     auth_client.get_fills.return_value = []
     auth_client.get_positions.return_value = [pos]
     auth_client.get_buying_power.return_value = Decimal("200")
-    auth_client.create_orders_batch.side_effect = lambda qs, *a: [
-        LiveOrder("bot-sell-new", q.slug, q.side, q.price, q.qty) for q in qs
-    ]
 
     risk_manager = MagicMock()
     risk_manager.is_kill_switch_active.return_value = False
@@ -2925,7 +2922,7 @@ def test_untracked_sell_below_breakeven_is_rejected_and_canceled(tmp_path):
         public_client=client,
         auth_client=auth_client,
         risk_manager=risk_manager,
-        logger=logging.getLogger("test_bad_sell"),
+        logger=logging.getLogger("test_manual_below_be"),
     )
     engine.target_slugs = [slug]
     engine.markets[slug] = market
@@ -2934,16 +2931,462 @@ def test_untracked_sell_below_breakeven_is_rejected_and_canceled(tmp_path):
 
     engine.tick(t0)
 
-    assert "bad-sell-1" not in engine.manual_sell_order_ids
-    auth_client.cancel_orders_batch.assert_called_once_with([bad_sell])
+    assert "manual-below-be-1" in engine.manual_sell_order_ids
+    auth_client.cancel_orders_batch.assert_not_called()
+    auth_client.create_orders_batch.assert_not_called()
+    open_after = ledger.get_open_orders(slug)
+    assert len(open_after) == 1
+    assert open_after[0].order_id == "manual-below-be-1"
+    assert open_after[0].price == Decimal("0.550")
+
+
+def test_reconcile_minor_upsize_tolerance_hedged_pair_hold_and_baseline_midnight_expiry(tmp_path):
+    from pmus.risk import RiskGateResult
+
+    to_create_up, to_cancel_up, to_keep_up = reconcile_quotes(
+        [LiveOrder("o-up", "yes-1", "BUY_LONG", Decimal("0.49"), Decimal("50"))],
+        [Quote("yes-1", "BUY_LONG", Decimal("0.49"), Decimal("55"))],
+        min_keep_qty=Decimal("20"),
+    )
+    assert to_create_up == []
+    assert to_cancel_up == []
+    assert [o.order_id for o in to_keep_up] == ["o-up"]
+
+    to_create_down, to_cancel_down, to_keep_down = reconcile_quotes(
+        [LiveOrder("o-down", "yes-1", "BUY_LONG", Decimal("0.49"), Decimal("70"))],
+        [Quote("yes-1", "BUY_LONG", Decimal("0.49"), Decimal("60"))],
+        min_keep_qty=Decimal("20"),
+    )
+    assert len(to_create_down) == 1
+    assert to_create_down[0].qty == Decimal("60")
+    assert [o.order_id for o in to_cancel_down] == ["o-down"]
+    assert to_keep_down == []
+
+    now_day1 = datetime(2026, 10, 20, 18, 0, tzinfo=timezone.utc)
+    t0 = now_day1.timestamp()
+    yes_slug = "yes-hedged"
+    no_slug = "no-hedged"
+    yes_market = Market(
+        slug=yes_slug,
+        event_id="ev-h",
+        category="politics",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    no_market = Market(
+        slug=no_slug,
+        event_id="ev-h",
+        category="politics",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    yes_win = IncentiveWindow(
+        slug=yes_slug,
+        program_id="g-h",
+        pool_usd=Decimal("100"),
+        discount=Decimal("0"),
+        target_size=Decimal("20"),
+        max_spread=Decimal("0.03"),
+        start=now_day1 - timedelta(hours=2),
+        end=now_day1 + timedelta(days=30),
+        status="active",
+    )
+    no_win = IncentiveWindow(
+        slug=no_slug,
+        program_id="g-h",
+        pool_usd=Decimal("100"),
+        discount=Decimal("0"),
+        target_size=Decimal("20"),
+        max_spread=Decimal("0.03"),
+        start=now_day1 - timedelta(hours=2),
+        end=now_day1 + timedelta(days=30),
+        status="active",
+    )
+    yes_book = Book(
+        slug=yes_slug,
+        bids=(Level(Decimal("0.48"), Decimal("500")), Level(Decimal("0.47"), Decimal("500"))),
+        asks=(Level(Decimal("0.50"), Decimal("500")), Level(Decimal("0.51"), Decimal("500"))),
+        ts_ms=int(t0 * 1000),
+        tick_size=Decimal("0.01"),
+    )
+    no_book = Book(
+        slug=no_slug,
+        bids=(Level(Decimal("0.50"), Decimal("500")), Level(Decimal("0.49"), Decimal("500"))),
+        asks=(Level(Decimal("0.52"), Decimal("500")), Level(Decimal("0.53"), Decimal("500"))),
+        ts_ms=int(t0 * 1000),
+        tick_size=Decimal("0.01"),
+    )
+
+    ledger = Ledger(tmp_path / "test_hedged_and_baseline.db")
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f-loss-d1-b",
+            order_id="loss-day1-buy",
+            slug="loss-mkt-1",
+            side="BUY_LONG",
+            price=Decimal("0.60"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=int((t0 - 600) * 1000),
+        )
+    )
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f-loss-d1-s",
+            order_id="loss-day1-sell",
+            slug="loss-mkt-1",
+            side="SELL_LONG",
+            price=Decimal("0.30"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=int((t0 - 300) * 1000),
+        )
+    )
+
+    yes_pos = Position(slug=yes_slug, net_qty=Decimal("40"), avg_price=Decimal("0.52"))
+    no_pos = Position(slug=no_slug, net_qty=Decimal("40"), avg_price=Decimal("0.47"))
+
+    client = MagicMock()
+    client.fetch_books_batch.return_value = {yes_slug: yes_book, no_slug: no_book}
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = [yes_pos, no_pos]
+    auth_client.get_buying_power.return_value = Decimal("200")
+    auth_client.create_orders_batch.return_value = []
+
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200"),
+        max_per_market=Decimal("50"),
+        daily_loss_stop=Decimal("20"),
+        daily_loss_baseline=Decimal("50"),
+    )
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logging.getLogger("test_hedged_and_baseline"),
+    )
+    engine.target_slugs = [yes_slug, no_slug]
+    engine.paired_slugs = {yes_slug, no_slug}
+    engine.condition_pairs = [(yes_slug, no_slug)]
+    engine.markets = {yes_slug: yes_market, no_slug: no_market}
+    engine.active_windows = {yes_slug: yes_win, no_slug: no_win}
+    engine.side_budgets = {
+        (yes_slug, "bid"): Decimal("0"),
+        (yes_slug, "ask"): Decimal("0"),
+        (no_slug, "bid"): Decimal("0"),
+        (no_slug, "ask"): Decimal("0"),
+    }
+
+    engine.tick(t0)
+    assert engine.daily_loss_stop_tripped is False
+    auth_client.create_orders_batch.assert_not_called()
+
+    t1 = t0 + 86400.0
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f-loss-d2-b",
+            order_id="loss-day2-buy",
+            slug="loss-mkt-2",
+            side="BUY_LONG",
+            price=Decimal("0.55"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=int((t1 - 600) * 1000),
+        )
+    )
+    ledger.record_fill(
+        ShadowFill(
+            fill_id="f-loss-d2-s",
+            order_id="loss-day2-sell",
+            slug="loss-mkt-2",
+            side="SELL_LONG",
+            price=Decimal("0.30"),
+            qty=Decimal("100"),
+            fee=Decimal("0"),
+            is_maker=True,
+            ts_ms=int((t1 - 300) * 1000),
+        )
+    )
+
+    engine.tick(t1)
+    assert engine.daily_loss_stop_tripped is True
+
+
+def test_live_engine_tick_honors_dynamic_daily_loss_stop(tmp_path):
+    from pmus.risk import RiskManager
+
+    settings = Settings(
+        venue="global",
+        data_dir=tmp_path,
+        total_budget=Decimal("150"),
+        max_per_market=Decimal("50"),
+        daily_loss_stop=Decimal("10"),
+    )
+    ledger = Ledger(tmp_path / "dyn_stop.db")
+    risk_manager = RiskManager(settings)
+
+    t0 = datetime(2026, 10, 24, 15, 0, tzinfo=timezone.utc).timestamp()
+    ledger.record_fill(
+        ShadowFill("fb", "ob", "m1", "BUY_LONG", Decimal("0.50"), Decimal("100"), Decimal("0"), True, int((t0 - 600) * 1000))
+    )
+    ledger.record_fill(
+        ShadowFill("fs", "os", "m1", "SELL_LONG", Decimal("0.35"), Decimal("100"), Decimal("0"), True, int((t0 - 300) * 1000))
+    )
+
+    public_client = MagicMock()
+    public_client.fetch_books_batch.return_value = {"m1": Book("m1", (), (), 1000)}
+    auth_client = MagicMock()
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.cancel_all_scoped.return_value = ["open-1"]
+    notifier = MagicMock()
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logging.getLogger("test_dyn_loss_stop"),
+    )
+    engine.notifier = notifier
+    engine.target_slugs = ["m1"]
+
+    risk_manager.update_dynamic_limits(daily_loss_stop=Decimal("20"))
+    engine.tick(t0)
+    assert engine.daily_loss_stop_tripped is False
+    auth_client.cancel_all_scoped.assert_not_called()
+
+    risk_manager.update_dynamic_limits(daily_loss_stop=Decimal("12"))
+    engine.tick(t0 + 1.0)
+
+    assert engine.daily_loss_stop_tripped is True
+    notifier.notify_daily_loss_stop.assert_called_once_with(Decimal("15.00"), Decimal("12"))
+    auth_client.cancel_all_scoped.assert_called_once_with(["m1"])
+
+
+def test_live_engine_underdeployed_capital_waits_for_30_tick_hysteresis():
+    from pmus.risk import RiskGateResult
+
+    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("20"), Decimal("0.04"), datetime.now(timezone.utc), None, "active")
+    client = MagicMock()
+    client.fetch_books_batch.return_value = {"y1": Book("y1", (), (), 1000), "n1": Book("n1", (), (), 1000)}
+    auth_client = MagicMock()
+    auth_client.get_buying_power.return_value = Decimal("200")
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_fills.return_value = []
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = []
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    engine = LiveEngine(
+        settings=Settings(venue="global", total_budget=Decimal("200"), max_per_market=Decimal("50")),
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logging.getLogger("test_underdeployed_hysteresis"),
+    )
+    engine.target_slugs = ["y1", "n1"]
+    engine.active_windows = {"y1": w, "n1": w}
+    engine.paired_slugs = frozenset({"y1", "n1"})
+    engine.condition_pairs = (("y1", "n1"),)
+    engine.side_budgets = {("y1", "bid"): Decimal("50"), ("n1", "bid"): Decimal("50")}
+    engine.side_qtys = {("y1", "bid"): Decimal("100"), ("n1", "bid"): Decimal("100")}
+    engine.last_prepare_ts = 1000.0
+    engine.underdeployed_streak = 20
+
+    with patch.object(engine, "prepare") as mock_prepare:
+        engine.tick(1200.0)
+        mock_prepare.assert_not_called()
+        assert engine.underdeployed_streak == 21
+
+
+def test_rotated_out_hedged_pair_retains_pairing_across_prepare_reallocation(tmp_path):
+    from pmus.risk import RiskGateResult
+    from pmus.strategy.market_selector import CandidateSide
+
+    now = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
+    t0 = now.timestamp()
+    mkt_c1_y = Market("c1-yes", "e1", "politics", Decimal("0.01"), Decimal("5"), True)
+    mkt_c1_n = Market("c1-no", "e1", "politics", Decimal("0.01"), Decimal("5"), True)
+    mkt_c2_y = Market("c2-yes", "e2", "politics", Decimal("0.01"), Decimal("5"), True)
+    mkt_c2_n = Market("c2-no", "e2", "politics", Decimal("0.01"), Decimal("5"), True)
+    market_map = {m.slug: m for m in (mkt_c1_y, mkt_c1_n, mkt_c2_y, mkt_c2_n)}
+
+    w_c1_y = IncentiveWindow("c1-yes", "p1", Decimal("100"), Decimal("0"), Decimal("20"), Decimal("0.03"), now - timedelta(hours=1), now + timedelta(days=10), "active")
+    w_c1_n = IncentiveWindow("c1-no", "p1", Decimal("100"), Decimal("0"), Decimal("20"), Decimal("0.03"), now - timedelta(hours=1), now + timedelta(days=10), "active")
+    w_c2_y = IncentiveWindow("c2-yes", "p2", Decimal("200"), Decimal("0"), Decimal("20"), Decimal("0.03"), now - timedelta(hours=1), now + timedelta(days=10), "active")
+    w_c2_n = IncentiveWindow("c2-no", "p2", Decimal("200"), Decimal("0"), Decimal("20"), Decimal("0.03"), now - timedelta(hours=1), now + timedelta(days=10), "active")
+
+    book_c1_y = Book("c1-yes", (Level(Decimal("0.30"), Decimal("600")), Level(Decimal("0.29"), Decimal("600"))), (Level(Decimal("0.31"), Decimal("600")),), int(t0 * 1000), tick_size=Decimal("0.01"))
+    book_c1_n = Book("c1-no", (Level(Decimal("0.68"), Decimal("600")), Level(Decimal("0.67"), Decimal("600"))), (Level(Decimal("0.69"), Decimal("600")),), int(t0 * 1000), tick_size=Decimal("0.01"))
+    book_c2_y = Book("c2-yes", (Level(Decimal("0.48"), Decimal("600")), Level(Decimal("0.47"), Decimal("600"))), (Level(Decimal("0.51"), Decimal("600")),), int(t0 * 1000), tick_size=Decimal("0.01"))
+    book_c2_n = Book("c2-no", (Level(Decimal("0.48"), Decimal("600")), Level(Decimal("0.47"), Decimal("600"))), (Level(Decimal("0.51"), Decimal("600")),), int(t0 * 1000), tick_size=Decimal("0.01"))
+    all_books = {"c1-yes": book_c1_y, "c1-no": book_c1_n, "c2-yes": book_c2_y, "c2-no": book_c2_n}
+
+    ledger = Ledger(tmp_path / "rot_hedged.db")
+    public_client = MagicMock()
+    public_client.fetch_book.side_effect = lambda slug: all_books[slug]
+    public_client.fetch_books_batch.return_value = all_books
+    public_client.get_market.side_effect = lambda slug: market_map[slug]
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("200")
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.create_orders_batch.side_effect = lambda qs, *a: [
+        LiveOrder(f"ord-{q.slug}-{q.side}", q.slug, q.side, q.price, q.qty) for q in qs
+    ]
+
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    engine = LiveEngine(
+        settings=Settings(venue="global", total_budget=Decimal("200"), max_per_market=Decimal("100")),
+        ledger=ledger,
+        public_client=public_client,
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logging.getLogger("test_rot_hedged"),
+    )
+    engine.markets.update(market_map)
+
+    c1_cand_y = CandidateSide("c1-yes", "e1", "bid", Decimal("0.48"), Decimal("0"), Decimal("40"), Decimal("19.20"), Decimal("0.0005"), Decimal("0.00002"), "global", Decimal("100"), Decimal("86400"))
+    c1_cand_n = CandidateSide("c1-no", "e1", "bid", Decimal("0.48"), Decimal("0"), Decimal("40"), Decimal("19.20"), Decimal("0.0005"), Decimal("0.00002"), "global", Decimal("100"), Decimal("86400"))
+    alloc_1 = AllocationResult(
+        candidates=[c1_cand_y, c1_cand_n],
+        selected_candidates=[c1_cand_y, c1_cand_n],
+        selected_slugs=["c1-yes", "c1-no"],
+        side_budgets={("c1-yes", "bid"): Decimal("19.20"), ("c1-no", "bid"): Decimal("19.20")},
+        side_qtys={("c1-yes", "bid"): Decimal("40"), ("c1-no", "bid"): Decimal("40")},
+        unfunded_reason=None,
+        paired_slugs=frozenset({"c1-yes", "c1-no"}),
+        condition_pairs=(("c1-yes", "c1-no"),),
+    )
+    with patch("pmus.engine.allocate_markets", return_value=({"c1-yes": w_c1_y, "c1-no": w_c1_n}, alloc_1)):
+        engine.prepare(is_realloc=False)
+
+    pos_c1_y = Position("c1-yes", Decimal("40"), Decimal("0.52"))
+    pos_c1_n = Position("c1-no", Decimal("40"), Decimal("0.46"))
+    ledger.update_position(pos_c1_y, ts_ms=int(t0 * 1000))
+    ledger.update_position(pos_c1_n, ts_ms=int(t0 * 1000))
+    auth_client.get_positions.return_value = [pos_c1_y, pos_c1_n]
+
+    c2_cand_y = CandidateSide("c2-yes", "e2", "bid", Decimal("0.48"), Decimal("0"), Decimal("50"), Decimal("24.00"), Decimal("0.0010"), Decimal("0.00004"), "global", Decimal("200"), Decimal("86400"))
+    c2_cand_n = CandidateSide("c2-no", "e2", "bid", Decimal("0.48"), Decimal("0"), Decimal("50"), Decimal("24.00"), Decimal("0.0010"), Decimal("0.00004"), "global", Decimal("200"), Decimal("86400"))
+    alloc_2 = AllocationResult(
+        candidates=[c2_cand_y, c2_cand_n],
+        selected_candidates=[c2_cand_y, c2_cand_n],
+        selected_slugs=["c2-yes", "c2-no"],
+        side_budgets={("c2-yes", "bid"): Decimal("24.00"), ("c2-no", "bid"): Decimal("24.00")},
+        side_qtys={("c2-yes", "bid"): Decimal("50"), ("c2-no", "bid"): Decimal("50")},
+        unfunded_reason=None,
+        paired_slugs=frozenset({"c2-yes", "c2-no"}),
+        condition_pairs=(("c2-yes", "c2-no"),),
+    )
+    with patch("pmus.engine.allocate_markets", return_value=({"c2-yes": w_c2_y, "c2-no": w_c2_n}, alloc_2)):
+        engine.prepare(is_realloc=True)
+
+    assert {"c1-yes", "c1-no"} <= set(engine.paired_slugs)
+    assert ("c1-yes", "c1-no") in engine.condition_pairs
+    assert {"c1-yes", "c1-no"} <= set(engine.target_slugs)
+
+    auth_client.create_orders_batch.reset_mock()
+    engine.tick(t0 + 10.0)
+
+    submitted_quotes = [
+        q for call in auth_client.create_orders_batch.call_args_list for q in call.args[0]
+    ]
+    assert not any(q.slug in ("c1-yes", "c1-no") and q.side == "SELL_LONG" for q in submitted_quotes)
+
+
+def test_sell_hysteresis_does_not_block_downward_stop_unwind(tmp_path):
+    from pmus.risk import RiskGateResult
+
+    slug = "stop-unwind-slug"
+    now = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
+    market = Market(slug=slug, event_id="ev-stop", category="politics", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
+    window = IncentiveWindow(slug, "unwind", Decimal("0"), Decimal("0"), Decimal("20"), Decimal("0.03"), now - timedelta(hours=1), now + timedelta(hours=23), "active")
+    pos = Position(slug=slug, net_qty=Decimal("50"), avg_price=Decimal("0.50"))
+    old_sell = LiveOrder("ord-stop-old", slug, "SELL_LONG", Decimal("0.32"), Decimal("50"))
+
+    ledger = Ledger(tmp_path / "stop_hyst.db")
+    ledger.update_position(pos, ts_ms=1000)
+    ledger.record_order(old_sell, status="OPEN", ts_ms=1000)
+
+    auth_client = MagicMock()
+    auth_client.create_orders_batch.side_effect = lambda qs, *a: [
+        LiveOrder("ord-stop-new", q.slug, q.side, q.price, q.qty) for q in qs
+    ]
+    risk_manager = MagicMock()
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+
+    engine = LiveEngine(
+        settings=Settings(venue="global", total_budget=Decimal("200"), max_per_market=Decimal("50")),
+        ledger=ledger,
+        public_client=MagicMock(),
+        auth_client=auth_client,
+        risk_manager=risk_manager,
+        logger=logging.getLogger("test_stop_hyst"),
+    )
+    engine.target_slugs = [slug]
+    engine.markets[slug] = market
+    engine.active_windows[slug] = window
+    engine.side_budgets = {(slug, "bid"): Decimal("0"), (slug, "ask"): Decimal("0")}
+
+    book_step_down = Book(
+        slug=slug,
+        bids=(Level(Decimal("0.30"), Decimal("600")), Level(Decimal("0.29"), Decimal("600"))),
+        asks=(Level(Decimal("0.31"), Decimal("600")),),
+        ts_ms=2000,
+        tick_size=Decimal("0.01"),
+    )
+    engine._quote_market(
+        slug=slug,
+        now_dt=now,
+        now_ts=1001.0,
+        now_ms=1001000,
+        exchange_open=[old_sell],
+        live_positions={slug: pos},
+        buying_power=Decimal("200"),
+        realized_loss_today=Decimal("0"),
+        book=book_step_down,
+    )
+
+    auth_client.cancel_orders_batch.assert_called_once()
+    canceled_ids = [o.order_id for o in auth_client.cancel_orders_batch.call_args[0][0]]
+    assert canceled_ids == ["ord-stop-old"]
     auth_client.create_orders_batch.assert_called_once()
-    created_q = auth_client.create_orders_batch.call_args[0][0][0]
-    assert created_q.side == "SELL_LONG"
-    assert created_q.price >= Decimal("0.566")
-
-
-
-
-
-
-
+    created_quotes = auth_client.create_orders_batch.call_args[0][0]
+    assert len(created_quotes) == 1
+    assert created_quotes[0].side == "SELL_LONG"
+    assert created_quotes[0].price == Decimal("0.31")

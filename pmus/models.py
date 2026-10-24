@@ -44,6 +44,10 @@ class IncentiveWindow:
     status: str
     period: str = "early"
     event_start_time: datetime | None = None
+    accepting_order_timestamp: datetime | None = None
+    seconds_delay: int = 0
+    accepting_orders: bool = True
+    archived: bool = False
 
 @dataclass(frozen=True)
 class ConditionMarket:
@@ -53,6 +57,12 @@ class ConditionMarket:
     yes: Market
     no: Market
     window: IncentiveWindow
+    neg_risk_market_id: str = ""
+    tags: tuple[str, ...] = ()
+    accepting_order_timestamp: datetime | None = None
+    seconds_delay: int = 0
+    accepting_orders: bool = True
+    archived: bool = False
 
 @dataclass(frozen=True)
 class Quote:
@@ -68,6 +78,10 @@ class LiveOrder:
     side: Side
     price: Decimal
     qty_open: Decimal
+
+    @property
+    def remaining_qty(self) -> Decimal:
+        return self.qty_open
 
 @dataclass(frozen=True)
 class Position:
@@ -109,3 +123,4 @@ class LipSnapshot:
     reward_usd: Decimal
     bid_qualifies: bool = False
     ask_qualifies: bool = False
+    dt_sec: int = 1

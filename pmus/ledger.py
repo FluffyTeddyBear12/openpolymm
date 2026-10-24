@@ -80,7 +80,8 @@ class Ledger:
                     qualifies INTEGER NOT NULL,
                     reward_usd TEXT NOT NULL,
                     bid_qualifies INTEGER DEFAULT 0,
-                    ask_qualifies INTEGER DEFAULT 0
+                    ask_qualifies INTEGER DEFAULT 0,
+                    dt_sec INTEGER NOT NULL DEFAULT 1
                 )
                 """
             )
@@ -90,6 +91,8 @@ class Ledger:
                 conn.execute("ALTER TABLE lip_snapshots ADD COLUMN bid_qualifies INTEGER DEFAULT 0")
             if cols and "ask_qualifies" not in cols:
                 conn.execute("ALTER TABLE lip_snapshots ADD COLUMN ask_qualifies INTEGER DEFAULT 0")
+            if cols and "dt_sec" not in cols:
+                conn.execute("ALTER TABLE lip_snapshots ADD COLUMN dt_sec INTEGER NOT NULL DEFAULT 1")
 
             conn.execute(
                 """
@@ -136,9 +139,9 @@ class Ledger:
                     """
                     SELECT
                         COALESCE(SUM(CAST(reward_usd AS NUMERIC)), 0) AS total_reward,
-                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS qual_sec,
-                        COALESCE(SUM(CASE WHEN bid_qualifies = 1 THEN 1 ELSE 0 END), 0) AS bid_qual_sec,
-                        COALESCE(SUM(CASE WHEN ask_qualifies = 1 THEN 1 ELSE 0 END), 0) AS ask_qual_sec
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN MAX(1, COALESCE(dt_sec, 1)) ELSE 0 END), 0) AS qual_sec,
+                        COALESCE(SUM(CASE WHEN bid_qualifies = 1 THEN MAX(1, COALESCE(dt_sec, 1)) ELSE 0 END), 0) AS bid_qual_sec,
+                        COALESCE(SUM(CASE WHEN ask_qualifies = 1 THEN MAX(1, COALESCE(dt_sec, 1)) ELSE 0 END), 0) AS ask_qual_sec
                     FROM lip_snapshots
                     """
                 ).fetchone()
@@ -247,15 +250,31 @@ class Ledger:
             )
             return cursor.rowcount == 1
 
-    def record_lip_snapshot(self, snap: LipSnapshot) -> None:
+    def record_lip_snapshot(self, snap: LipSnapshot, elapsed_sec: Decimal | None = None) -> None:
         with self._get_connection() as conn:
+            dt_sec = Decimal("1")
+            if elapsed_sec is not None and elapsed_sec > Decimal("0"):
+                dt_sec = min(elapsed_sec, Decimal("90"))
+            else:
+                prev = conn.execute(
+                    "SELECT ts_ms FROM lip_latest WHERE slug = ?",
+                    (snap.slug,),
+                ).fetchone()
+                if prev is not None and snap.ts_ms > int(prev["ts_ms"]):
+                    raw_dt = Decimal(str(snap.ts_ms - int(prev["ts_ms"]))) / Decimal("1000")
+                    if Decimal("1.5") < raw_dt <= Decimal("300"):
+                        dt_sec = min(raw_dt, Decimal("90"))
+                elif getattr(snap, "dt_sec", 1) > 1:
+                    dt_sec = min(Decimal(str(snap.dt_sec)), Decimal("90"))
+            accrued_reward = snap.reward_usd * dt_sec
+            qual_inc = max(1, int(dt_sec.to_integral_value()))
             conn.execute(
                 """
                 INSERT INTO lip_snapshots (
                     ts_ms, slug, program_id, trader_bid_score, total_bid_score,
                     trader_ask_score, total_ask_score, qualifies, reward_usd,
-                    bid_qualifies, ask_qualifies
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    bid_qualifies, ask_qualifies, dt_sec
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     snap.ts_ms,
@@ -266,9 +285,10 @@ class Ledger:
                     str(snap.trader_ask_score),
                     str(snap.total_ask_score),
                     1 if snap.qualifies else 0,
-                    str(snap.reward_usd),
+                    str(accrued_reward),
                     1 if snap.bid_qualifies else 0,
                     1 if snap.ask_qualifies else 0,
+                    qual_inc,
                 ),
             )
             conn.execute(
@@ -307,7 +327,7 @@ class Ledger:
             )
             cur_row = conn.execute("SELECT total_reward FROM lip_stats_summary WHERE id = 1").fetchone()
             if cur_row is not None:
-                new_total = str(Decimal(str(cur_row["total_reward"])) + snap.reward_usd)
+                new_total = str(Decimal(str(cur_row["total_reward"])) + accrued_reward)
                 conn.execute(
                     """
                     UPDATE lip_stats_summary
@@ -319,9 +339,9 @@ class Ledger:
                     """,
                     (
                         new_total,
-                        1 if snap.qualifies else 0,
-                        1 if snap.bid_qualifies else 0,
-                        1 if snap.ask_qualifies else 0,
+                        qual_inc if snap.qualifies else 0,
+                        qual_inc if snap.bid_qualifies else 0,
+                        qual_inc if snap.ask_qualifies else 0,
                     ),
                 )
             else:
@@ -331,10 +351,10 @@ class Ledger:
                     VALUES (1, ?, ?, ?, ?)
                     """,
                     (
-                        str(snap.reward_usd),
-                        1 if snap.qualifies else 0,
-                        1 if snap.bid_qualifies else 0,
-                        1 if snap.ask_qualifies else 0,
+                        str(accrued_reward),
+                        qual_inc if snap.qualifies else 0,
+                        qual_inc if snap.bid_qualifies else 0,
+                        qual_inc if snap.ask_qualifies else 0,
                     ),
                 )
 
@@ -393,18 +413,21 @@ class Ledger:
             cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
             cols = [row["name"] for row in cursor.fetchall()]
             has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
+            has_dt_col = "dt_sec" in cols
+            dt_select = "COALESCE(dt_sec, 1) AS dt_sec" if has_dt_col else "1 AS dt_sec"
 
             if has_side_cols:
-                query = """
+                query = f"""
                     SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
                            trader_ask_score, total_ask_score, qualifies, reward_usd,
-                           bid_qualifies, ask_qualifies
+                           bid_qualifies, ask_qualifies, {dt_select}
                     FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
                 """
             else:
-                query = """
+                query = f"""
                     SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
-                           trader_ask_score, total_ask_score, qualifies, reward_usd
+                           trader_ask_score, total_ask_score, qualifies, reward_usd,
+                           {dt_select}
                     FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
                 """
 
@@ -422,6 +445,7 @@ class Ledger:
                     reward_usd=Decimal(r["reward_usd"]),
                     bid_qualifies=bool(r["bid_qualifies"]) if has_side_cols else bool(r["qualifies"]),
                     ask_qualifies=bool(r["ask_qualifies"]) if has_side_cols else bool(r["qualifies"]),
+                    dt_sec=max(1, int(r["dt_sec"])),
                 )
                 for r in rows
             ]
@@ -449,24 +473,26 @@ class Ledger:
             cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
             cols = [row["name"] for row in cursor.fetchall()]
             has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
+            has_dt_col = "dt_sec" in cols
+            dt_expr = "MAX(1, COALESCE(dt_sec, 1))" if has_dt_col else "1"
 
             if has_side_cols:
-                query = """
+                query = f"""
                     SELECT
                         COALESCE(SUM(CAST(reward_usd AS NUMERIC)), 0) AS total_reward,
-                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS qual_sec,
-                        COALESCE(SUM(CASE WHEN bid_qualifies = 1 THEN 1 ELSE 0 END), 0) AS bid_qual_sec,
-                        COALESCE(SUM(CASE WHEN ask_qualifies = 1 THEN 1 ELSE 0 END), 0) AS ask_qual_sec
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN {dt_expr} ELSE 0 END), 0) AS qual_sec,
+                        COALESCE(SUM(CASE WHEN bid_qualifies = 1 THEN {dt_expr} ELSE 0 END), 0) AS bid_qual_sec,
+                        COALESCE(SUM(CASE WHEN ask_qualifies = 1 THEN {dt_expr} ELSE 0 END), 0) AS ask_qual_sec
                     FROM lip_snapshots
                     WHERE ts_ms >= ?
                 """
             else:
-                query = """
+                query = f"""
                     SELECT
                         COALESCE(SUM(CAST(reward_usd AS NUMERIC)), 0) AS total_reward,
-                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS qual_sec,
-                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS bid_qual_sec,
-                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN 1 ELSE 0 END), 0) AS ask_qual_sec
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN {dt_expr} ELSE 0 END), 0) AS qual_sec,
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN {dt_expr} ELSE 0 END), 0) AS bid_qual_sec,
+                        COALESCE(SUM(CASE WHEN qualifies = 1 THEN {dt_expr} ELSE 0 END), 0) AS ask_qual_sec
                     FROM lip_snapshots
                     WHERE ts_ms >= ?
                 """
@@ -563,22 +589,43 @@ class Ledger:
                 )
             return result
 
-    def get_realized_loss_today(self, now: datetime) -> Decimal:
-        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_ms = int(start_of_day.timestamp() * 1000)
-        fills = self.get_fills_since(start_ms)
-        if not fills:
+    def get_realized_pnl_since(self, since_ms: int, include_fees: bool = True) -> Decimal:
+        recent_fills = self.get_fills_since(since_ms)
+        if not recent_fills:
             return Decimal("0")
 
-        total_realized_pnl = Decimal("0")
-        market_fills: dict[str, list[ShadowFill]] = {}
-        for f in fills:
-            market_fills.setdefault(f.slug, []).append(f)
+        slugs = sorted({f.slug for f in recent_fills})
+        placeholders = ",".join("?" for _ in slugs)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT fill_id, order_id, slug, side, price, qty, fee, is_maker, ts_ms
+                FROM fills WHERE slug IN ({placeholders}) ORDER BY ts_ms ASC, rowid ASC
+                """,
+                tuple(slugs),
+            ).fetchall()
 
-        for slug, m_fills in market_fills.items():
+        market_fills: dict[str, list[ShadowFill]] = {}
+        for r in rows:
+            fill = ShadowFill(
+                fill_id=r["fill_id"],
+                order_id=r["order_id"],
+                slug=r["slug"],
+                side=r["side"],
+                price=Decimal(r["price"]),
+                qty=Decimal(r["qty"]),
+                fee=Decimal(r["fee"]),
+                is_maker=bool(r["is_maker"]),
+                ts_ms=r["ts_ms"],
+            )
+            market_fills.setdefault(fill.slug, []).append(fill)
+
+        total_realized_pnl = Decimal("0")
+        for m_fills in market_fills.values():
             pos_qty = Decimal("0")
             avg_px = Decimal("0")
             for f in m_fills:
+                in_window = f.ts_ms >= since_ms
                 if f.side in ("BUY_LONG", "BUY_SHORT"):
                     if pos_qty >= Decimal("0"):
                         new_qty = pos_qty + f.qty
@@ -587,8 +634,8 @@ class Ledger:
                         pos_qty = new_qty
                     else:
                         close_qty = min(f.qty, abs(pos_qty))
-                        pnl = close_qty * (avg_px - f.price)
-                        total_realized_pnl += pnl
+                        if in_window:
+                            total_realized_pnl += close_qty * (avg_px - f.price)
                         pos_qty += f.qty
                         if pos_qty > Decimal("0"):
                             avg_px = f.price
@@ -600,15 +647,21 @@ class Ledger:
                         pos_qty = -new_qty
                     else:
                         close_qty = min(f.qty, pos_qty)
-                        pnl = close_qty * (f.price - avg_px)
-                        total_realized_pnl += pnl
+                        if in_window:
+                            total_realized_pnl += close_qty * (f.price - avg_px)
                         pos_qty -= f.qty
                         if pos_qty < Decimal("0"):
                             avg_px = f.price
 
-                total_realized_pnl -= f.fee
+                if in_window and include_fees:
+                    total_realized_pnl -= f.fee
 
+        return total_realized_pnl
+
+    def get_realized_loss_today(self, now: datetime) -> Decimal:
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_ms = int(start_of_day.timestamp() * 1000)
+        total_realized_pnl = self.get_realized_pnl_since(start_ms, include_fees=True)
         if total_realized_pnl < Decimal("0"):
             return abs(total_realized_pnl)
         return Decimal("0")
-

@@ -296,3 +296,18 @@ def test_pair_quote_prices_caps_at_096_on_wide_spread_and_keeps_098_on_tight_spr
     assert prices_milli[0] + prices_milli[1] <= Decimal("0.97")
 
 
+def test_bid_price_steps_back_behind_thin_10_usd_top_bid_on_standard_004_spread():
+    w = window(target="20", max_spread=Decimal("0.04"))
+    b_thin = book([("0.25", "40"), ("0.24", "20"), ("0.23", "500")], [("0.26", "500")])
+    assert global_rewards.bid_price(b_thin, w, Decimal("0.01")) == Decimal("0.23")
+
+    b_cliff_004 = book([("0.25", "40"), ("0.23", "500")], [("0.26", "500")])
+    assert global_rewards.bid_price(b_cliff_004, w, Decimal("0.01")) == Decimal("0.23")
+
+
+def test_bid_price_steps_back_one_tick_on_thin_top_notional_with_003_max_spread():
+    w = window(target="20", max_spread=Decimal("0.03"))
+    b = book([("0.50", "30"), ("0.49", "100")], [("0.52", "100")])
+    assert global_rewards.adjusted_mid(b, w.target_size) == Decimal("0.51")
+    assert global_rewards.bid_price(b, w, Decimal("0.01")) == Decimal("0.49")
+

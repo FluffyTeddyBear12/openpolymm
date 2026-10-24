@@ -14,14 +14,11 @@ from pmus.risk import RiskManager
 from pmus.shadow import check_paper_fills, estimate_global_lip_score, estimate_global_pair_score, estimate_lip_score
 from pmus.strategy import global_rewards
 from pmus.strategy.condition_selector import allocate_conditions, targets_to_allocation
-from pmus.strategy.lip_quoter import desired_quotes
+from pmus.strategy.lip_quoter import ACTIVE_STOP_UNWIND_MID_RATIO, desired_quotes
 from pmus.strategy.market_selector import AllocationResult, greedy_allocate
 from pmus.venue import AuthenticatedClient, PublicGatewayClient
 
 MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
-
-if not hasattr(LiveOrder, "remaining_qty"):
-    setattr(LiveOrder, "remaining_qty", property(lambda self: self.qty_open))
 
 CANDIDATE_BOOK_LIMIT = 3000
 FALLBACK_BOOK_CONDITION_LIMIT = 150
@@ -29,18 +26,36 @@ FILL_LOOKBACK_SECONDS = 60
 FILL_WINDOW_SECONDS = 3600
 LOCAL_FILL_POSITION_TTL_SECONDS = 60.0
 REALLOCATE_SECONDS = 3600
-YIELD_COLLAPSE_COOLDOWN_SECONDS = 90.0
+YIELD_COLLAPSE_COOLDOWN_SECONDS = 180.0
 YIELD_COLLAPSE_RATIO = Decimal("0.55")
 YIELD_COLLAPSE_TICKS = 15
-CAPITAL_UTILIZATION_RATIO = Decimal("0.92")
-CAPITAL_UNDERDEPLOYED_TICKS = 10
+CAPITAL_UTILIZATION_RATIO = Decimal("0.75")
+CAPITAL_UNDERDEPLOYED_TICKS = 30
 DEGRADED_SLUG_COOLDOWN_SECONDS = 300.0
 MANUAL_SELL_EDIT_GRACE_SECONDS = 90.0
 SELL_HYSTERESIS_BAND = Decimal("0.015")
+RETAINED_QTY_TOLERANCE_RATIO = Decimal("0.20")
+RETAINED_QTY_TOLERANCE_MAX_SHARES = Decimal("15")
+
+
+def _qty_within_tolerance(
+    existing_qty: Decimal,
+    desired_qty: Decimal,
+    min_keep_qty: Decimal = Decimal("0"),
+) -> bool:
+    if existing_qty < max(Decimal("1"), min_keep_qty) or desired_qty < existing_qty:
+        return False
+    qty_diff = desired_qty - existing_qty
+    return (
+        qty_diff <= RETAINED_QTY_TOLERANCE_MAX_SHARES
+        and qty_diff <= (desired_qty * RETAINED_QTY_TOLERANCE_RATIO)
+    )
+
 
 def reconcile_quotes(
     current_orders: list[LiveOrder],
     desired_quotes_list: list[Quote],
+    min_keep_qty: Decimal = Decimal("0"),
 ) -> tuple[list[Quote], list[LiveOrder], list[LiveOrder]]:
     to_keep: list[LiveOrder] = []
     to_cancel: list[LiveOrder] = []
@@ -49,14 +64,23 @@ def reconcile_quotes(
     remaining_current = list(current_orders)
 
     for quote in desired_quotes_list:
-        matched = False
+        matched_idx: int | None = None
         for i, order in enumerate(remaining_current):
             if order.side == quote.side and order.price == quote.price and order.qty_open == quote.qty:
-                to_keep.append(order)
-                remaining_current.pop(i)
-                matched = True
+                matched_idx = i
                 break
-        if not matched:
+        if matched_idx is None and quote.side in ("BUY", "BUY_LONG", "BUY_SHORT"):
+            for i, order in enumerate(remaining_current):
+                if (
+                    order.side == quote.side
+                    and order.price == quote.price
+                    and _qty_within_tolerance(order.qty_open, quote.qty, min_keep_qty=min_keep_qty)
+                ):
+                    matched_idx = i
+                    break
+        if matched_idx is not None:
+            to_keep.append(remaining_current.pop(matched_idx))
+        else:
             to_create.append(quote)
 
     to_cancel.extend(remaining_current)
@@ -489,6 +513,55 @@ class LiveEngine:
         self.manual_sell_order_ids: set[str] = set()
         self.manual_sell_cooldown_until: dict[str, float] = {}
         self.recent_cancel_orders: dict[str, tuple[LiveOrder, float]] = {}
+        self.baseline_utc_date: str = getattr(settings, "daily_loss_baseline_date", "").strip()
+        self.known_sibling_by_slug: dict[str, str] = {}
+        self.known_pair_by_slug: dict[str, tuple[str, str]] = {}
+        self._last_tick_ts: float = 0.0
+
+    def _record_known_pair(self, yes_slug: str, no_slug: str) -> None:
+        if not yes_slug or not no_slug or yes_slug == no_slug:
+            return
+        pair = (yes_slug, no_slug)
+        self.known_sibling_by_slug[yes_slug] = no_slug
+        self.known_sibling_by_slug[no_slug] = yes_slug
+        self.known_pair_by_slug[yes_slug] = pair
+        self.known_pair_by_slug[no_slug] = pair
+
+    def _sync_known_siblings(self, alloc_pairs: tuple[tuple[str, str], ...] = ()) -> None:
+        for y_s, n_s in self.condition_pairs:
+            self._record_known_pair(y_s, n_s)
+        for y_s, n_s in alloc_pairs:
+            self._record_known_pair(y_s, n_s)
+        client_pairs = getattr(self.public_client, "_pair_by_slug", None)
+        if isinstance(client_pairs, dict):
+            for pair in client_pairs.values():
+                if (
+                    isinstance(pair, tuple)
+                    and len(pair) == 2
+                    and isinstance(pair[0], str)
+                    and isinstance(pair[1], str)
+                ):
+                    self._record_known_pair(pair[0], pair[1])
+        client_siblings = getattr(self.public_client, "_sibling_map", None)
+        client_yes_slugs = getattr(self.public_client, "_yes_slugs", None)
+        if isinstance(client_siblings, dict):
+            for s_a, s_b in client_siblings.items():
+                if isinstance(s_a, str) and isinstance(s_b, str) and s_a and s_b and s_a != s_b:
+                    self.known_sibling_by_slug.setdefault(s_a, s_b)
+                    self.known_sibling_by_slug.setdefault(s_b, s_a)
+                    if s_a not in self.known_pair_by_slug and s_b not in self.known_pair_by_slug:
+                        if isinstance(client_yes_slugs, set) and s_b in client_yes_slugs and s_a not in client_yes_slugs:
+                            self._record_known_pair(s_b, s_a)
+                        else:
+                            self._record_known_pair(s_a, s_b)
+        prog_groups: dict[str, list[str]] = {}
+        for w_slug, win in self.active_windows.items():
+            prog_id = getattr(win, "program_id", "")
+            if isinstance(prog_id, str) and prog_id and prog_id not in ("none", "unwind"):
+                prog_groups.setdefault(prog_id, []).append(w_slug)
+        for slugs in prog_groups.values():
+            if len(slugs) == 2 and slugs[0] not in self.known_pair_by_slug and slugs[1] not in self.known_pair_by_slug:
+                self._record_known_pair(slugs[0], slugs[1])
 
     def _min_exit_price(self, slug: str, pos: Position | None = None) -> Decimal:
         if pos is None:
@@ -614,15 +687,32 @@ class LiveEngine:
         except Exception as exc:
             self.logger.warning("Could not fetch held positions for allocation: %s", exc)
 
+        ledger_pos_map: dict[str, Position] = {}
+        if hasattr(self.ledger, "get_all_positions"):
+            try:
+                ledger_positions = self.ledger.get_all_positions()
+                if isinstance(ledger_positions, (list, tuple)):
+                    for lp in ledger_positions:
+                        if isinstance(lp, Position) and lp.net_qty > Decimal("0"):
+                            ledger_pos_map[lp.slug] = lp
+            except Exception:
+                pass
+
+        effective_pos_map: dict[str, Position] | None = (
+            dict(pos_map)
+            if pos_map is not None
+            else (dict(ledger_pos_map) if ledger_pos_map else None)
+        )
         now_prep = time.time()
         for slug, (opt_pos, fill_ts) in list(self.local_fill_positions.items()):
             if now_prep - fill_ts > LOCAL_FILL_POSITION_TTL_SECONDS:
                 self.local_fill_positions.pop(slug, None)
             else:
-                if pos_map is None:
-                    pos_map = {}
-                pos_map[slug] = opt_pos
+                if effective_pos_map is None:
+                    effective_pos_map = {}
+                effective_pos_map[slug] = opt_pos
 
+        self._sync_known_siblings()
         self.degraded_slugs_until = {
             s: ts for s, ts in self.degraded_slugs_until.items() if ts > now_prep
         }
@@ -630,7 +720,7 @@ class LiveEngine:
         try:
             alloc_kwargs: dict[str, Any] = {
                 "available_budget": effective_budget,
-                "positions": pos_map,
+                "positions": effective_pos_map,
                 "open_orders": open_orders,
             }
             if excl_slugs:
@@ -650,7 +740,7 @@ class LiveEngine:
                     self.public_client,
                     self.logger,
                     available_budget=effective_budget,
-                    positions=pos_map,
+                    positions=effective_pos_map,
                     open_orders=open_orders,
                 )
         except Exception as exc:
@@ -661,6 +751,7 @@ class LiveEngine:
                 self.underdeployed_streak = 0
                 return
             raise
+        self._sync_known_siblings(alloc_res.condition_pairs)
         self.expected_portfolio_rate_sec = sum(
             (c.expected_reward_sec for c in alloc_res.selected_candidates),
             Decimal("0"),
@@ -672,11 +763,32 @@ class LiveEngine:
         self.side_budgets = dict(alloc_res.side_budgets)
         self.side_qtys = dict(alloc_res.side_qtys)
         self.side_prices = dict(getattr(alloc_res, "side_prices", {}) or {})
-        self.paired_slugs = alloc_res.paired_slugs
-        self.condition_pairs = alloc_res.condition_pairs
-        if pos_map is not None:
+        preserved_pairs: list[tuple[str, str]] = list(alloc_res.condition_pairs)
+        seen_pairs: set[tuple[str, str]] = set(preserved_pairs)
+        preserved_paired: set[str] = set(alloc_res.paired_slugs)
+        if effective_pos_map:
+            for p_slug, p_obj in effective_pos_map.items():
+                if p_obj.net_qty > Decimal("0") and p_slug in self.known_pair_by_slug:
+                    pair = self.known_pair_by_slug[p_slug]
+                    if pair not in seen_pairs:
+                        preserved_pairs.append(pair)
+                        seen_pairs.add(pair)
+                    if self.settings.venue == "global":
+                        y_pos = effective_pos_map.get(pair[0])
+                        n_pos = effective_pos_map.get(pair[1])
+                        if (
+                            y_pos is not None
+                            and n_pos is not None
+                            and y_pos.net_qty >= Decimal("5")
+                            and n_pos.net_qty >= Decimal("5")
+                        ):
+                            preserved_paired.add(pair[0])
+                            preserved_paired.add(pair[1])
+        self.paired_slugs = frozenset(preserved_paired)
+        self.condition_pairs = tuple(preserved_pairs)
+        if effective_pos_map is not None:
             now_utc = datetime.now(timezone.utc)
-            for p in pos_map.values():
+            for p in effective_pos_map.values():
                 if p.net_qty >= Decimal("5") and p.slug not in self.target_slugs:
                     if p.slug in self.dead_unwind_slugs:
                         continue
@@ -718,12 +830,11 @@ class LiveEngine:
         if not is_realloc:
             self.logger.info("Scoped startup cancel for target slugs: %s", self.target_slugs)
             self.started_at = time.time()
-            if isinstance(open_orders, list) and pos_map:
+            if isinstance(open_orders, list) and effective_pos_map:
                 for o in open_orders:
-                    if isinstance(o, LiveOrder) and o.side in ("SELL", "SELL_LONG", "SELL_SHORT") and o.slug in pos_map:
-                        p = pos_map[o.slug]
-                        min_exit = self._min_exit_price(o.slug, p)
-                        if p.net_qty > Decimal("0") and min_exit > Decimal("0") and o.price >= min_exit:
+                    if isinstance(o, LiveOrder) and o.side in ("SELL", "SELL_LONG", "SELL_SHORT") and o.slug in effective_pos_map:
+                        p = effective_pos_map[o.slug]
+                        if p.net_qty > Decimal("0") and o.price > Decimal("0"):
                             adopted = dataclasses.replace(o, side="SELL_LONG") if o.side == "SELL" else o
                             self.ledger.record_order(adopted, status="OPEN", ts_ms=int(self.started_at * 1000))
                             self.order_created_at[adopted.order_id] = self.started_at
@@ -790,12 +901,14 @@ class LiveEngine:
             self.notifier.notify_kill_switch(is_kill)
         if is_kill:
             self.yield_collapse_streak = 0
+            self._last_tick_ts = 0.0
             self.logger.warning("Kill switch active! Canceling orders and pausing.")
             self._cancel_targets(now_ts)
             return 5.0
 
         if self.risk_manager.is_maintenance_active(now_dt):
             self.yield_collapse_streak = 0
+            self._last_tick_ts = 0.0
             self.logger.warning("Exchange weekly maintenance window active! Canceling orders and pausing.")
             self._cancel_targets(now_ts)
             return 10.0
@@ -819,21 +932,41 @@ class LiveEngine:
                 live_positions[slug] = opt_pos
         self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms, live_positions=live_positions)
         raw_realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
-        baseline = getattr(self.settings, "daily_loss_baseline", Decimal("0"))
+        today_utc_str = now_dt.date().isoformat()
+        if not self.baseline_utc_date:
+            self.baseline_utc_date = today_utc_str
+        raw_baseline = getattr(self.settings, "daily_loss_baseline", Decimal("0"))
+        baseline = raw_baseline if today_utc_str == self.baseline_utc_date else Decimal("0")
         realized_loss_today = max(Decimal("0"), raw_realized_loss_today - baseline)
-        if realized_loss_today >= self.settings.daily_loss_stop:
+        dyn_stop = getattr(self.risk_manager, "dynamic_daily_loss_stop", None)
+        effective_loss_stop = (
+            dyn_stop
+            if isinstance(dyn_stop, Decimal) and dyn_stop > Decimal("0")
+            else self.settings.daily_loss_stop
+        )
+        if realized_loss_today >= effective_loss_stop:
             self.yield_collapse_streak = 0
+            self._last_tick_ts = 0.0
             if not self.daily_loss_stop_tripped:
                 self.daily_loss_stop_tripped = True
-                self.notifier.notify_daily_loss_stop(realized_loss_today, self.settings.daily_loss_stop)
+                self.notifier.notify_daily_loss_stop(realized_loss_today, effective_loss_stop)
             self.logger.warning(
                 "Daily loss stop tripped ($%s >= $%s)! Canceling all orders and pausing.",
                 realized_loss_today,
-                self.settings.daily_loss_stop,
+                effective_loss_stop,
             )
             self._cancel_targets(now_ts)
             return 10.0
         self.daily_loss_stop_tripped = False
+
+        if self._last_tick_ts > 0.0 and now_ts > self._last_tick_ts:
+            tick_elapsed_sec = min(
+                Decimal("90"),
+                max(Decimal("1"), Decimal(str(round(now_ts - self._last_tick_ts, 3)))),
+            )
+        else:
+            tick_elapsed_sec = Decimal("1")
+        self._last_tick_ts = now_ts
 
         active_slugs = [
             s for s in self.target_slugs
@@ -852,6 +985,11 @@ class LiveEngine:
                         if n_s not in active_set:
                             books_to_fetch.append(n_s)
                             active_set.add(n_s)
+                for s in list(active_slugs):
+                    sib = self.known_sibling_by_slug.get(s)
+                    if sib and sib not in active_set:
+                        books_to_fetch.append(sib)
+                        active_set.add(sib)
                 res = self.public_client.fetch_books_batch(books_to_fetch)
                 if isinstance(res, dict):
                     batch_books = res
@@ -873,6 +1011,7 @@ class LiveEngine:
                 pair_inputs=pair_inputs,
                 book=batch_books.get(slug),
                 batch_books=batch_books,
+                tick_elapsed_sec=tick_elapsed_sec,
             )
             live_portfolio_rate_sec += mkt_rate
 
@@ -883,7 +1022,10 @@ class LiveEngine:
                     yes_book, window, yes_orders = pair_inputs[yes_slug]
                     no_book, _, no_orders = pair_inputs[no_slug]
                     for snap in estimate_global_pair_score(yes_book, no_book, window, yes_orders + no_orders, ts_ms=now_ms):
-                        self.ledger.record_lip_snapshot(snap)
+                        if tick_elapsed_sec != Decimal("1"):
+                            self.ledger.record_lip_snapshot(snap, elapsed_sec=tick_elapsed_sec)
+                        else:
+                            self.ledger.record_lip_snapshot(snap)
                         if snap.trader_bid_score > Decimal("0"):
                             scored_bid_slugs.add(snap.slug)
                         if snap.qualifies:
@@ -956,7 +1098,7 @@ class LiveEngine:
                                     self.degraded_slugs_until[y_s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
                                     self.degraded_slugs_until[n_s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
                 self.logger.info(
-                    "Capital under-deployment detected: deployed $%s < 85%% of allocated $%s for %d ticks; rotating conditions",
+                    f"Capital under-deployment detected: deployed $%s < {int(CAPITAL_UTILIZATION_RATIO * 100)}%% of allocated $%s for %d ticks; rotating conditions",
                     effective_deployed,
                     allocated_bid_budget,
                     self.underdeployed_streak,
@@ -1057,8 +1199,7 @@ class LiveEngine:
                     pos is not None
                     and isinstance(getattr(pos, "net_qty", None), Decimal)
                     and pos.net_qty > Decimal("0")
-                    and min_exit > Decimal("0")
-                    and o.price >= min_exit
+                    and o.price > Decimal("0")
                 ):
                     adopted = dataclasses.replace(o, side="SELL_LONG") if o.side == "SELL" else o
                     self.ledger.record_order(adopted, status="OPEN", ts_ms=now_ms)
@@ -1075,21 +1216,6 @@ class LiveEngine:
                         min_exit,
                     )
                     continue
-                elif (
-                    pos is not None
-                    and isinstance(getattr(pos, "net_qty", None), Decimal)
-                    and pos.net_qty > Decimal("0")
-                    and min_exit > Decimal("0")
-                    and o.price < min_exit
-                ):
-                    self.logger.warning(
-                        "Untracked SELL order %s on %s at %s is below break-even %s; canceling",
-                        o.order_id,
-                        o.slug,
-                        o.price,
-                        min_exit,
-                    )
-                    self.manual_sell_cooldown_until.pop(o.slug, None)
             if o.slug in self.target_slugs:
                 orphans.append(o)
         if orphans:
@@ -1183,6 +1309,7 @@ class LiveEngine:
         pair_inputs: dict[str, tuple[Book, IncentiveWindow | None, list[LiveOrder]]] | None = None,
         book: Book | None = None,
         batch_books: dict[str, Book] | None = None,
+        tick_elapsed_sec: Decimal = Decimal("1"),
     ) -> Decimal:
         window = self.active_windows.get(slug)
         try:
@@ -1196,6 +1323,7 @@ class LiveEngine:
             else:
                 self.market_states[slug] = "QUOTING"
 
+            allocated_slug_bid_budget = self.side_budgets.get((slug, "bid"), Decimal("0"))
             inv_freeze_qty = (
                 window.target_size
                 if (self.settings.venue == "global" and window is not None)
@@ -1204,7 +1332,7 @@ class LiveEngine:
             effective_bid_budget = (
                 Decimal("0")
                 if pos.net_qty >= inv_freeze_qty
-                else self.side_budgets.get((slug, "bid"), Decimal("0"))
+                else allocated_slug_bid_budget
             )
 
             resting_on_slug = self._slug_open_orders(slug, exchange_open)
@@ -1231,16 +1359,21 @@ class LiveEngine:
             dyn_market_col = dyn_col if isinstance(dyn_col, Decimal) else Decimal("0")
             market_budget = max(
                 self.settings.max_per_market,
-                self.side_budgets.get((slug, "bid"), Decimal("0")),
+                allocated_slug_bid_budget,
                 dyn_market_col,
             )
 
+            if self.settings.venue == "global" and slug not in self.known_sibling_by_slug:
+                self._sync_known_siblings()
+
             other_slug: str | None = None
             other_quote_book: Book | None = None
+            other_pos_qty: Decimal = Decimal("0")
             max_allowed: Decimal | None = None
             is_binary_cond = (
                 slug in self.paired_slugs
                 or any(slug in pair for pair in self.condition_pairs)
+                or slug in self.known_sibling_by_slug
                 or (slug, "bid") in getattr(self, "side_prices", {})
             )
             if self.settings.venue == "global" and is_binary_cond:
@@ -1254,6 +1387,16 @@ class LiveEngine:
                         other_slug = y
                         is_yes_leg = False
                         break
+                if other_slug is None and slug in self.known_pair_by_slug:
+                    y_k, n_k = self.known_pair_by_slug[slug]
+                    if y_k == slug:
+                        other_slug = n_k
+                        is_yes_leg = True
+                    else:
+                        other_slug = y_k
+                        is_yes_leg = False
+                elif other_slug is None and slug in self.known_sibling_by_slug:
+                    other_slug = self.known_sibling_by_slug[slug]
                 existing_buy_prices = [
                     o.price for o in resting_on_slug
                     if o.side in ("BUY", "BUY_LONG")
@@ -1269,7 +1412,7 @@ class LiveEngine:
                     and mid_curr is not None
                     and window is not None
                     and window.max_spread is not None
-                    and abs(alloc_px - mid_curr) > window.max_spread
+                    and abs(alloc_px - mid_curr) >= window.max_spread
                 ):
                     max_allowed = None
                 else:
@@ -1283,6 +1426,8 @@ class LiveEngine:
                         other_slug,
                         Position(slug=other_slug, net_qty=Decimal("0"), avg_price=Decimal("0")),
                     )
+                    if isinstance(getattr(other_pos, "net_qty", None), Decimal):
+                        other_pos_qty = other_pos.net_qty
                     other_win = self.active_windows.get(other_slug) or window
                     other_target_size = (
                         other_win.target_size
@@ -1343,9 +1488,30 @@ class LiveEngine:
                             max_allowed = min(max_allowed, sym_cap) if max_allowed is not None else sym_cap
 
             extra_dq_kwargs: dict[str, Any] = {}
-            if self.settings.venue == "global" and is_binary_cond:
-                extra_dq_kwargs["other_book"] = other_quote_book
-                extra_dq_kwargs["max_bid_price"] = max_allowed
+            if self.settings.venue == "global":
+                mid_for_unwind = (
+                    global_rewards.adjusted_mid(quote_book, window.target_size)
+                    if (window is not None and quote_book.bids and quote_book.asks)
+                    else (
+                        (quote_book.bids[0].price + quote_book.asks[0].price) / Decimal("2")
+                        if (quote_book.bids and quote_book.asks)
+                        else None
+                    )
+                )
+                extra_dq_kwargs["allow_stop_unwind"] = (
+                    allocated_slug_bid_budget <= Decimal("0")
+                    or window is None
+                    or window.pool_usd <= Decimal("0")
+                    or (
+                        pos.avg_price > Decimal("0")
+                        and mid_for_unwind is not None
+                        and mid_for_unwind <= (pos.avg_price * ACTIVE_STOP_UNWIND_MID_RATIO)
+                    )
+                )
+                if is_binary_cond:
+                    extra_dq_kwargs["other_book"] = other_quote_book
+                    extra_dq_kwargs["max_bid_price"] = max_allowed
+                    extra_dq_kwargs["other_position_qty"] = other_pos_qty
 
             quotes = desired_quotes(
                 market=market,
@@ -1387,18 +1553,41 @@ class LiveEngine:
                         clamped_quotes.append(q)
                 quotes = clamped_quotes
 
-            to_create, to_cancel, _ = reconcile_quotes(self.ledger.get_open_orders(slug), quotes)
-
             min_exit_px = self._min_exit_price(slug, pos)
+            if (
+                self.settings.venue == "global"
+                and allocated_slug_bid_budget > Decimal("0")
+                and pos.net_qty > Decimal("0")
+                and min_exit_px > Decimal("0")
+                and any(q.side == "SELL_LONG" and q.price < min_exit_px for q in quotes)
+            ):
+                self.degraded_slugs_until[slug] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
+                self.side_budgets[(slug, "bid")] = Decimal("0")
+                quotes = [q for q in quotes if q.side != "BUY_LONG"]
+                if other_slug:
+                    self.degraded_slugs_until[other_slug] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
+                    self.side_budgets[(other_slug, "bid")] = Decimal("0")
+
+            min_keep_qty = (
+                window.target_size
+                if (self.settings.venue == "global" and window is not None)
+                else market.min_qty
+            )
             open_on_slug = self.ledger.get_open_orders(slug)
             if not isinstance(open_on_slug, (list, tuple)):
                 open_on_slug = []
+            to_create, to_cancel, _ = reconcile_quotes(
+                list(open_on_slug),
+                quotes,
+                min_keep_qty=min_keep_qty,
+            )
+
             manual_sells_on_slug = [
                 o for o in open_on_slug
                 if isinstance(o, LiveOrder)
                 and o.order_id in self.manual_sell_order_ids
                 and o.side in ("SELL", "SELL_LONG", "SELL_SHORT")
-                and o.price >= min_exit_px
+                and o.price > Decimal("0")
             ]
             if manual_sells_on_slug:
                 manual_ids = {o.order_id for o in manual_sells_on_slug}
@@ -1407,7 +1596,6 @@ class LiveEngine:
             elif now_ts < self.manual_sell_cooldown_until.get(slug, 0.0):
                 to_create = [q for q in to_create if q.side not in ("SELL", "SELL_LONG", "SELL_SHORT")]
 
-            # Active resting order ejection against cross-book arbitrage exploit
             if self.settings.venue == "global" and other_slug and batch_books is not None:
                 opp_raw_book = batch_books.get(other_slug)
                 if opp_raw_book is not None and opp_raw_book.bids:
@@ -1463,11 +1651,12 @@ class LiveEngine:
                 kept_sell_cancel_ids: set[str] = set()
                 kept_sell_create_sides: set[str] = set()
                 for old_o in to_cancel:
-                    if old_o.side in ("SELL", "SELL_LONG") and old_o.price >= min_exit_px and old_o.price > best_bid_px:
+                    if old_o.side in ("SELL", "SELL_LONG") and old_o.price > best_bid_px:
                         for new_q in to_create:
                             if (
                                 new_q.side == "SELL_LONG"
                                 and new_q.qty == old_o.remaining_qty
+                                and ((old_o.price >= min_exit_px and new_q.price >= min_exit_px) or new_q.price >= old_o.price)
                                 and abs(new_q.price - old_o.price) <= SELL_HYSTERESIS_BAND
                             ):
                                 kept_sell_cancel_ids.add(old_o.order_id)
@@ -1517,11 +1706,17 @@ class LiveEngine:
                 return Decimal("0")
             elif is_global:
                 snap = estimate_global_lip_score(book, window, orders, ts_ms=now_ms)
-                self.ledger.record_lip_snapshot(snap)
+                if tick_elapsed_sec != Decimal("1"):
+                    self.ledger.record_lip_snapshot(snap, elapsed_sec=tick_elapsed_sec)
+                else:
+                    self.ledger.record_lip_snapshot(snap)
                 return snap.reward_usd if snap.qualifies else Decimal("0")
             else:
                 snap = estimate_lip_score(book, window, orders, market.tick, ts_ms=now_ms)
-                self.ledger.record_lip_snapshot(snap)
+                if tick_elapsed_sec != Decimal("1"):
+                    self.ledger.record_lip_snapshot(snap, elapsed_sec=tick_elapsed_sec)
+                else:
+                    self.ledger.record_lip_snapshot(snap)
                 return snap.reward_usd if snap.qualifies else Decimal("0")
         except Exception as exc:
             err_str = str(exc).lower()

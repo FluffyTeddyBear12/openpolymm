@@ -424,7 +424,7 @@ def test_quoter_paired_bids_in_tail_market(base_market):
     )
     assert quotes_unpaired == []
 
-    quotes_paired = desired_quotes(
+    quotes_paired_blocked = desired_quotes(
         market=base_market,
         book=book,
         window=win,
@@ -434,10 +434,23 @@ def test_quoter_paired_bids_in_tail_market(base_market):
         paired=True,
         quote_size=Decimal("100"),
     )
-    assert len(quotes_paired) == 1
-    assert quotes_paired[0].side == "BUY_LONG"
-    assert quotes_paired[0].price == Decimal("0.050")
-    assert quotes_paired[0].qty == Decimal("100")
+    assert quotes_paired_blocked == []
+
+    quotes_paired_override = desired_quotes(
+        market=base_market,
+        book=book,
+        window=win,
+        position=Position(slug="mkt-tail", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("50.00"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("100"),
+        min_bid_price=Decimal("0.05"),
+    )
+    assert len(quotes_paired_override) == 1
+    assert quotes_paired_override[0].side == "BUY_LONG"
+    assert quotes_paired_override[0].price == Decimal("0.050")
+    assert quotes_paired_override[0].qty == Decimal("100")
 
 
 def test_quoter_paired_stops_bidding_and_emits_sell_long_unwind(base_market):
@@ -1502,4 +1515,235 @@ def test_desired_quotes_pre_guard_max_bid_price_and_other_book():
     assert quotes_clamped[0].price == Decimal("0.50")
     assert quotes_clamped[0].qty == Decimal("50")
 
+
+def test_unwind_regimes_hedged_pair_liquid_stop_collapsed_stub_and_min_bid_floor():
+    from pmus.strategy.lip_quoter import UnwindRegime, classify_unwind_regime
+
+    market = Market(
+        slug="yes-1",
+        event_id="ev-1",
+        category="politics",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    win = IncentiveWindow(
+        slug="yes-1",
+        program_id="global-1",
+        pool_usd=Decimal("100"),
+        discount=Decimal("0"),
+        target_size=Decimal("20"),
+        max_spread=Decimal("0.03"),
+        start=datetime.now(timezone.utc) - timedelta(hours=1),
+        end=datetime.now(timezone.utc) + timedelta(days=30),
+        status="active",
+    )
+
+    liquid_book = Book(
+        slug="yes-1",
+        bids=(
+            Level(Decimal("0.28"), Decimal("600")),
+            Level(Decimal("0.27"), Decimal("600")),
+        ),
+        asks=(
+            Level(Decimal("0.29"), Decimal("600")),
+            Level(Decimal("0.30"), Decimal("600")),
+        ),
+        ts_ms=1000,
+    )
+
+    matched_quotes = desired_quotes(
+        market=market,
+        book=liquid_book,
+        window=win,
+        position=Position(slug="yes-1", net_qty=Decimal("50"), avg_price=Decimal("0.42")),
+        budget=Decimal("0"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+        paired=True,
+        other_position_qty=Decimal("50"),
+    )
+    assert matched_quotes == []
+
+    partial_quotes = desired_quotes(
+        market=market,
+        book=liquid_book,
+        window=win,
+        position=Position(slug="yes-1", net_qty=Decimal("50"), avg_price=Decimal("0.42")),
+        budget=Decimal("0"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+        paired=True,
+        other_position_qty=Decimal("30"),
+    )
+    assert len(partial_quotes) == 1
+    assert partial_quotes[0].side == "SELL_LONG"
+    assert partial_quotes[0].qty == Decimal("20")
+    assert partial_quotes[0].price == Decimal("0.29")
+
+    assert (
+        classify_unwind_regime(
+            market=market,
+            book=liquid_book,
+            window=win,
+            unhedged_net=Decimal("20"),
+            ask_qty=Decimal("20"),
+            best_bid=Decimal("0.28"),
+            bid_price=Decimal("0.28"),
+            ask_price=Decimal("0.29"),
+            mid=Decimal("0.285"),
+            min_exit=Decimal("0.42"),
+            budget=Decimal("0"),
+            bid_budget=Decimal("0"),
+        )
+        == UnwindRegime.LIQUID_STOP_UNWIND
+    )
+
+    stub_book = Book(
+        slug="yes-1",
+        bids=(Level(Decimal("0.01"), Decimal("500")),),
+        asks=(Level(Decimal("0.02"), Decimal("500")),),
+        ts_ms=1000,
+    )
+    stub_quotes = desired_quotes(
+        market=market,
+        book=stub_book,
+        window=win,
+        position=Position(slug="yes-1", net_qty=Decimal("50"), avg_price=Decimal("0.22")),
+        budget=Decimal("0"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+    )
+    assert len(stub_quotes) == 1
+    assert stub_quotes[0].side == "SELL_LONG"
+    assert stub_quotes[0].price == Decimal("0.22")
+
+    drifted_tail_book = Book(
+        slug="yes-1",
+        bids=(
+            Level(Decimal("0.18"), Decimal("600")),
+            Level(Decimal("0.17"), Decimal("600")),
+        ),
+        asks=(
+            Level(Decimal("0.20"), Decimal("600")),
+            Level(Decimal("0.21"), Decimal("600")),
+        ),
+        ts_ms=1000,
+    )
+    no_tail_book = Book(
+        slug="no-1",
+        bids=(
+            Level(Decimal("0.80"), Decimal("600")),
+            Level(Decimal("0.79"), Decimal("600")),
+        ),
+        asks=(
+            Level(Decimal("0.82"), Decimal("600")),
+            Level(Decimal("0.83"), Decimal("600")),
+        ),
+        ts_ms=1000,
+    )
+    floor_blocked = desired_quotes(
+        market=market,
+        book=drifted_tail_book,
+        window=win,
+        position=Position(slug="yes-1", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("50"),
+        bid_budget=Decimal("50"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("50"),
+        other_book=no_tail_book,
+        max_bid_price=Decimal("0.22"),
+    )
+    assert floor_blocked == []
+
+
+def test_collapsed_book_below_stop_floor_uses_collapsed_stub_hold_and_pair_max_bid_capped():
+    from pmus.strategy.lip_quoter import UnwindRegime, classify_unwind_regime
+
+    market = Market(
+        slug="yes-cap",
+        event_id="ev-cap",
+        category="politics",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    win = IncentiveWindow(
+        slug="yes-cap",
+        program_id="global-cap",
+        pool_usd=Decimal("100"),
+        discount=Decimal("0"),
+        target_size=Decimal("20"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc) - timedelta(hours=1),
+        end=datetime.now(timezone.utc) + timedelta(days=30),
+        status="active",
+    )
+    collapsed_book = Book(
+        slug="yes-cap",
+        bids=(Level(Decimal("0.15"), Decimal("600")), Level(Decimal("0.14"), Decimal("600"))),
+        asks=(Level(Decimal("0.16"), Decimal("600")), Level(Decimal("0.17"), Decimal("600"))),
+        ts_ms=1000,
+    )
+    assert (
+        classify_unwind_regime(
+            market=market,
+            book=collapsed_book,
+            window=win,
+            unhedged_net=Decimal("50"),
+            ask_qty=Decimal("50"),
+            best_bid=Decimal("0.15"),
+            bid_price=Decimal("0.15"),
+            ask_price=Decimal("0.16"),
+            mid=Decimal("0.155"),
+            min_exit=Decimal("0.60"),
+            budget=Decimal("0"),
+            bid_budget=Decimal("0"),
+            avg_price=Decimal("0.60"),
+            tick=Decimal("0.01"),
+        )
+        == UnwindRegime.COLLAPSED_STUB_HOLD
+    )
+    unwind_quotes = desired_quotes(
+        market=market,
+        book=collapsed_book,
+        window=win,
+        position=Position(slug="yes-cap", net_qty=Decimal("50"), avg_price=Decimal("0.60")),
+        budget=Decimal("0"),
+        bid_budget=Decimal("0"),
+        is_global=True,
+    )
+    assert unwind_quotes == [
+        Quote(slug="yes-cap", side="SELL_LONG", price=Decimal("0.60"), qty=Decimal("50"))
+    ]
+
+    drifted_high_book = Book(
+        slug="yes-cap",
+        bids=(Level(Decimal("0.80"), Decimal("600")), Level(Decimal("0.78"), Decimal("600"))),
+        asks=(Level(Decimal("0.82"), Decimal("600")), Level(Decimal("0.83"), Decimal("600"))),
+        ts_ms=1000,
+    )
+    opp_low_book = Book(
+        slug="no-cap",
+        bids=(Level(Decimal("0.18"), Decimal("600")), Level(Decimal("0.17"), Decimal("600"))),
+        asks=(Level(Decimal("0.20"), Decimal("600")), Level(Decimal("0.21"), Decimal("600"))),
+        ts_ms=1000,
+    )
+    capped_quotes = desired_quotes(
+        market=market,
+        book=drifted_high_book,
+        window=win,
+        position=Position(slug="yes-cap", net_qty=Decimal("0"), avg_price=Decimal("0")),
+        budget=Decimal("50"),
+        bid_budget=Decimal("50"),
+        is_global=True,
+        paired=True,
+        quote_size=Decimal("50"),
+        other_book=opp_low_book,
+    )
+    assert len(capped_quotes) == 1
+    assert capped_quotes[0].side == "BUY_LONG"
+    assert capped_quotes[0].price <= Decimal("0.78")
+    assert capped_quotes[0].price == Decimal("0.78")
 

@@ -32,7 +32,7 @@ def generate_report(
     total_volume = Decimal("0")
     maker_rebates = Decimal("0")
     taker_fees = Decimal("0")
-    realized_pnl = Decimal("0")
+    realized_pnl = ledger.get_realized_pnl_since(since_ms, include_fees=False)
 
     for f in fills:
         trade_val = f.price * f.qty
@@ -50,12 +50,13 @@ def generate_report(
 
     for s in lip_snaps:
         market_snaps.setdefault(s.slug, []).append(s)
+        step_sec = max(1, int(getattr(s, "dt_sec", 1) or 1))
         if s.qualifies:
-            qualifying_seconds += 1
+            qualifying_seconds += step_sec
         if s.bid_qualifies:
-            qualifying_bid_seconds += 1
+            qualifying_bid_seconds += step_sec
         if s.ask_qualifies:
-            qualifying_ask_seconds += 1
+            qualifying_ask_seconds += step_sec
         lip_reward_total += s.reward_usd
 
     windows_map = {}
@@ -71,8 +72,8 @@ def generate_report(
     if market_snaps:
         now_dt = datetime.now(timezone.utc)
         for slug, snaps in market_snaps.items():
-            bid_secs = sum(1 for s in snaps if s.bid_qualifies)
-            ask_secs = sum(1 for s in snaps if s.ask_qualifies)
+            bid_secs = sum(max(1, int(getattr(s, "dt_sec", 1) or 1)) for s in snaps if s.bid_qualifies)
+            ask_secs = sum(max(1, int(getattr(s, "dt_sec", 1) or 1)) for s in snaps if s.ask_qualifies)
             mkt_est = sum(s.reward_usd for s in snaps)
 
             shares = []

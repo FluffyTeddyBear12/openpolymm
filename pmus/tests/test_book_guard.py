@@ -272,3 +272,49 @@ def test_guard_rejects_single_whale_top_bid_cliff_and_allows_exact_099_cross_sum
     assert reason_cross is not None and "cross-book arbitrage" in reason_cross
 
 
+def test_guard_rejects_ask_overhang_and_enforces_hysteresis_and_thin_usd_stepback():
+    from pmus.strategy.global_rewards import bid_price
+
+    w = window(target="50", max_spread="0.05")
+    overhang = book(
+        "overhang-mkt",
+        [("0.46", "110"), ("0.45", "120"), ("0.44", "250")],
+        [("0.47", "6500"), ("0.48", "4000")],
+        tick="0.01",
+    )
+    reason_overhang = quote_guard(overhang, w, D("0.45"), D("0.01"))
+    assert reason_overhang is not None and "ask overhang" in reason_overhang
+
+    borderline = book(
+        "borderline-mkt",
+        [("0.30", "100"), ("0.29", "180")],
+        [("0.32", "250")],
+        tick="0.01",
+    )
+    w_small = window(target="20", max_spread="0.04")
+    assert quote_guard(borderline, w_small, D("0.29"), D("0.01"), hysteresis=D("1.0")) is None
+    assert quote_guard(borderline, w_small, D("0.29"), D("0.01"), hysteresis=D("1.3")) is not None
+
+    thin_top = book(
+        "thin-top",
+        [("0.35", "22"), ("0.34", "18"), ("0.33", "450")],
+        [("0.37", "300"), ("0.38", "300")],
+        tick="0.01",
+    )
+    w_wide = window(target="20", max_spread="0.05")
+    stepped = bid_price(thin_top, w_wide, D("0.01"))
+    assert stepped == D("0.33")
+    assert quote_guard(thin_top, w_wide, stepped, D("0.01")) is None
+
+
+def test_guard_allows_520_ask_wall_when_thin_top_bid_backed_by_deep_second_level():
+    w = window(target="20", max_spread="0.03")
+    backed = book(
+        "backed-mkt",
+        [("0.50", "5"), ("0.49", "20000")],
+        [("0.52", "1000")],
+        tick="0.01",
+    )
+    assert global_rewards.bid_price(backed, w, D("0.01")) == D("0.49")
+    assert quote_guard(backed, w, D("0.49"), D("0.01")) is None
+    assert "ask overhang" not in (quote_guard(backed, w, D("0.50"), D("0.01")) or "")

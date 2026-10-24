@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import time
 from decimal import Decimal
 import pytest
@@ -235,4 +235,132 @@ def test_ledger_pragmas_and_indexes(ledger):
         assert "idx_fills_ts" in indexes
 
 
+def test_get_realized_loss_today_tracks_overnight_cost_basis_without_double_counting_prior_day(ledger):
+    now = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
+    today_00 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    ts_yest_open = int((today_00 - timedelta(hours=8)).timestamp() * 1000)
+    ts_yest_closed_buy = int((today_00 - timedelta(hours=7)).timestamp() * 1000)
+    ts_yest_closed_sell = int((today_00 - timedelta(hours=6)).timestamp() * 1000)
+    ts_today_sell = int((today_00 + timedelta(minutes=30)).timestamp() * 1000)
 
+    ledger.record_fill(ShadowFill("f-prev-b", "o-pb", "closed-yest", "BUY_LONG", Decimal("0.50"), Decimal("100"), Decimal("0.50"), True, ts_yest_closed_buy))
+    ledger.record_fill(ShadowFill("f-prev-s", "o-ps", "closed-yest", "SELL_LONG", Decimal("0.30"), Decimal("100"), Decimal("0.50"), True, ts_yest_closed_sell))
+
+    ledger.record_fill(ShadowFill("f-bag-b", "o-bb", "bag-slug", "BUY_LONG", Decimal("0.51"), Decimal("65"), Decimal("1.25"), True, ts_yest_open))
+    ledger.record_fill(ShadowFill("f-bag-s", "o-bs", "bag-slug", "SELL_LONG", Decimal("0.25"), Decimal("65"), Decimal("0"), True, ts_today_sell))
+
+    assert ledger.get_realized_loss_today(now) == Decimal("16.90")
+
+
+def test_record_lip_snapshot_scales_by_elapsed_dt_and_caps_at_90s(ledger):
+    snap1 = LipSnapshot(
+        ts_ms=1_000_000,
+        slug="mkt-dt",
+        program_id="p-dt",
+        trader_bid_score=Decimal("50"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("0"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.01"),
+        bid_qualifies=True,
+    )
+    snap2 = LipSnapshot(
+        ts_ms=1_010_000,
+        slug="mkt-dt",
+        program_id="p-dt",
+        trader_bid_score=Decimal("50"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("0"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.01"),
+        bid_qualifies=True,
+    )
+    snap3 = LipSnapshot(
+        ts_ms=1_130_000,
+        slug="mkt-dt",
+        program_id="p-dt",
+        trader_bid_score=Decimal("50"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("0"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.01"),
+        bid_qualifies=True,
+    )
+    ledger.record_lip_snapshot(snap1)
+    ledger.record_lip_snapshot(snap2)
+    ledger.record_lip_snapshot(snap3)
+
+    stats = ledger.get_lip_stats(0)
+    assert stats["lip_reward_total"] == Decimal("1.01")
+    assert stats["qualifying_seconds"] == 101
+    assert ledger.get_latest_lip_snapshots()["mkt-dt"].reward_usd == Decimal("0.01")
+
+
+def test_get_realized_pnl_since_respects_include_fees_flag(tmp_path):
+    ledger = Ledger(tmp_path / "pnl_fees.db")
+    ledger.record_fill(
+        ShadowFill("f1", "o1", "m-fee", "BUY_LONG", Decimal("0.40"), Decimal("50"), Decimal("0.50"), False, 1000)
+    )
+    ledger.record_fill(
+        ShadowFill("f2", "o2", "m-fee", "SELL_LONG", Decimal("0.50"), Decimal("50"), Decimal("0.25"), False, 2000)
+    )
+    assert ledger.get_realized_pnl_since(1500, include_fees=False) == Decimal("5.00")
+    assert ledger.get_realized_pnl_since(1500, include_fees=True) == Decimal("4.75")
+
+
+def test_get_lip_stats_since_ms_matches_materialized_summary_with_persisted_dt_sec(ledger):
+    s1 = LipSnapshot(
+        ts_ms=10_000,
+        slug="mkt-sync",
+        program_id="p-sync",
+        trader_bid_score=Decimal("40"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("0"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.02"),
+        bid_qualifies=True,
+        ask_qualifies=False,
+    )
+    s2 = LipSnapshot(
+        ts_ms=25_000,
+        slug="mkt-sync",
+        program_id="p-sync",
+        trader_bid_score=Decimal("40"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("30"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.03"),
+        bid_qualifies=True,
+        ask_qualifies=True,
+    )
+    s3 = LipSnapshot(
+        ts_ms=45_000,
+        slug="mkt-sync",
+        program_id="p-sync",
+        trader_bid_score=Decimal("40"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("30"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.01"),
+        bid_qualifies=True,
+        ask_qualifies=True,
+    )
+    ledger.record_lip_snapshot(s1)
+    ledger.record_lip_snapshot(s2)
+    ledger.record_lip_snapshot(s3, elapsed_sec=Decimal("20"))
+
+    persisted = ledger.get_lip_snapshots_since(1)
+    assert [snap.dt_sec for snap in persisted] == [1, 15, 20]
+
+    stats_all = ledger.get_lip_stats(0)
+    stats_since = ledger.get_lip_stats(1)
+    assert stats_all["qualifying_seconds"] == stats_since["qualifying_seconds"] == 36
+    assert stats_all["qualifying_bid_seconds"] == stats_since["qualifying_bid_seconds"] == 36
+    assert stats_all["qualifying_ask_seconds"] == stats_since["qualifying_ask_seconds"] == 35
+    assert stats_all["lip_reward_total"] == stats_since["lip_reward_total"] == Decimal("0.67")

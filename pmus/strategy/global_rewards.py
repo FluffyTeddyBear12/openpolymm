@@ -16,7 +16,8 @@ REWARD_MID_HIGH = Decimal("0.90")
 SINGLE_SIDED_DIVISOR = Decimal("3")
 SECONDS_PER_DAY = Decimal("86400")
 MIN_DAILY_PAYOUT_USD = Decimal(os.getenv("PMUS_GLOBAL_MIN_DAILY_REWARD", "1.00"))
-MAX_CUSHION_SPREAD_RATIO = Decimal("0.60")
+MAX_CUSHION_SPREAD_RATIO = Decimal("0.625")
+MIN_FRONT_SHIELD_USD = Decimal("25")
 PAIR_MAX_SUM = Decimal("0.98")
 WIDE_SPREAD_PAIR_MAX_SUM = Decimal("0.97")
 CROSS_MAX_SUM = Decimal("0.99")
@@ -62,6 +63,14 @@ def reward_rate(pool_usd: Decimal, ours: Decimal, competitors: Decimal) -> Decim
     return pool_usd / SECONDS_PER_DAY * ours / (competitors + ours)
 
 
+def _has_front_shield(book: Book, price: Decimal, shield_target: Decimal) -> bool:
+    qty_sum = sum((lvl.qty for lvl in book.bids if lvl.price >= price), ZERO)
+    if len(book.bids) < 2:
+        return qty_sum >= shield_target
+    usd_sum = sum((lvl.price * lvl.qty for lvl in book.bids if lvl.price >= price), ZERO)
+    return qty_sum >= shield_target and usd_sum >= MIN_FRONT_SHIELD_USD
+
+
 def bid_price(book: Book, window: IncentiveWindow, tick: Decimal) -> Decimal | None:
     mid = adjusted_mid(book, window.target_size)
     if mid is None or window.max_spread is None or not book.asks:
@@ -73,27 +82,23 @@ def bid_price(book: Book, window: IncentiveWindow, tick: Decimal) -> Decimal | N
     raw_top = top_lvl.price
     top_bid = (raw_top // tick) * tick
     price = top_bid
-    should_step_back = len(qual_levels) >= 2 or (
-        len(qual_levels) == 1 and top_lvl.qty < Decimal("2") * window.target_size
-    )
+    shield_target = Decimal("2") * window.target_size
+    top_unshielded = not _has_front_shield(book, top_bid, shield_target)
+    should_step_back = len(qual_levels) >= 2 or top_unshielded
     if should_step_back:
         candidate = top_bid - tick
-        max_cushioned_dist = window.max_spread * MAX_CUSHION_SPREAD_RATIO
+        spread_slack = (tick / Decimal("2")) if top_unshielded else tick
+        max_cushioned_dist = max(
+            window.max_spread * MAX_CUSHION_SPREAD_RATIO,
+            min(Decimal("2") * tick, window.max_spread - spread_slack),
+        )
         if (
             ZERO < candidate < top_bid
             and abs(candidate - mid) <= max_cushioned_dist
             and abs(candidate - mid) < window.max_spread
         ):
             price = candidate
-            shield_target = Decimal("2") * window.target_size
-            is_cliff_top = (
-                len(qual_levels) >= 2
-                and (top_bid - (qual_levels[1].price // tick) * tick) >= (Decimal("2") * tick)
-            )
-            if (
-                (tick <= Decimal("0.001") or is_cliff_top)
-                and sum((lvl.qty for lvl in book.bids if lvl.price >= price), ZERO) < shield_target
-            ):
+            if len(qual_levels) >= 2 and not _has_front_shield(book, price, shield_target):
                 for lvl in qual_levels[1:]:
                     lvl_px = (lvl.price // tick) * tick
                     if lvl_px >= top_bid:
@@ -106,15 +111,14 @@ def bid_price(book: Book, window: IncentiveWindow, tick: Decimal) -> Decimal | N
                     ):
                         price = next_cand
                     elif (
-                        is_cliff_top
-                        and ZERO < lvl_px < price
+                        ZERO < lvl_px < price
                         and abs(lvl_px - mid) <= max_cushioned_dist
                         and abs(lvl_px - mid) < window.max_spread
                     ):
                         price = lvl_px
                     else:
                         break
-                    if sum((b.qty for b in book.bids if b.price >= price), ZERO) >= shield_target:
+                    if _has_front_shield(book, price, shield_target):
                         break
     if price <= ZERO or price >= book.asks[0].price or abs(price - mid) >= window.max_spread:
         return None
@@ -211,17 +215,23 @@ def pair_size(
     return size
 
 
-def competitor_q(yes_book: Book, no_book: Book, window: IncentiveWindow) -> Decimal:
+def competitor_q(
+    yes_book: Book,
+    no_book: Book,
+    window: IncentiveWindow,
+    mid_y: Decimal | None = None,
+    mid_n: Decimal | None = None,
+) -> Decimal:
     """Competitor score from bids on both books, avoiding double-counting NO asks."""
     if window.max_spread is None:
         return ZERO
-    mid_y = adjusted_mid(yes_book, window.target_size)
-    mid_n = adjusted_mid(no_book, window.target_size)
-    if mid_y is None or mid_n is None:
+    eff_mid_y = mid_y if mid_y is not None else adjusted_mid(yes_book, window.target_size)
+    eff_mid_n = mid_n if mid_n is not None else adjusted_mid(no_book, window.target_size)
+    if eff_mid_y is None or eff_mid_n is None:
         return ZERO
-    q_one = side_score(yes_book.bids, mid_y, window.max_spread)
-    q_two = side_score(no_book.bids, mid_n, window.max_spread)
-    if mid_in_reward_band(mid_y):
+    q_one = side_score(yes_book.bids, eff_mid_y, window.max_spread)
+    q_two = side_score(no_book.bids, eff_mid_n, window.max_spread)
+    if mid_in_reward_band(eff_mid_y):
         return min(q_one, q_two) + abs(q_one - q_two) / SINGLE_SIDED_DIVISOR
     return min(q_one, q_two)
 
@@ -275,9 +285,9 @@ def strip_orders_from_book(book: Book, orders: list[LiveOrder]) -> Book:
     for o in orders:
         if o.slug != book.slug or o.qty_open <= ZERO:
             continue
-        if o.side in ("BUY_LONG", "BUY_SHORT"):
+        if o.side in ("BUY_LONG", "BUY_SHORT", "BUY"):
             bid_deduct[o.price] = bid_deduct.get(o.price, ZERO) + o.qty_open
-        elif o.side in ("SELL_LONG", "SELL_SHORT"):
+        elif o.side in ("SELL_LONG", "SELL_SHORT", "SELL"):
             ask_deduct[o.price] = ask_deduct.get(o.price, ZERO) + o.qty_open
     if not bid_deduct and not ask_deduct:
         return book

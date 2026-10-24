@@ -78,3 +78,21 @@ def test_report_header_and_caveat_follow_venue(tmp_path):
     assert "POLYMARKET US PERFORMANCE REPORT" in us_text
     assert "Polymarket US enforces" in us_text
     assert "Completion Cost" in us_text
+
+
+def test_generate_report_includes_realized_pnl_from_closed_inventory(tmp_path):
+    import time
+
+    ledger = Ledger(tmp_path / "realized_report.db")
+    now_ms = int(time.time() * 1000)
+    ledger.record_fill(
+        ShadowFill("f-b", "o-b", "tok-loss", "BUY_LONG", Decimal("0.55"), Decimal("100"), Decimal("-0.02"), True, now_ms - 7_200_000)
+    )
+    ledger.record_fill(
+        ShadowFill("f-s", "o-s", "tok-loss", "SELL_LONG", Decimal("0.35"), Decimal("100"), Decimal("-0.01"), True, now_ms - 60_000)
+    )
+
+    report_text = generate_report(ledger, since_str="1h", venue="global")
+    assert "Realized P&L:            $-20.0000" in report_text
+    assert "ESTIMATED NET EARNINGS:  $-19.9900" in report_text
+

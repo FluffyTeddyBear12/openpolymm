@@ -191,92 +191,12 @@
       "min_size": 50.0
     },
     {
-      "question": "Will there be 2+ walk-offs during the 2026 MLB Postseason?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will there be 3+ walk-offs during the 2026 MLB Postseason?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will there be 4+ walk-offs during the 2026 MLB Postseason?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will the longest game of the 2026 MLB Postseason last 11+ innings?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will the longest game of the 2026 MLB Postseason last 12+ innings?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will the longest game of the 2026 MLB Postseason last 13+ innings?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will the longest game of the 2026 MLB Postseason last 14+ innings?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will the longest game of the 2026 MLB Postseason last 15+ innings?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will the longest game of the 2026 MLB Postseason last 16+ innings?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
       "question": "California Expedited Environmental Review Proposition",
       "pool_usd": 2.0,
       "min_size": 20.0
     },
     {
-      "question": "Will HLE be number 1 on the end of year Global Power Rankings?",
-      "pool_usd": 3.0,
-      "min_size": 50.0
-    },
-    {
-      "question": "Will BLG be number 1 on the end of year Global Power Rankings?",
-      "pool_usd": 3.0,
-      "min_size": 50.0
-    },
-    {
-      "question": "Will GEN be number 1 on the end of year Global Power Rankings?",
-      "pool_usd": 3.0,
-      "min_size": 50.0
-    },
-    {
-      "question": "Will T1 be number 1 on the end of year Global Power Rankings?",
-      "pool_usd": 1.0,
-      "min_size": 50.0
-    },
-    {
       "question": "Will Texas A&M be Ranked #1 during the 2026-27 CFB season?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will 2026 rank between 7th and 9th among the highest domestic box office years?",
-      "pool_usd": 13.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will 2026 rank between 10th and 12th among the highest domestic box office years?",
-      "pool_usd": 6.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will 2026 rank below 15th among the highest domestic box office years?",
       "pool_usd": 1.0,
       "min_size": 20.0
     },
@@ -288,21 +208,6 @@
     {
       "question": "Will the St. Louis Blues win the 2026-27 NHL Presidents' Trophy?",
       "pool_usd": 8.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will a dLLM be the top AI model before 2027?",
-      "pool_usd": 0.001,
-      "min_size": 50.0
-    },
-    {
-      "question": "Over 4 coins launched in 2026 end the year in the top 100?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Will TOP ESPORTS make a roster change by December?",
-      "pool_usd": 3.0,
       "min_size": 20.0
     },
     {
@@ -446,7 +351,7 @@
       "min_size": 20.0
     },
     {
-      "question": "Will Atl\u00e9tico Madrid finish top 8 in UCL league phase?",
+      "question": "Will Atlético Madrid finish top 8 in UCL league phase?",
       "pool_usd": 5.0,
       "min_size": 20.0
     },
@@ -516,12 +421,12 @@
       "min_size": 20.0
     },
     {
-      "question": "Will Fenerbah\u00e7e finish top 8 in UCL league phase?",
+      "question": "Will Fenerbahçe finish top 8 in UCL league phase?",
       "pool_usd": 1.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Bod\u00f8/Glimt finish top 8 in UCL league phase?",
+      "question": "Will Bodø/Glimt finish top 8 in UCL league phase?",
       "pool_usd": 1.0,
       "min_size": 20.0
     },
@@ -674,26 +579,6 @@
       "question": "Will Levski Sofia finish top 8 in UEL league phase?",
       "pool_usd": 1.0,
       "min_size": 20.0
-    },
-    {
-      "question": "Will Top Esports Make the Worlds 2026 Grand Final?",
-      "pool_usd": 6.0,
-      "min_size": 50.0
-    },
-    {
-      "question": "Will Top Esports Reach the Worlds 2026 Knockout Stage?",
-      "pool_usd": 3.0,
-      "min_size": 50.0
-    },
-    {
-      "question": "Will Top Esports Go 3-0 in the Worlds 2026 Swiss Stage?",
-      "pool_usd": 3.0,
-      "min_size": 50.0
-    },
-    {
-      "question": "Will Top Esports Go 0-3 in the Worlds 2026 Swiss Stage?",
-      "pool_usd": 3.0,
-      "min_size": 50.0
     },
     {
       "question": "Will Debra Toporowski win the next Cowichan Valley British Columbia Legislative Assembly election?",
@@ -856,12 +741,12 @@
       "min_size": 50.0
     },
     {
-      "question": "Will Canada\u2019s 2026 inflation be between 2.0% and 2.4%?",
+      "question": "Will Canada’s 2026 inflation be between 2.0% and 2.4%?",
       "pool_usd": 1.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Canada\u2019s 2026 inflation be between 2.5% and 2.9%?",
+      "question": "Will Canada’s 2026 inflation be between 2.5% and 2.9%?",
       "pool_usd": 2.0,
       "min_size": 20.0
     },
@@ -876,17 +761,17 @@
       "min_size": 20.0
     },
     {
-      "question": "Will the UK\u2019s 2026 inflation be less than 1.0%?",
+      "question": "Will the UK’s 2026 inflation be less than 1.0%?",
       "pool_usd": 1.0,
       "min_size": 20.0
     },
     {
-      "question": "Will the UK\u2019s 2026 inflation be between 3.0% and 3.4%?",
+      "question": "Will the UK’s 2026 inflation be between 3.0% and 3.4%?",
       "pool_usd": 4.0,
       "min_size": 20.0
     },
     {
-      "question": "Will the UK\u2019s 2026 inflation be between 3.5% and 3.9%?",
+      "question": "Will the UK’s 2026 inflation be between 3.5% and 3.9%?",
       "pool_usd": 5.0,
       "min_size": 20.0
     },
@@ -911,37 +796,37 @@
       "min_size": 20.0
     },
     {
-      "question": "Will Argentina\u2019s annual inflation in 2026 be between 30% and 34.9%?",
+      "question": "Will Argentina’s annual inflation in 2026 be between 30% and 34.9%?",
       "pool_usd": 6.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Argentina\u2019s annual inflation in 2026 be between 25% and 29.9%?",
+      "question": "Will Argentina’s annual inflation in 2026 be between 25% and 29.9%?",
       "pool_usd": 4.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Canada\u2019s 2026 inflation be between 3.0% and 3.4%?",
+      "question": "Will Canada’s 2026 inflation be between 3.0% and 3.4%?",
       "pool_usd": 4.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Canada\u2019s 2026 inflation be between 3.5% and 3.9%?",
+      "question": "Will Canada’s 2026 inflation be between 3.5% and 3.9%?",
       "pool_usd": 3.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Brazil\u2019s Annual Inflation in 2026 be between 4.50% and 4.99%?",
+      "question": "Will Brazil’s Annual Inflation in 2026 be between 4.50% and 4.99%?",
       "pool_usd": 2.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Brazil\u2019s Annual Inflation in 2026 be between 5.00% and 5.49%?",
+      "question": "Will Brazil’s Annual Inflation in 2026 be between 5.00% and 5.49%?",
       "pool_usd": 6.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Brazil\u2019s Annual Inflation in 2026 be between 5.50% and 5.99%?",
+      "question": "Will Brazil’s Annual Inflation in 2026 be between 5.50% and 5.99%?",
       "pool_usd": 2.0,
       "min_size": 20.0
     },
@@ -961,27 +846,27 @@
       "min_size": 20.0
     },
     {
-      "question": "Will South Korea\u2019s 2026 Annual Inflation be between 2.7% and 2.9%?",
+      "question": "Will South Korea’s 2026 Annual Inflation be between 2.7% and 2.9%?",
       "pool_usd": 7.0,
       "min_size": 20.0
     },
     {
-      "question": "Will South Korea\u2019s 2026 Annual Inflation be at least 3.0%?",
+      "question": "Will South Korea’s 2026 Annual Inflation be at least 3.0%?",
       "pool_usd": 3.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Mexico\u2019s 2026 Annual Inflation be between 3.00% and 3.49%?",
+      "question": "Will Mexico’s 2026 Annual Inflation be between 3.00% and 3.49%?",
       "pool_usd": 2.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Mexico\u2019s 2026 Annual Inflation be between 3.50% and 3.99%?",
+      "question": "Will Mexico’s 2026 Annual Inflation be between 3.50% and 3.99%?",
       "pool_usd": 7.0,
       "min_size": 20.0
     },
     {
-      "question": "Will Mexico\u2019s 2026 Annual Inflation be between 4.00% and 4.49%?",
+      "question": "Will Mexico’s 2026 Annual Inflation be between 4.00% and 4.49%?",
       "pool_usd": 1.0,
       "min_size": 20.0
     },
@@ -1081,109 +966,9 @@
       "min_size": 20.0
     },
     {
-      "question": "Consensys IPO closing market cap above $1B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Consensys IPO closing market cap above $2B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Consensys IPO closing market cap above $3B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Kraken IPO closing market cap above $18B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Kraken IPO closing market cap above $20B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Kraken IPO closing market cap above $22B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Kraken IPO closing market cap above $24B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Ledger IPO closing market cap above $1B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "Ledger IPO closing market cap above $3B?",
-      "pool_usd": 0.001,
-      "min_size": 20.0
-    },
-    {
-      "question": "OpenAI IPO closing market cap above $800B?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "OpenAI IPO closing market cap above $1T?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "OpenAI IPO closing market cap above $1.4T?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "OpenAI IPO closing market cap above $1.6T?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
       "question": "Will Apple stop selling MacBook Neo?",
       "pool_usd": 0.001,
       "min_size": 50.0
-    },
-    {
-      "question": "Anthropic IPO closing market cap above $1.5T?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Anthropic IPO closing market cap above $1.75T?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Anthropic IPO closing market cap above $2T?",
-      "pool_usd": 5.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Anthropic IPO closing market cap above $2.25T?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Anthropic IPO closing market cap above $2.5T?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Anthropic IPO closing market cap above $2.75T?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
-    },
-    {
-      "question": "Anthropic IPO closing market cap above $3T?",
-      "pool_usd": 1.0,
-      "min_size": 20.0
     },
     {
       "question": "Will China unban Bitcoin by 2027?",
@@ -1831,12 +1616,12 @@
       "min_size": 20.0
     },
     {
-      "question": "Will Zl\u00edn qualify for the 2027-28 UEFA Champions League?",
+      "question": "Will Zlín qualify for the 2027-28 UEFA Champions League?",
       "pool_usd": 0.001,
       "min_size": 50.0
     },
     {
-      "question": "Will Borussia M\u00f6nchengladbach be relegated from the 2026-27 Bundesliga?",
+      "question": "Will Borussia Mönchengladbach be relegated from the 2026-27 Bundesliga?",
       "pool_usd": 5.0,
       "min_size": 20.0
     },
@@ -1851,7 +1636,7 @@
       "min_size": 20.0
     },
     {
-      "question": "Will 1. FC K\u00f6ln be relegated from the 2026-27 Bundesliga?",
+      "question": "Will 1. FC Köln be relegated from the 2026-27 Bundesliga?",
       "pool_usd": 5.0,
       "min_size": 20.0
     },

@@ -213,17 +213,25 @@ def test_missing_mids_or_ask_orders_score_zero():
     assert snap_n.qualifies is False
 
     yes_b = make_book("tok-yes", "0.49", "0.51", "100")
-    ask_orders = [
-        LiveOrder("o-ay", "tok-yes", "SELL_LONG", Decimal("0.51"), Decimal("50")),
+    unsupported_short_orders = [
         LiveOrder("o-an", "tok-no", "SELL_SHORT", Decimal("0.51"), Decimal("50")),
     ]
-    snap_ay, snap_an = estimate_global_pair_score(yes_b, normal_no, w, ask_orders)
+    snap_ay, snap_an = estimate_global_pair_score(yes_b, normal_no, w, unsupported_short_orders)
     assert snap_ay.trader_bid_score == Decimal("0")
     assert snap_an.trader_bid_score == Decimal("0")
     assert snap_ay.trader_ask_score == Decimal("0")
     assert snap_an.trader_ask_score == Decimal("0")
     assert snap_ay.reward_usd == Decimal("0")
     assert snap_an.reward_usd == Decimal("0")
+
+    unwind_orders = [
+        LiveOrder("o-ay", "tok-yes", "SELL_LONG", Decimal("0.51"), Decimal("50")),
+    ]
+    snap_uy, snap_un = estimate_global_pair_score(yes_b, normal_no, w, unwind_orders)
+    assert snap_uy.trader_ask_score > Decimal("0")
+    assert snap_uy.ask_qualifies is True
+    assert snap_uy.reward_usd > Decimal("0")
+    assert snap_un.reward_usd == Decimal("0")
 
 
 def test_report_sums_both_tokens_without_dedup_drop(tmp_path):

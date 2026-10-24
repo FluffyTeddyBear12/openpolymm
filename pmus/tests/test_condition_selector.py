@@ -801,4 +801,149 @@ def test_evaluate_condition_rejects_excessive_spread_and_waterfill_sweeps_remain
     assert total_deployed >= Decimal("225.00")
 
 
+def test_correlation_deduplication_blocks_negrisk_and_question_stem_siblings():
+    import dataclasses
+    from pmus.strategy.condition_selector import correlation_keys, risk_adjustment_multiplier
+
+    c_nr1 = dataclasses.replace(
+        make_condition(cond_id="nr1", pool="300", target="20", question="Will Candidate A win the 2028 French Presidential Election?"),
+        neg_risk_market_id="0xfrance2028",
+    )
+    c_nr2 = dataclasses.replace(
+        make_condition(cond_id="nr2", pool="290", target="20", question="Will Candidate B win the 2028 French Presidential Election?"),
+        neg_risk_market_id="0xfrance2028",
+    )
+    c_cab1 = make_condition(
+        cond_id="cab1",
+        pool="250",
+        target="20",
+        question="Will no next Israeli Minister of Justice be appointed by February 28, 2027?",
+    )
+    c_cab2 = make_condition(
+        cond_id="cab2",
+        pool="245",
+        target="20",
+        question="Will no next Israeli Minister of Defense be appointed by February 28, 2027?",
+    )
+    c_indep = make_condition(
+        cond_id="ind1",
+        pool="200",
+        target="20",
+        question="Will the US Senate pass the Farm Bill by June 30, 2027?",
+    )
+    assert set(correlation_keys(c_nr1)) & set(correlation_keys(c_nr2))
+    assert set(correlation_keys(c_cab1)) & set(correlation_keys(c_cab2))
+
+    books = {}
+    for c in (c_nr1, c_nr2, c_cab1, c_cab2, c_indep):
+        books[c.yes.slug] = make_book([("0.48", "500")], [("0.51", "500")], slug=c.yes.slug)
+        books[c.no.slug] = make_book([("0.48", "500")], [("0.51", "500")], slug=c.no.slug)
+
+    selected = allocate_conditions(
+        conditions=[c_nr1, c_nr2, c_cab1, c_cab2, c_indep],
+        books=books,
+        total_budget=Decimal("180.00"),
+        max_cost_per_condition=Decimal("60.00"),
+        max_markets=5,
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+    )
+    selected_ids = {t.condition.condition_id for t in selected}
+    assert selected_ids == {"nr1", "cab1", "ind1"}
+
+    sym_target = evaluate_condition(c_indep, books[c_indep.yes.slug], books[c_indep.no.slug], Decimal("60"), Decimal("500"), Decimal("0.0"))
+    asym_y = make_book([("0.23", "500")], [("0.25", "500")], slug=c_indep.yes.slug)
+    asym_n = make_book([("0.74", "500")], [("0.76", "500")], slug=c_indep.no.slug)
+    asym_target = evaluate_condition(c_indep, asym_y, asym_n, Decimal("60"), Decimal("500"), Decimal("0.0"))
+    assert sym_target is not None and asym_target is not None
+    assert risk_adjustment_multiplier(sym_target, books[c_indep.yes.slug], books[c_indep.no.slug]) > risk_adjustment_multiplier(asym_target, asym_y, asym_n)
+
+
+def test_diversification_cap_prevents_whale_monopoly_across_three_independent_groups():
+    import dataclasses
+
+    c_whale = dataclasses.replace(
+        make_condition(cond_id="c1", pool="5000", target="30", question="Will Alice Smith be named Minister of Finance in 2027?"),
+        neg_risk_market_id="nr-cab",
+    )
+    c_whale_sib = dataclasses.replace(
+        make_condition(cond_id="c2", pool="4000", target="30", question="Will Bob Jones be named Minister of Defense in 2027?"),
+        neg_risk_market_id="nr-cab",
+    )
+    c_fed = make_condition(cond_id="c3", pool="220", target="30", question="Will no one dissent the December Fed decision?")
+    c_ecb = make_condition(cond_id="c4", pool="180", target="30", question="Will the European Central Bank cut rates in Q2 2027?")
+    c_house = make_condition(cond_id="c5", pool="160", target="30", question="Will Democrats win the US House majority in 2028?")
+
+    conds = [c_whale, c_whale_sib, c_fed, c_ecb, c_house]
+    books = {}
+    for c in conds:
+        books[c.yes.slug] = make_book([("0.48", "500")], [("0.51", "500")], slug=c.yes.slug)
+        books[c.no.slug] = make_book([("0.48", "500")], [("0.51", "500")], slug=c.no.slug)
+
+    targets_300 = allocate_conditions(
+        conditions=conds,
+        books=books,
+        total_budget=Decimal("300.00"),
+        max_cost_per_condition=Decimal("300.00"),
+        max_markets=6,
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+    )
+    ids_300 = {t.condition.condition_id for t in targets_300}
+    assert not ({"c1", "c2"} <= ids_300)
+    assert len(targets_300) >= 3
+    assert all(t.cost <= Decimal("126.00") for t in targets_300)
+
+    targets_148 = allocate_conditions(
+        conditions=conds,
+        books=books,
+        total_budget=Decimal("148.07"),
+        max_cost_per_condition=Decimal("65.00"),
+        max_markets=6,
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+    )
+    assert len(targets_148) == 3
+    assert not ({"c1", "c2"} <= {t.condition.condition_id for t in targets_148})
+
+
+def test_stem_dedup_deadlines_and_strikes_120_budget_diversification_and_fill_risk_boundaries():
+    from pmus.strategy.condition_selector import question_stem
+    from pmus.strategy.fill_risk import fill_risk_category
+
+    stem_macron_mar = question_stem("Will Macron resign by March 31, 2027?")
+    stem_macron_jun = question_stem("Will Macron resign by June 30, 2027?")
+    assert stem_macron_mar is not None
+    assert stem_macron_mar == stem_macron_jun
+
+    stem_inf_3 = question_stem("Will US inflation in 2026 exceed 3%?")
+    stem_inf_4 = question_stem("Will US inflation in 2026 exceed 4%?")
+    assert stem_inf_3 is not None
+    assert stem_inf_3 == stem_inf_4
+
+    c1 = make_condition(cond_id="ind-1", pool="400", target="20", question="Will the US Senate pass the Railway Safety Act in 2027?")
+    c2 = make_condition(cond_id="ind-2", pool="350", target="20", question="Will the European Central Bank hold rates steady in Q3 2027?")
+    c3 = make_condition(cond_id="ind-3", pool="300", target="20", question="Will Labour retain a majority in the UK Parliament through 2027?")
+    books = {}
+    for c in (c1, c2, c3):
+        books[c.yes.slug] = make_book([("0.48", "500")], [("0.51", "500")], slug=c.yes.slug)
+        books[c.no.slug] = make_book([("0.48", "500")], [("0.51", "500")], slug=c.no.slug)
+
+    targets_120 = allocate_conditions(
+        conditions=[c1, c2, c3],
+        books=books,
+        total_budget=Decimal("120.00"),
+        max_cost_per_condition=Decimal("120.00"),
+        max_markets=6,
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+    )
+    assert {t.condition.condition_id for t in targets_120} == {"ind-1", "ind-2", "ind-3"}
+    assert all(Decimal("36.00") <= t.cost <= Decimal("50.40") for t in targets_120)
+
+    assert fill_risk_category("Will Senate Democrats fight the tariff bill next month?") is None
+    assert (
+        fill_risk_category("Will Nvidia be the largest company in the world at the end of 2026?")
+        == "corporate_metrics"
+    )
 

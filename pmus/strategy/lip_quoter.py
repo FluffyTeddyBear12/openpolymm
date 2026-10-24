@@ -1,11 +1,97 @@
 import logging
 from datetime import datetime
 from decimal import Decimal
+from enum import Enum
 
 from pmus.models import Book, IncentiveWindow, Level, Market, Position, Quote
 from pmus.strategy import book_guard, global_rewards
+from pmus.strategy.condition_selector import PAIR_LEG_MIN_PRICE, SINGLE_SIDED_MIN_PRICE
 
 logger = logging.getLogger(__name__)
+
+LIQUID_UNWIND_MIN_BID_PRICE = Decimal("0.12")
+LIQUID_UNWIND_MAX_SPREAD = Decimal("0.03")
+LIQUID_UNWIND_MIN_SHARES = Decimal("150")
+LIQUID_UNWIND_STOP_RATIO = Decimal("0.55")
+ACTIVE_STOP_UNWIND_MID_RATIO = Decimal("0.85")
+PAIR_LIVE_MAX_BID_PRICE = Decimal("1") - PAIR_LEG_MIN_PRICE
+
+
+class UnwindRegime(str, Enum):
+    HEDGED_PAIR_HOLD = "hedged_pair_hold"
+    IN_SPREAD_SCRATCH = "in_spread_scratch"
+    LIQUID_STOP_UNWIND = "liquid_stop_unwind"
+    COLLAPSED_STUB_HOLD = "collapsed_stub_hold"
+
+
+def _compute_stop_floor(ref_entry: Decimal, tick: Decimal) -> Decimal:
+    raw_stop = max(LIQUID_UNWIND_MIN_BID_PRICE, ref_entry * LIQUID_UNWIND_STOP_RATIO)
+    if tick <= Decimal("0"):
+        return raw_stop
+    stop_rem = raw_stop % tick
+    if stop_rem == Decimal("0"):
+        return (raw_stop // tick) * tick
+    return ((raw_stop // tick) + Decimal("1")) * tick
+
+
+def classify_unwind_regime(
+    *,
+    market: Market,
+    book: Book,
+    window: IncentiveWindow,
+    unhedged_net: Decimal,
+    ask_qty: Decimal,
+    best_bid: Decimal,
+    bid_price: Decimal,
+    ask_price: Decimal,
+    mid: Decimal,
+    min_exit: Decimal,
+    budget: Decimal,
+    bid_budget: Decimal | None,
+    avg_price: Decimal | None = None,
+    tick: Decimal | None = None,
+    allow_stop_unwind: bool | None = None,
+) -> UnwindRegime:
+    if unhedged_net < market.min_qty:
+        return UnwindRegime.HEDGED_PAIR_HOLD
+    if (
+        min_exit <= Decimal("0")
+        or window.max_spread is None
+        or ask_price >= min_exit
+        or (min_exit - mid) < window.max_spread
+    ):
+        return UnwindRegime.IN_SPREAD_SCRATCH
+
+    if allow_stop_unwind is None:
+        flatten_mode = (
+            (bid_budget is not None and bid_budget <= Decimal("0"))
+            or budget <= Decimal("0")
+            or window.pool_usd <= Decimal("0")
+        )
+    else:
+        flatten_mode = allow_stop_unwind
+    eff_tick = tick if (tick is not None and tick > Decimal("0")) else (book.tick_size or market.tick)
+    ref_entry = avg_price if (avg_price is not None and avg_price > Decimal("0")) else min_exit
+    stop_floor = _compute_stop_floor(ref_entry, eff_tick)
+    near_band = min(window.max_spread, LIQUID_UNWIND_MAX_SPREAD)
+    near_bid_usd = sum(
+        (lvl.price * lvl.qty for lvl in book.bids if (best_bid - lvl.price) <= near_band),
+        Decimal("0"),
+    )
+    near_bid_qty = sum(
+        (lvl.qty for lvl in book.bids if (best_bid - lvl.price) <= near_band),
+        Decimal("0"),
+    )
+    if (
+        flatten_mode
+        and best_bid >= LIQUID_UNWIND_MIN_BID_PRICE
+        and ask_price >= stop_floor
+        and (ask_price - bid_price) <= near_band
+        and near_bid_usd >= book_guard.MIN_NEAR_NOTIONAL_USD
+        and near_bid_qty >= max(LIQUID_UNWIND_MIN_SHARES, ask_qty)
+    ):
+        return UnwindRegime.LIQUID_STOP_UNWIND
+    return UnwindRegime.COLLAPSED_STUB_HOLD
 
 
 def _guarded_bid_price(
@@ -14,6 +100,7 @@ def _guarded_bid_price(
     tick: Decimal,
     other_book: Book | None = None,
     max_bid_price: Decimal | None = None,
+    min_bid_price: Decimal | None = None,
 ) -> Decimal | None:
     price = global_rewards.bid_price(book, window, tick)
     if price is None:
@@ -28,6 +115,8 @@ def _guarded_bid_price(
                 if mid_curr is not None and abs(clamped_cap - mid_curr) > window.max_spread:
                     return None
             price = clamped_cap
+    if min_bid_price is not None and price < min_bid_price:
+        return None
     reason = book_guard.quote_guard(book, window, price, tick, other_book=other_book)
     if reason is not None:
         logger.debug("Guard pulled %s bid: %s", book.slug, reason)
@@ -52,6 +141,9 @@ def desired_quotes(
     quote_size: Decimal | None = None,
     other_book: Book | None = None,
     max_bid_price: Decimal | None = None,
+    min_bid_price: Decimal | None = None,
+    other_position_qty: Decimal = Decimal("0"),
+    allow_stop_unwind: bool | None = None,
 ) -> list[Quote]:
     if window is None or window.status.lower() != "active":
         return []
@@ -75,9 +167,10 @@ def desired_quotes(
         and position is not None
         and position.net_qty >= market.min_qty
     ):
-        net = position.net_qty
-        cap = max_contracts_cap if max_contracts_cap is not None else net
-        ask_qty = (min(net, cap) // market.min_qty) * market.min_qty
+        hedged_qty = min(position.net_qty, max(Decimal("0"), other_position_qty))
+        unhedged_net = max(Decimal("0"), position.net_qty - hedged_qty)
+        cap = max_contracts_cap if max_contracts_cap is not None else unhedged_net
+        ask_qty = (min(unhedged_net, cap) // market.min_qty) * market.min_qty
         if ask_qty >= market.min_qty:
             raw_exit = (
                 position.avg_price
@@ -150,12 +243,22 @@ def desired_quotes(
     quotes: list[Quote] = []
 
     if is_global:
+        effective_min_bid = (
+            min_bid_price
+            if min_bid_price is not None
+            else (PAIR_LEG_MIN_PRICE if paired else SINGLE_SIDED_MIN_PRICE)
+        )
         adverse_freeze = (
             net > Decimal("0")
             and position is not None
             and position.avg_price > Decimal("0")
         )
         if paired:
+            effective_max_bid = (
+                min(max_bid_price, PAIR_LIVE_MAX_BID_PRICE)
+                if max_bid_price is not None
+                else PAIR_LIVE_MAX_BID_PRICE
+            )
             target_sz = quote_size if quote_size is not None else window.target_size
             if net < window.target_size and target_sz >= window.target_size:
                 remaining = max(window.target_size, target_sz - net)
@@ -164,7 +267,8 @@ def desired_quotes(
                     window,
                     tick,
                     other_book=other_book,
-                    max_bid_price=max_bid_price,
+                    max_bid_price=effective_max_bid,
+                    min_bid_price=effective_min_bid,
                 )
                 qty = min(remaining, max_bid_contracts)
                 budget_blocked = budget > Decimal("0") and adverse_freeze and (net * position.avg_price >= budget)
@@ -190,6 +294,7 @@ def desired_quotes(
                     tick,
                     other_book=other_book,
                     max_bid_price=max_bid_price,
+                    min_bid_price=effective_min_bid,
                 )
                 if price is not None and price > Decimal("0"):
                     held_cost = max(Decimal("0"), net) * (
@@ -220,7 +325,9 @@ def desired_quotes(
                             quotes.append(Quote(slug=market.slug, side="BUY_LONG", price=price, qty=bid_qty))
 
         if net > Decimal("0"):
-            ask_qty = min(net, max_ask_contracts) // market.min_qty * market.min_qty
+            hedged_qty = min(net, max(Decimal("0"), other_position_qty))
+            unhedged_net = max(Decimal("0"), net - hedged_qty)
+            ask_qty = min(unhedged_net, max_ask_contracts) // market.min_qty * market.min_qty
             if position is not None and position.avg_price > Decimal("0"):
                 rem = position.avg_price % tick
                 min_exit = (
@@ -231,60 +338,46 @@ def desired_quotes(
             else:
                 min_exit = Decimal("0")
             mid = global_rewards.adjusted_mid(book, window.target_size) or ((best_bid + best_ask) / Decimal("2"))
-            over_budget_pos = budget <= Decimal("0")
-            underwater_non_scoring = (
-                over_budget_pos
-                and window.max_spread is not None
-                and min_exit > Decimal("0")
-                and ask_price < min_exit
+            avg_px = position.avg_price if position is not None else Decimal("0")
+            regime = classify_unwind_regime(
+                market=market,
+                book=book,
+                window=window,
+                unhedged_net=unhedged_net,
+                ask_qty=ask_qty,
+                best_bid=best_bid,
+                bid_price=bid_price,
+                ask_price=ask_price,
+                mid=mid,
+                min_exit=min_exit,
+                budget=budget,
+                bid_budget=bid_budget,
+                avg_price=avg_px,
+                tick=tick,
+                allow_stop_unwind=allow_stop_unwind,
             )
-            live_unwind_non_scoring = (
-                bid_budget is not None
-                and bid_budget <= Decimal("0")
-                and budget > Decimal("0")
-                and window.max_spread is not None
-                and window.pool_usd > Decimal("0")
-                and global_rewards.mid_in_reward_band(mid)
-                and ask_qty >= window.target_size
-                and min_exit > Decimal("0")
-                and (min_exit - mid) >= window.max_spread
-            )
-            if underwater_non_scoring:
-                qual_bid = next((lvl.price for lvl in book.bids if lvl.qty >= window.target_size), best_bid)
-                qual_ask = next(((lvl.price // tick) * tick for lvl in book.asks if lvl.qty >= window.target_size), ask_price)
-                band_floor = ((Decimal("2") * global_rewards.REWARD_MID_LOW - qual_bid + (Decimal("4") * tick)) // tick) * tick
-                loss_floor = min_exit
-                max_scoring_ask = (((mid + window.max_spread) - (tick / Decimal("10"))) // tick) * tick
-                candidate_ask = max(qual_ask, band_floor)
-                clamped_ask = min(candidate_ask, max_scoring_ask) if max_scoring_ask > best_bid else candidate_ask
-                sell_price = max(clamped_ask, loss_floor) if mid < global_rewards.REWARD_MID_LOW else clamped_ask
-            elif live_unwind_non_scoring:
-                loss_floor = min_exit
-                max_scoring_ask = (
-                    ((mid + window.max_spread) - (tick / Decimal("10")))
-                    // tick
-                ) * tick
-                target_unwind_ask = min(min_exit, max_scoring_ask)
-                candidate_sell = max(ask_price, loss_floor, target_unwind_ask)
-                sell_price = (
-                    candidate_sell
-                    if (candidate_sell - mid) < window.max_spread
-                    else max(ask_price, min_exit)
-                )
-            elif window.max_spread is not None and (ask_price - bid_price) > window.max_spread and min_exit > Decimal("0"):
-                target_ask = max(min_exit, min(ask_price, bid_price + window.max_spread))
-                sell_price = (target_ask // tick) * tick
-            else:
+            if regime == UnwindRegime.HEDGED_PAIR_HOLD:
+                return quotes
+            if regime == UnwindRegime.LIQUID_STOP_UNWIND:
+                stop_floor = _compute_stop_floor(avg_px, tick)
+                sell_price = max(ask_price, stop_floor)
+            elif regime == UnwindRegime.COLLAPSED_STUB_HOLD:
                 sell_price = max(ask_price, min_exit)
-                if ask_qty >= market.min_qty and (
-                    ask_qty < window.target_size
-                    or (min_exit > Decimal("0") and (ask_price - min_exit) >= Decimal("3") * tick)
-                ):
-                    stepped_ask = max(min_exit, ask_price - tick)
-                    if stepped_ask > best_bid:
-                        sell_price = stepped_ask
-            if min_exit > Decimal("0"):
-                sell_price = max(sell_price, min_exit)
+            else:
+                if window.max_spread is not None and (ask_price - bid_price) > window.max_spread and min_exit > Decimal("0"):
+                    target_ask = max(min_exit, min(ask_price, bid_price + window.max_spread))
+                    sell_price = (target_ask // tick) * tick
+                else:
+                    sell_price = max(ask_price, min_exit)
+                    if ask_qty >= market.min_qty and (
+                        ask_qty < window.target_size
+                        or (min_exit > Decimal("0") and (ask_price - min_exit) >= Decimal("3") * tick)
+                    ):
+                        stepped_ask = max(min_exit, ask_price - tick)
+                        if stepped_ask > best_bid:
+                            sell_price = stepped_ask
+                if min_exit > Decimal("0"):
+                    sell_price = max(sell_price, min_exit)
             sell_price = min(sell_price, Decimal("1") - tick, Decimal("0.999"))
             if ask_qty >= market.min_qty and sell_price > best_bid:
                 quotes.append(Quote(slug=market.slug, side="SELL_LONG", price=sell_price, qty=ask_qty))

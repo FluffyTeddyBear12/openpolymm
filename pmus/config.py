@@ -23,6 +23,7 @@ class Settings:
     daily_loss_limit: Decimal = Decimal("5.00")
     daily_loss_stop: Decimal = Decimal("10.00")
     daily_loss_baseline: Decimal = Decimal("0.00")
+    daily_loss_baseline_date: str = ""
     webhook_url: str = ""
     data_dir: Path = Path(__file__).resolve().parent / "data"
     logs_dir: Path = Path(__file__).resolve().parent / "logs"
@@ -120,6 +121,7 @@ class Settings:
             daily_loss_limit=Decimal(os.getenv("PMUS_DAILY_LOSS_LIMIT", "5.00")),
             daily_loss_stop=Decimal(os.getenv("PMUS_DAILY_LOSS_STOP", "10.00")),
             daily_loss_baseline=Decimal(os.getenv("PMUS_DAILY_LOSS_BASELINE", "0.00")),
+            daily_loss_baseline_date=os.getenv("PMUS_DAILY_LOSS_BASELINE_DATE", "").strip(),
             webhook_url=webhook_url,
             data_dir=Path(os.getenv("PMUS_DATA_DIR", str(Path(__file__).resolve().parent / "data"))),
             logs_dir=Path(os.getenv("PMUS_LOGS_DIR", str(Path(__file__).resolve().parent / "logs"))),

@@ -275,7 +275,7 @@ def test_unacknowledged_order_is_not_reported_as_created():
 
 def test_fetch_sampling_markets_filters_status_patterns_and_expiry():
     now = datetime.now(timezone.utc)
-    future_valid = (now + timedelta(days=10)).isoformat()
+    future_valid = (now + timedelta(days=20)).isoformat()
     future_short = (now + timedelta(days=2)).isoformat()
     raw = [
         {
@@ -370,3 +370,65 @@ def test_buying_power_cache_locking_and_stale_fallback():
     client.invalidate_buying_power_cache()
     bp5 = client.get_buying_power()
     assert bp5 == Decimal("0")
+
+
+def test_sampling_metadata_surfacing_and_lifecycle_gates():
+    now_dt = datetime.now(timezone.utc)
+    seasoned_ts = (now_dt - timedelta(hours=72)).isoformat().replace("+00:00", "Z")
+    unseasoned_ts = (now_dt - timedelta(hours=6)).isoformat().replace("+00:00", "Z")
+    exp_60d = (now_dt + timedelta(days=60)).isoformat().replace("+00:00", "Z")
+    exp_10d = (now_dt + timedelta(days=10)).isoformat().replace("+00:00", "Z")
+    exp_20d = (now_dt + timedelta(days=20)).isoformat().replace("+00:00", "Z")
+
+    def item(cid, q, slug, accept_ts=seasoned_ts, end_iso=exp_60d, **overrides):
+        base = {
+            "condition_id": cid,
+            "question": q,
+            "market_slug": slug,
+            "active": True,
+            "closed": False,
+            "archived": False,
+            "accepting_orders": True,
+            "enable_order_book": True,
+            "seconds_delay": 0,
+            "accepting_order_timestamp": accept_ts,
+            "neg_risk": True,
+            "neg_risk_market_id": "0xnr1",
+            "tags": ["Politics", "Senate"],
+            "end_date_iso": end_iso,
+            "rewards": {"rates": [{"rewards_daily_rate": 120}], "min_size": 20, "max_spread": 4},
+            "tokens": [
+                {"token_id": f"{cid}-y", "outcome": "Yes"},
+                {"token_id": f"{cid}-n", "outcome": "No"},
+            ],
+        }
+        base.update(overrides)
+        return base
+
+    raw = [
+        item("c-clean", "Will the US Senate pass the Farm Bill before 2027?", "us-senate-farm-bill"),
+        item("c-unseasoned", "Will the US Senate pass Bill B before 2027?", "bill-b", accept_ts=unseasoned_ts),
+        item("c-short-tte", "Will the US Senate pass Bill C?", "bill-c", end_iso=exp_10d),
+        item("c-series-20d", "Will the Dodgers win the 2026 World Series?", "dodgers-world-series", end_iso=exp_20d),
+        item("c-archived", "Will the US Senate pass Bill D?", "bill-d", archived=True),
+        item("c-delayed", "Will the US Senate pass Bill E?", "bill-e", seconds_delay=3),
+        item("c-not-accepting", "Will the US Senate pass Bill F?", "bill-f", accepting_orders=False),
+    ]
+    mock_clob = MagicMock()
+    mock_clob.get_sampling_markets.return_value = {"data": raw, "next_cursor": "LTE="}
+    client = make_client(mock_clob)
+
+    conds = client.fetch_reward_conditions()
+    assert [c.condition_id for c in conds] == ["c-clean"]
+    c = conds[0]
+    assert c.neg_risk_market_id == "0xnr1"
+    assert c.tags == ("Politics", "Senate")
+    assert c.accepting_order_timestamp is not None
+    assert c.seconds_delay == 0
+    assert c.accepting_orders is True
+    assert c.archived is False
+    assert c.window.accepting_order_timestamp == c.accepting_order_timestamp
+    assert client._last_fill_risk_skipped.get("unseasoned") == 1
+    assert client._last_fill_risk_skipped.get("delayed_matching") == 1
+    assert client._last_fill_risk_skipped.get("short_tte") == 2
+

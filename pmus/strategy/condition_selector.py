@@ -1,5 +1,7 @@
 import logging
+import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -15,6 +17,42 @@ PAIR_LEG_MAX_PRICE = Decimal("0.75")
 PAIR_MIN_PRICE_SUM = Decimal("0.92")
 PAIR_MAX_PRICE_SUM = Decimal("0.98")
 MIN_COMPETITOR_SCORE = Decimal("45")
+ADMISSION_HYSTERESIS = Decimal("1.3")
+MAX_SINGLE_CONDITION_BUDGET_SHARE = Decimal("0.42")
+MIN_DIVERSIFIED_COST_FLOOR = Decimal("36.00")
+
+_DEADLINE_TAIL_RX = re.compile(
+    r"\b(?:(?:by|before|through|at)\s+(?:the\s+)?end\s+of|by|before|on|in|through|after)\s+"
+    r"(?:"
+    r"(?:january|february|march|april|may|june|july|august|september|october|november|december)"
+    r"(?:\s+\d{1,2})?(?:,?\s+\d{4})?"
+    r"|q[1-4](?:\s+\d{4})?"
+    r"|\d{4}"
+    r")\s*\??\s*$"
+)
+_MINISTER_ROLE_RX = re.compile(
+    r"\bminister of [a-z]+(?:\s+(?:and\s+[a-z]+|affairs|security|development|protection|cooperation))?\b"
+)
+_SECRETARY_ROLE_RX = re.compile(
+    r"\bsecretary of [a-z]+(?:\s+(?:and\s+[a-z]+|affairs|security))?\b"
+)
+_SHARED_RACE_PREFIX_RX = re.compile(
+    r"^will\s+.+?\s+("
+    r"win\s+the\s+.+|"
+    r"be\s+the\s+(?:next|\d{4})\s+.+|"
+    r"control\s+the\s+.+|"
+    r"receive\s+the\s+first\s+mandate\s+.+|"
+    r"dissent\s+the\s+.+"
+    r")$"
+)
+_STEM_STOPWORDS = frozenset({
+    "will", "the", "a", "an", "be", "to", "of", "in", "for", "and",
+    "or", "no", "next", "it", "is", "are", "at", "by", "on", "after",
+})
+_THRESHOLD_STRIKE_RX = re.compile(
+    r"\b(exceeds?|above|below|over|under|at least|at most|more than|less than|fewer than)\s+"
+    r"(?:\$\s*\d[\d,.]*(?:\s*(?:[kmbt]|million|billion|trillion))?|\d+(?:\.\d+)?\s*(?:%|bps|percent|percentage points?)|(?!(?:19|20)\d{2}\b)\d+(?:\.\d+)?)(?!\w)"
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +64,99 @@ class ConditionTarget:
     no_price: Decimal | None
     cost: Decimal
     expected_reward_sec: Decimal
+
+
+def question_stem(question: str) -> str | None:
+    s = question.lower().replace("\u2018", "'").replace("\u2019", "'").replace("'s", " ")
+    s = _THRESHOLD_STRIKE_RX.sub(r"\1", s)
+    s = re.sub(r"[^a-z0-9\s-]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    if not s:
+        return None
+    s, deadline_stripped = _DEADLINE_TAIL_RX.subn("", s)
+    s = s.strip()
+    s = _MINISTER_ROLE_RX.sub("minister", s)
+    s = _SECRETARY_ROLE_RX.sub("secretary", s)
+    m = _SHARED_RACE_PREFIX_RX.match(s)
+    if m:
+        s = m.group(1)
+    tokens = [tok for tok in s.replace("-", " ").split() if tok and tok not in _STEM_STOPWORDS]
+    min_tokens = 2 if deadline_stripped > 0 else 3
+    if len(tokens) < min_tokens:
+        return None
+    return "stem:" + " ".join(tokens)
+
+
+def correlation_keys(cond: ConditionMarket) -> tuple[str, ...]:
+    keys: list[str] = []
+    nr_id = getattr(cond, "neg_risk_market_id", "").strip().lower()
+    if nr_id:
+        keys.append(f"negrisk:{nr_id}")
+    stem = question_stem(cond.question)
+    if stem is not None:
+        keys.append(stem)
+    return tuple(keys)
+
+
+def _group_keys_for_count(
+    key: str,
+    cond: ConditionMarket,
+    corr_keys: tuple[str, ...],
+) -> tuple[str, ...]:
+    if corr_keys:
+        return corr_keys
+    ev = (cond.event_id or "").strip().lower()
+    if ev:
+        return (f"event:{ev}",)
+    return (f"cond:{key}",)
+
+
+def risk_adjustment_multiplier(
+    target: ConditionTarget,
+    yes_book: Book,
+    no_book: Book,
+) -> Decimal:
+    window = target.condition.window
+    comp_q = global_rewards.competitor_q(yes_book, no_book, window)
+    f_comp = Decimal("0.75") + Decimal("0.25") * (comp_q / (comp_q + Decimal("150")))
+
+    f_tte = Decimal("1.0")
+    if (
+        window.end is not None
+        and window.start is not None
+        and (window.end - window.start) >= timedelta(days=3)
+    ):
+        now_ref = datetime.now(timezone.utc)
+        tte_sec = Decimal(str((window.end - now_ref).total_seconds()))
+        tte_days = max(Decimal("0"), tte_sec / Decimal("86400"))
+        f_tte = Decimal("0.80") + Decimal("0.20") * min(Decimal("1"), tte_days / Decimal("90"))
+
+    if target.mode == "two_sided" and target.yes_price is not None and target.no_price is not None:
+        skew = abs(target.yes_price - Decimal("0.50"))
+        f_sym = max(Decimal("0.75"), Decimal("1.0") - Decimal("0.55") * skew)
+        merge_edge = max(Decimal("0"), Decimal("1") - (target.yes_price + target.no_price))
+        f_margin = Decimal("1.0") + min(Decimal("0.12"), merge_edge * Decimal("2.0"))
+        leg_pairs = [(yes_book, target.yes_price), (no_book, target.no_price)]
+    elif target.mode == "yes_only" and target.yes_price is not None:
+        f_sym = Decimal("0.88")
+        f_margin = Decimal("1.0")
+        leg_pairs = [(yes_book, target.yes_price)]
+    elif target.mode == "no_only" and target.no_price is not None:
+        f_sym = Decimal("0.88")
+        f_margin = Decimal("1.0")
+        leg_pairs = [(no_book, target.no_price)]
+    else:
+        return f_comp * f_tte
+
+    ratios: list[Decimal] = []
+    for b_leg, px in leg_pairs:
+        near_bid = sum((lvl.price * lvl.qty for lvl in b_leg.bids if lvl.price >= px - Decimal("0.02")), Decimal("0"))
+        top_ask = b_leg.asks[0].price if b_leg.asks else Decimal("0")
+        near_ask = sum((lvl.price * lvl.qty for lvl in b_leg.asks if lvl.price <= top_ask + Decimal("0.02")), Decimal("0"))
+        ratios.append(min(Decimal("1"), near_bid / max(Decimal("1"), near_ask)))
+    avg_ratio = sum(ratios, Decimal("0")) / Decimal(len(ratios))
+    f_bal = Decimal("0.85") + Decimal("0.15") * avg_ratio
+    return f_comp * f_tte * f_sym * f_margin * f_bal
 
 
 def _single_size(
@@ -50,7 +181,14 @@ def _single_size(
 
 
 def _admit(cond: ConditionMarket, book: Book, price: Decimal, tick: Decimal, other_book: Book | None = None) -> bool:
-    reason = book_guard.quote_guard(book, cond.window, price, tick, other_book=other_book)
+    reason = book_guard.quote_guard(
+        book,
+        cond.window,
+        price,
+        tick,
+        other_book=other_book,
+        hysteresis=ADMISSION_HYSTERESIS,
+    )
     if reason is not None:
         logger.debug("Guard rejected %s bid on %s: %s", book.slug, cond.question, reason)
     return reason is None
@@ -216,9 +354,13 @@ WATERFILL_COST_TIERS: tuple[Decimal, ...] = (
 )
 
 
-def _rank_score(t: ConditionTarget, pair_preference: Decimal = Decimal("1.0")) -> Decimal:
+def _rank_score(
+    t: ConditionTarget,
+    pair_preference: Decimal = Decimal("1.0"),
+    risk_multiplier: Decimal = Decimal("1.0"),
+) -> Decimal:
     weight = pair_preference if (t.mode == "two_sided" and pair_preference > Decimal("0")) else Decimal("1.0")
-    return t.expected_reward_sec / weight
+    return (t.expected_reward_sec * risk_multiplier) / weight
 
 
 def _condition_held_cost(cond: ConditionMarket, positions: dict[str, Position] | None) -> Decimal:
@@ -245,6 +387,8 @@ def _waterfill_conditions(
     max_cost = min(max_cost_per_condition, total_budget)
 
     cond_curves: dict[str, list[ConditionTarget]] = {}
+    cond_corr_map: dict[str, tuple[str, ...]] = {}
+    cond_mult_map: dict[str, Decimal] = {}
     unique_conditions: list[tuple[str, ConditionMarket]] = []
     seen_keys: set[str] = set()
 
@@ -260,6 +404,7 @@ def _waterfill_conditions(
             continue
         seen_keys.add(key)
         unique_conditions.append((key, cond))
+        cond_corr_map[key] = correlation_keys(cond)
         yes_book = books[cond.yes.slug]
         no_book = books[cond.no.slug]
         pts: list[ConditionTarget] = []
@@ -282,9 +427,64 @@ def _waterfill_conditions(
                 last_rew = t.expected_reward_sec
         if pts:
             cond_curves[key] = pts
+            cond_mult_map[key] = risk_adjustment_multiplier(pts[-1], yes_book, no_book)
+
+    cond_by_key = dict(unique_conditions)
+    indep_groups_seen: set[str] = set()
+    indep_group_count = 0
+    for k in cond_curves:
+        g_tuple = _group_keys_for_count(k, cond_by_key[k], cond_corr_map.get(k, ()))
+        if not any(g in indep_groups_seen for g in g_tuple):
+            indep_group_count += 1
+            indep_groups_seen.update(g_tuple)
+
+    diversified_cap: Decimal | None = None
+    if max_markets >= 3 and indep_group_count >= 3:
+        raw_cap = min(
+            total_budget * MAX_SINGLE_CONDITION_BUDGET_SHARE,
+            (total_budget - WATERFILL_COST_TIERS[0]) / Decimal("2"),
+        )
+        share_cap = max(
+            MIN_DIVERSIFIED_COST_FLOOR,
+            raw_cap.quantize(Decimal("0.01")),
+        )
+        if share_cap < max_cost:
+            diversified_cap = share_cap
+            max_cost = share_cap
+            for key in list(cond_curves.keys()):
+                cond = cond_by_key[key]
+                held_cost = _condition_held_cost(cond, positions)
+                capped_max = max(Decimal("0"), max_cost - held_cost)
+                yes_book = books[cond.yes.slug]
+                no_book = books[cond.no.slug]
+                trimmed = [pt for pt in cond_curves[key] if pt.cost <= capped_max]
+                capped_pt = evaluate_condition(
+                    cond=cond,
+                    yes_book=yes_book,
+                    no_book=no_book,
+                    max_cost=capped_max,
+                    max_contracts=max_contracts,
+                    pair_preference=pair_preference,
+                    positions=positions,
+                )
+                if capped_pt is not None and (
+                    not trimmed
+                    or (
+                        capped_pt.cost > trimmed[-1].cost
+                        and capped_pt.expected_reward_sec > trimmed[-1].expected_reward_sec
+                    )
+                ):
+                    trimmed.append(capped_pt)
+                if trimmed:
+                    cond_curves[key] = trimmed
+                    cond_mult_map[key] = risk_adjustment_multiplier(trimmed[-1], yes_book, no_book)
+                else:
+                    del cond_curves[key]
+                    cond_mult_map.pop(key, None)
 
     chosen_idx: dict[str, int] = {key: -1 for key in cond_curves}
     active_keys: set[str] = set()
+    active_corr_keys: set[str] = set()
     remaining_budget = total_budget
 
     while True:
@@ -296,8 +496,11 @@ def _waterfill_conditions(
             next_idx = idx + 1
             if next_idx >= len(pts):
                 continue
-            if idx < 0 and len(active_keys) >= max_markets:
-                continue
+            if idx < 0:
+                if len(active_keys) >= max_markets:
+                    continue
+                if any(ck in active_corr_keys for ck in cond_corr_map.get(key, ())):
+                    continue
             cur_cost = pts[idx].cost if idx >= 0 else Decimal("0")
             cur_rew = pts[idx].expected_reward_sec if idx >= 0 else Decimal("0")
             d_cost = pts[next_idx].cost - cur_cost
@@ -309,13 +512,16 @@ def _waterfill_conditions(
                 if (pts[next_idx].mode == "two_sided" and pair_preference > Decimal("0"))
                 else Decimal("1.0")
             )
-            eff = (d_rew / weight) / d_cost
+            risk_mult = cond_mult_map.get(key, Decimal("1.0"))
+            eff = ((d_rew * risk_mult) / weight) / d_cost
             if eff > best_eff:
                 best_eff = eff
                 best_key = key
                 best_d_cost = d_cost
         if best_key is None:
             break
+        if chosen_idx[best_key] < 0:
+            active_corr_keys.update(cond_corr_map.get(best_key, ()))
         chosen_idx[best_key] += 1
         active_keys.add(best_key)
         remaining_budget -= best_d_cost
@@ -325,37 +531,51 @@ def _waterfill_conditions(
     ]
 
     if remaining_budget > Decimal("0") and len(active_keys) < max_markets:
-        fallback_candidates: list[ConditionTarget] = []
+        fallback_candidates: list[tuple[Decimal, tuple[str, ...], ConditionTarget]] = []
         for key, cond in unique_conditions:
             if key in active_keys:
+                continue
+            ckeys = cond_corr_map.get(key, ())
+            if any(ck in active_corr_keys for ck in ckeys):
                 continue
             held_cost = _condition_held_cost(cond, positions)
             cand_max = max(Decimal("0"), min(max_cost, remaining_budget) - held_cost)
             if cand_max <= Decimal("0"):
                 continue
+            yes_book = books[cond.yes.slug]
+            no_book = books[cond.no.slug]
             resized = evaluate_condition(
                 cond=cond,
-                yes_book=books[cond.yes.slug],
-                no_book=books[cond.no.slug],
+                yes_book=yes_book,
+                no_book=no_book,
                 max_cost=cand_max,
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
                 positions=positions,
             )
             if resized is not None and resized.cost > Decimal("0"):
-                fallback_candidates.append(resized)
+                mult = risk_adjustment_multiplier(resized, yes_book, no_book)
+                fallback_candidates.append((mult, ckeys, resized))
         fallback_candidates.sort(
-            key=lambda t: _rank_score(t, pair_preference) / t.cost,
+            key=lambda item: _rank_score(item[2], pair_preference, item[0]) / item[2].cost,
             reverse=True,
         )
-        for resized in fallback_candidates:
+        for _, ckeys, resized in fallback_candidates:
             if len(selected) >= max_markets or remaining_budget <= Decimal("0"):
                 break
+            if any(ck in active_corr_keys for ck in ckeys):
+                continue
             if resized.cost <= remaining_budget:
                 selected.append(resized)
+                active_corr_keys.update(ckeys)
                 remaining_budget -= resized.cost
 
-    selected.sort(key=lambda t: _rank_score(t, pair_preference), reverse=True)
+    def _target_score(t: ConditionTarget) -> Decimal:
+        yb = books[t.condition.yes.slug]
+        nb = books[t.condition.no.slug]
+        return _rank_score(t, pair_preference, risk_adjustment_multiplier(t, yb, nb))
+
+    selected.sort(key=_target_score, reverse=True)
     if remaining_budget > Decimal("0"):
         for idx_sel, cur_target in enumerate(selected):
             if remaining_budget <= Decimal("0"):
@@ -392,8 +612,9 @@ def _waterfill_conditions(
             held_cost = _condition_held_cost(cond, positions)
             if held_cost > Decimal("0"):
                 continue
+            upper_sweep = diversified_cap if diversified_cap is not None else (max_cost + Decimal("15.00"))
             sweep_cap = min(
-                max_cost + Decimal("15.00"),
+                upper_sweep,
                 cur_target.cost + remaining_budget,
             )
             if sweep_cap <= cur_target.cost:
@@ -416,7 +637,7 @@ def _waterfill_conditions(
                 remaining_budget -= swept.cost - cur_target.cost
                 selected[idx_sel] = swept
 
-    selected.sort(key=lambda t: _rank_score(t, pair_preference), reverse=True)
+    selected.sort(key=_target_score, reverse=True)
     return selected
 
 
@@ -442,40 +663,90 @@ def allocate_conditions(
             positions=positions,
         )
     max_cost = min(max_cost_per_condition, total_budget)
-    candidates: list[ConditionTarget] = []
+    scored_candidates: list[tuple[Decimal, tuple[str, ...], ConditionTarget]] = []
+    seen_cond_ids: set[str] = set()
     for cond in conditions:
+        cid = cond.condition_id if cond.condition_id else cond.yes.slug
+        if cid in seen_cond_ids:
+            continue
         if cond.yes.slug not in books or cond.no.slug not in books:
             continue
         held_cost = _condition_held_cost(cond, positions)
         cond_max_cost = max(Decimal("0"), max_cost - held_cost)
         if cond_max_cost <= Decimal("0"):
             continue
+        seen_cond_ids.add(cid)
+        yes_book = books[cond.yes.slug]
+        no_book = books[cond.no.slug]
         target = evaluate_condition(
             cond=cond,
-            yes_book=books[cond.yes.slug],
-            no_book=books[cond.no.slug],
+            yes_book=yes_book,
+            no_book=no_book,
             max_cost=cond_max_cost,
             max_contracts=max_contracts,
             pair_preference=pair_preference,
             positions=positions,
         )
         if target is not None:
-            candidates.append(target)
+            mult = risk_adjustment_multiplier(target, yes_book, no_book)
+            scored_candidates.append((mult, correlation_keys(cond), target))
 
-    candidates.sort(key=lambda t: _rank_score(t, pair_preference), reverse=True)
+    if max_markets >= 3 and len(scored_candidates) >= 3:
+        sub_share_cap = (total_budget * MAX_SINGLE_CONDITION_BUDGET_SHARE).quantize(Decimal("0.01"))
+        if Decimal("0") < sub_share_cap < max_cost:
+            capped_candidates: list[tuple[Decimal, tuple[str, ...], ConditionTarget]] = []
+            capped_groups_seen: set[str] = set()
+            capped_indep_count = 0
+            for _, ckeys, orig_target in scored_candidates:
+                cond = orig_target.condition
+                cid = cond.condition_id if cond.condition_id else cond.yes.slug
+                held_cost = _condition_held_cost(cond, positions)
+                capped_cond_max = max(Decimal("0"), sub_share_cap - held_cost)
+                if capped_cond_max <= Decimal("0"):
+                    continue
+                yes_book = books[cond.yes.slug]
+                no_book = books[cond.no.slug]
+                capped_target = evaluate_condition(
+                    cond=cond,
+                    yes_book=yes_book,
+                    no_book=no_book,
+                    max_cost=capped_cond_max,
+                    max_contracts=max_contracts,
+                    pair_preference=pair_preference,
+                    positions=positions,
+                )
+                if capped_target is not None:
+                    mult = risk_adjustment_multiplier(capped_target, yes_book, no_book)
+                    capped_candidates.append((mult, ckeys, capped_target))
+                    g_tuple = _group_keys_for_count(cid, cond, ckeys)
+                    if not any(g in capped_groups_seen for g in g_tuple):
+                        capped_indep_count += 1
+                        capped_groups_seen.update(g_tuple)
+            if capped_indep_count >= 3:
+                scored_candidates = capped_candidates
+                max_cost = sub_share_cap
+
+    scored_candidates.sort(
+        key=lambda item: _rank_score(item[2], pair_preference, item[0]),
+        reverse=True,
+    )
 
     selected: list[ConditionTarget] = []
+    active_corr_keys: set[str] = set()
     remaining_budget = total_budget
-    for target in candidates:
+    for _, ckeys, target in scored_candidates:
         if len(selected) >= max_markets or remaining_budget <= Decimal("0"):
             break
+        if any(ck in active_corr_keys for ck in ckeys):
+            continue
         if target.cost <= remaining_budget:
             selected.append(target)
+            active_corr_keys.update(ckeys)
             remaining_budget -= target.cost
         else:
             cond = target.condition
             held_cost = _condition_held_cost(cond, positions)
-            cond_rem_cap = max(Decimal("0"), min(max_cost_per_condition, remaining_budget) - held_cost)
+            cond_rem_cap = max(Decimal("0"), min(max_cost, remaining_budget) - held_cost)
             if cond_rem_cap <= Decimal("0"):
                 continue
             resized = evaluate_condition(
@@ -489,6 +760,7 @@ def allocate_conditions(
             )
             if resized is not None and resized.cost <= remaining_budget:
                 selected.append(resized)
+                active_corr_keys.update(ckeys)
                 remaining_budget -= resized.cost
 
     return selected

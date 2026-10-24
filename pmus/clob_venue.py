@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import logging
+import re
 import time
 from typing import Any
 import requests
@@ -53,12 +54,17 @@ from pmus.strategy.fill_risk import fill_risk_category
 DATA_API_POSITIONS_URL = "https://data-api.polymarket.com/positions"
 POSITIONS_PAGE_SIZE = 500
 POSITIONS_CACHE_TTL_SEC = 15.0
-MIN_DAYS_TO_EXPIRY = timedelta(days=3)
+MIN_DAYS_TO_EXPIRY = timedelta(days=14)
+SERIES_MIN_DAYS_TO_EXPIRY = timedelta(days=30)
+MIN_MARKET_AGE = timedelta(hours=48)
 BUYING_POWER_CACHE_TTL_SEC = 5.0
 MAX_SAMPLING_PAGES = 40
-SAMPLING_CACHE_TTL_SEC = 60.0
+SAMPLING_CACHE_TTL_SEC = 300.0
 SAMPLING_STALE_CACHE_TTL_SEC = 1800.0
 MAX_MARKET_CACHE_SIZE = 10000
+CHAMPIONSHIP_SERIES_PATTERN = re.compile(
+    r"\b(?:world series|japan series|nba finals|stanley cup(?: finals)?|mlb postseason|korean series|world baseball classic)\b"
+)
 EXCLUDED_QUESTION_PATTERNS = (
     "temperature in ",
     "weather in ",
@@ -269,6 +275,12 @@ class _SamplingMarket:
     tokens: tuple[dict[str, Any], ...]
     end_date: datetime | None = None
     game_start_time: datetime | None = None
+    accepting_order_timestamp: datetime | None = None
+    neg_risk_market_id: str = ""
+    tags: tuple[str, ...] = ()
+    seconds_delay: int = 0
+    accepting_orders: bool = True
+    archived: bool = False
 
 
 class ClobVenueClient:
@@ -284,6 +296,9 @@ class ClobVenueClient:
         self._sampling_markets_cache: list[_SamplingMarket] | None = None
         self._sampling_markets_cache_ts: float = 0.0
         self._last_fill_risk_skipped: dict[str, int] = {}
+        self._sibling_map: dict[str, str] = {}
+        self._yes_slugs: set[str] = set()
+        self._pair_by_slug: dict[str, tuple[str, str]] = {}
 
         if client is not None:
             self.client = client
@@ -358,6 +373,35 @@ class ClobVenueClient:
                 self._market_cache.pop(next(iter(self._market_cache)))
             self._market_cache[token_id] = market
 
+    def _record_token_pair(self, raw_tokens: Any) -> tuple[str, str] | None:
+        if not isinstance(raw_tokens, (list, tuple)):
+            return None
+        valid = [
+            tok for tok in raw_tokens
+            if isinstance(tok, dict) and str(tok.get("token_id", "")).strip()
+        ]
+        if len(valid) != 2:
+            return None
+        out0 = str(valid[0].get("outcome", "")).strip().lower()
+        out1 = str(valid[1].get("outcome", "")).strip().lower()
+        if out0 == "yes" or out1 == "no":
+            tok_yes, tok_no = valid[0], valid[1]
+        elif out0 == "no" or out1 == "yes":
+            tok_yes, tok_no = valid[1], valid[0]
+        else:
+            tok_yes, tok_no = valid[0], valid[1]
+        yes_id = str(tok_yes.get("token_id", "")).strip()
+        no_id = str(tok_no.get("token_id", "")).strip()
+        if not yes_id or not no_id or yes_id == no_id:
+            return None
+        pair = (yes_id, no_id)
+        self._sibling_map[yes_id] = no_id
+        self._sibling_map[no_id] = yes_id
+        self._yes_slugs.add(yes_id)
+        self._pair_by_slug[yes_id] = pair
+        self._pair_by_slug[no_id] = pair
+        return pair
+
     def invalidate_sampling_cache(self) -> None:
         self._sampling_markets_cache = None
         self._sampling_markets_cache_ts = 0.0
@@ -410,7 +454,15 @@ class ClobVenueClient:
             for m in raw_items:
                 if not isinstance(m, dict):
                     continue
-                if m.get("active") is False or m.get("closed") is True:
+                archived = m.get("archived") is True
+                accepting_orders = m.get("accepting_orders") is not False
+                if (
+                    m.get("active") is False
+                    or m.get("closed") is True
+                    or archived
+                    or not accepting_orders
+                    or m.get("enable_order_book") is False
+                ):
                     continue
                 rewards = m.get("rewards")
                 if not isinstance(rewards, dict):
@@ -440,11 +492,14 @@ class ClobVenueClient:
                 min_qty = Decimal(str(m.get("minimum_order_size", "5")))
                 question = str(m.get("question", ""))
                 q_lower = question.lower()
-                is_excluded = any(pat in q_lower for pat in EXCLUDED_QUESTION_PATTERNS)
-                risk_cat = fill_risk_category(question) if not is_excluded else None
+                risk_cat = fill_risk_category(question)
+                is_excluded = risk_cat is None and any(pat in q_lower for pat in EXCLUDED_QUESTION_PATTERNS)
+                if is_excluded:
+                    risk_cat = "sports_line" if ("spread:" in q_lower or "o/u " in q_lower) else "excluded_pattern"
 
                 raw_tokens = m.get("tokens") or []
                 if isinstance(raw_tokens, (list, tuple)):
+                    self._record_token_pair(raw_tokens)
                     for tok in raw_tokens:
                         if isinstance(tok, dict):
                             tid = str(tok.get("token_id", "")).strip()
@@ -463,20 +518,55 @@ class ClobVenueClient:
                                     ),
                                 )
 
-                if is_excluded or risk_cat:
-                    if risk_cat:
-                        skipped_by_risk[risk_cat] = skipped_by_risk.get(risk_cat, 0) + 1
+                if risk_cat:
+                    skipped_by_risk[risk_cat] = skipped_by_risk.get(risk_cat, 0) + 1
                     continue
 
-                end_date_raw = m.get("end_date_iso") or m.get("end_date") or m.get("game_end_time")
-                game_start_raw = m.get("game_start_time") or m.get("event_start_time") or m.get("start_date")
-                explicit_game_start = _parse_iso_ts(m.get("game_start_time") or m.get("event_start_time"))
+                try:
+                    seconds_delay = int(m.get("seconds_delay") or 0)
+                except Exception:
+                    seconds_delay = 0
+                if seconds_delay != 0:
+                    skipped_by_risk["delayed_matching"] = skipped_by_risk.get("delayed_matching", 0) + 1
+                    continue
+
+                accepting_order_ts = _parse_iso_ts(
+                    m.get("accepting_order_timestamp")
+                    or m.get("acceptingOrdersTimestamp")
+                    or m.get("created_at")
+                    or m.get("createdAt")
+                )
+                if accepting_order_ts is not None and (now_utc - accepting_order_ts) < MIN_MARKET_AGE:
+                    skipped_by_risk["unseasoned"] = skipped_by_risk.get("unseasoned", 0) + 1
+                    continue
+
+                end_date_raw = (
+                    m.get("end_date_iso")
+                    or m.get("endDateIso")
+                    or m.get("end_date")
+                    or m.get("endDate")
+                    or m.get("game_end_time")
+                )
+                explicit_game_raw = (
+                    m.get("game_start_time")
+                    or m.get("gameStartTime")
+                    or m.get("event_start_time")
+                    or m.get("eventStartTime")
+                )
+                game_start_raw = explicit_game_raw or m.get("start_date") or m.get("startDate")
+                explicit_game_start = _parse_iso_ts(explicit_game_raw)
                 end_date_dt = _parse_iso_ts(end_date_raw)
                 game_start_dt = _parse_iso_ts(game_start_raw)
-                if end_date_dt is not None:
-                    if (end_date_dt - now_utc) < MIN_DAYS_TO_EXPIRY:
-                        continue
-                if explicit_game_start is not None and (explicit_game_start - now_utc) < MIN_DAYS_TO_EXPIRY:
+                min_tte = (
+                    SERIES_MIN_DAYS_TO_EXPIRY
+                    if CHAMPIONSHIP_SERIES_PATTERN.search(q_lower)
+                    else MIN_DAYS_TO_EXPIRY
+                )
+                if end_date_dt is not None and (end_date_dt - now_utc) < min_tte:
+                    skipped_by_risk["short_tte"] = skipped_by_risk.get("short_tte", 0) + 1
+                    continue
+                if explicit_game_start is not None and (explicit_game_start - now_utc) < min_tte:
+                    skipped_by_risk["short_tte"] = skipped_by_risk.get("short_tte", 0) + 1
                     continue
 
                 tokens = m.get("tokens", [])
@@ -487,6 +577,14 @@ class ClobVenueClient:
                     if cond_id in seen_conds:
                         continue
                     seen_conds.add(cond_id)
+
+                neg_risk_market_id = str(m.get("neg_risk_market_id") or m.get("negRiskMarketID") or "").strip()
+                raw_tags = m.get("tags") or ()
+                tags = (
+                    tuple(str(t).strip() for t in raw_tags if str(t).strip())
+                    if isinstance(raw_tags, (list, tuple))
+                    else ()
+                )
 
                 token_copies = tuple(dict(t) for t in tokens if isinstance(t, dict))
                 parsed.append(
@@ -502,6 +600,12 @@ class ClobVenueClient:
                         tokens=token_copies,
                         end_date=end_date_dt,
                         game_start_time=game_start_dt,
+                        accepting_order_timestamp=accepting_order_ts,
+                        neg_risk_market_id=neg_risk_market_id,
+                        tags=tags,
+                        seconds_delay=seconds_delay,
+                        accepting_orders=accepting_orders,
+                        archived=archived,
                     )
                 )
 
@@ -626,10 +730,14 @@ class ClobVenueClient:
                     discount=Decimal("0.30"),
                     target_size=pm.target_size,
                     max_spread=pm.max_spread,
-                    start=now_utc - timedelta(hours=1),
-                    end=pm.end_date or (now_utc + timedelta(hours=23)),
+                    start=pm.accepting_order_timestamp or (now_utc - timedelta(hours=1)),
+                    end=pm.end_date,
                     status="active",
                     event_start_time=pm.game_start_time,
+                    accepting_order_timestamp=pm.accepting_order_timestamp,
+                    seconds_delay=pm.seconds_delay,
+                    accepting_orders=pm.accepting_orders,
+                    archived=pm.archived,
                 )
                 results.append((market, window))
                 if limit > 0 and len(results) >= limit:
@@ -642,24 +750,10 @@ class ClobVenueClient:
         results: list[ConditionMarket] = []
 
         for pm in self._fetch_sampling_markets():
-            valid_tokens = [
-                tok for tok in pm.tokens
-                if isinstance(tok, dict) and str(tok.get("token_id", "")).strip()
-            ]
-            if len(valid_tokens) != 2:
+            pair = self._record_token_pair(pm.tokens)
+            if pair is None:
                 continue
-
-            out0 = str(valid_tokens[0].get("outcome", "")).strip().lower()
-            out1 = str(valid_tokens[1].get("outcome", "")).strip().lower()
-            if out0 == "yes" or out1 == "no":
-                tok_yes, tok_no = valid_tokens[0], valid_tokens[1]
-            elif out0 == "no" or out1 == "yes":
-                tok_yes, tok_no = valid_tokens[1], valid_tokens[0]
-            else:
-                tok_yes, tok_no = valid_tokens[0], valid_tokens[1]
-
-            yes_id = str(tok_yes.get("token_id", "")).strip()
-            no_id = str(tok_no.get("token_id", "")).strip()
+            yes_id, no_id = pair
 
             market_yes = Market(
                 slug=yes_id,
@@ -691,10 +785,14 @@ class ClobVenueClient:
                 discount=Decimal("0.30"),
                 target_size=pm.target_size,
                 max_spread=pm.max_spread,
-                start=now_utc - timedelta(hours=1),
-                end=pm.end_date or (now_utc + timedelta(hours=23)),
+                start=pm.accepting_order_timestamp or (now_utc - timedelta(hours=1)),
+                end=pm.end_date,
                 status="active",
                 event_start_time=pm.game_start_time,
+                accepting_order_timestamp=pm.accepting_order_timestamp,
+                seconds_delay=pm.seconds_delay,
+                accepting_orders=pm.accepting_orders,
+                archived=pm.archived,
             )
 
             results.append(
@@ -705,6 +803,12 @@ class ClobVenueClient:
                     yes=market_yes,
                     no=market_no,
                     window=window,
+                    neg_risk_market_id=pm.neg_risk_market_id,
+                    tags=pm.tags,
+                    accepting_order_timestamp=pm.accepting_order_timestamp,
+                    seconds_delay=pm.seconds_delay,
+                    accepting_orders=pm.accepting_orders,
+                    archived=pm.archived,
                 )
             )
             if limit > 0 and len(results) >= limit:

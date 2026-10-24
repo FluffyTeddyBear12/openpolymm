@@ -302,8 +302,7 @@ def test_sampling_mid_crawl_failure_uses_stale_cache_and_avoids_poisoning(monkey
     assert client._sampling_markets_cache is not None
     assert len(client._sampling_markets_cache) == 2
 
-    # Step 2: mid-crawl failure on second fetch (page 2 fails)
-    client._sampling_markets_cache_ts -= 120.0  # cache expired for fresh read, but within 30 min stale window
+    client._sampling_markets_cache_ts -= (SAMPLING_CACHE_TTL_SEC + 60.0)
     call_count = 0
 
     def failing_get(url, params=None, timeout=None):
@@ -370,7 +369,7 @@ def test_sampling_first_page_failure_uses_stale_cache_if_present(monkeypatch, ca
     monkeypatch.setattr("pmus.clob_venue.requests.get", lambda url, params=None, timeout=None: resp1)
     client._fetch_sampling_markets()
 
-    client._sampling_markets_cache_ts -= 120.0  # past 60s TTL, within 30 min stale window
+    client._sampling_markets_cache_ts -= (SAMPLING_CACHE_TTL_SEC + 60.0)
 
     def raise_get(url, params=None, timeout=None):
         raise requests.HTTPError("503 Service Unavailable")
@@ -528,3 +527,27 @@ def test_sampling_filtered_market_metadata_recorded_for_resolve_market(monkeypat
     assert m_layoffs.tick == Decimal("0.05")
     assert m_layoffs.min_qty == Decimal("25")
     assert m_layoffs.slug == "tok_layoffs_n"
+
+
+def test_sampling_cache_serves_fresh_within_300s_ttl(monkeypatch):
+    client = _make_test_client()
+    calls = 0
+
+    def counting_get(url, params=None, timeout=None):
+        nonlocal calls
+        calls += 1
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {"data": [_make_sampling_market("cond_ttl")], "next_cursor": "LTE="}
+        return resp
+
+    monkeypatch.setattr("pmus.clob_venue.requests.get", counting_get)
+    first = client._fetch_sampling_markets()
+    assert len(first) == 1
+    assert calls == 1
+
+    client._sampling_markets_cache_ts -= 240.0
+    second = client._fetch_sampling_markets()
+    assert len(second) == 1
+    assert calls == 1
+
