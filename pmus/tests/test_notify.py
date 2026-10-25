@@ -19,6 +19,7 @@ def test_payload_formatting():
     assert payload["message"] == "System functioning normally"
     assert payload["level"] == "info"
     assert payload["text"] == "[INFO] Test Alert: System functioning normally"
+    assert payload["content"] == "[INFO] Test Alert: System functioning normally"
     assert "timestamp" in payload
     assert payload["extra"] == {"key": "val"}
 
@@ -137,3 +138,56 @@ def test_network_exception_resilience():
         assert t is not None
         t.join(timeout=2.0)
         assert not t.is_alive()
+
+
+def test_notify_hourly_status():
+    settings = Settings(webhook_url="https://example.com/webhook")
+    notifier = Notifier(settings)
+
+    with patch("requests.post") as mock_post:
+        t = notifier.notify_hourly_status(
+            qualifying_sec_1h=3540,
+            accrued_usd_1h=Decimal("0.1234"),
+            qualifying_sec_today=25000,
+            accrued_usd_today=Decimal("1.85"),
+            projected_payout_today=Decimal("3.20"),
+            open_pairs=3,
+            buying_power=Decimal("137.75"),
+        )
+        assert t is not None
+        t.join(timeout=2.0)
+
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        payload = kwargs["json"]
+        assert payload["level"] == "info"
+        assert payload["title"] == "Hourly Status Ping"
+        assert "1h Accrual: $0.1234 (3540s qual)" in payload["message"]
+        assert "Today: $1.85 (Proj 24h: $3.20)" in payload["message"]
+        assert "Active: 3 pairs | Cash: $137.75" in payload["message"]
+        assert payload["content"] == f"[INFO] Hourly Status Ping: {payload['message']}"
+        assert payload["extra"]["qualifying_sec_1h"] == 3540
+        assert payload["extra"]["accrued_usd_1h"] == "0.1234"
+        assert payload["extra"]["qualifying_sec_today"] == 25000
+        assert payload["extra"]["accrued_usd_today"] == "1.85"
+        assert payload["extra"]["projected_payout_today"] == "3.20"
+        assert payload["extra"]["open_pairs"] == 3
+        assert payload["extra"]["buying_power"] == "137.75"
+
+
+def test_notify_hourly_status_empty_url():
+    settings = Settings(webhook_url="")
+    notifier = Notifier(settings)
+
+    with patch("requests.post") as mock_post:
+        t = notifier.notify_hourly_status(
+            qualifying_sec_1h=3600,
+            accrued_usd_1h=Decimal("0.20"),
+            qualifying_sec_today=10000,
+            accrued_usd_today=Decimal("1.00"),
+            projected_payout_today=Decimal("2.40"),
+            open_pairs=2,
+            buying_power=Decimal("100.00"),
+        )
+        assert t is None
+        mock_post.assert_not_called()

@@ -27,6 +27,7 @@ class Notifier:
             "message": message,
             "level": level,
             "text": f"[{level.upper()}] {title}: {message}",
+            "content": f"[{level.upper()}] {title}: {message}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "extra": extra or {},
         }
@@ -87,3 +88,33 @@ class Notifier:
             level = "info"
         extra = {"active": active}
         return self.send(title=title, message=msg, level=level, extra=extra)
+
+    def notify_hourly_status(
+        self,
+        qualifying_sec_1h: int,
+        accrued_usd_1h: Decimal,
+        qualifying_sec_today: int,
+        accrued_usd_today: Decimal,
+        projected_payout_today: Decimal,
+        open_pairs: int,
+        buying_power: Decimal,
+        extra: dict[str, Any] | None = None,
+    ) -> threading.Thread | None:
+        title = "Hourly Status Ping"
+        msg = (
+            f"1h Accrual: ${accrued_usd_1h:.4f} ({qualifying_sec_1h}s qual) | "
+            f"Today: ${accrued_usd_today:.2f} (Proj 24h: ${projected_payout_today:.2f}) | "
+            f"Active: {open_pairs} pairs | Cash: ${buying_power:.2f}"
+        )
+        combined_extra = {
+            "qualifying_sec_1h": qualifying_sec_1h,
+            "accrued_usd_1h": str(accrued_usd_1h),
+            "qualifying_sec_today": qualifying_sec_today,
+            "accrued_usd_today": str(accrued_usd_today),
+            "projected_payout_today": str(projected_payout_today),
+            "open_pairs": open_pairs,
+            "buying_power": str(buying_power),
+        }
+        if extra:
+            combined_extra.update(extra)
+        return self.send(title=title, message=msg, level="info", extra=combined_extra)

@@ -512,6 +512,8 @@ class Ledger:
                 "qualifying_ask_seconds": 0,
             }
 
+    get_lip_summary_since = get_lip_stats
+
     def get_latest_lip_snapshots(self) -> dict[str, LipSnapshot]:
         with self._get_connection() as conn:
             rows = conn.execute(

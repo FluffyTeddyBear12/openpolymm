@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pmus.config import Settings
-from pmus.engine import LiveEngine, allocate_markets, reconcile_quotes, update_position_from_fill
+from pmus.engine import LiveEngine, allocate_markets, calculate_num_pairs, reconcile_quotes, update_position_from_fill
 from pmus.ledger import Ledger
 from pmus.models import Book, ConditionMarket, IncentiveWindow, Level, LiveOrder, Market, Position, Quote, ShadowFill
 from pmus.strategy.market_selector import AllocationResult
@@ -3390,3 +3390,203 @@ def test_sell_hysteresis_does_not_block_downward_stop_unwind(tmp_path):
     assert len(created_quotes) == 1
     assert created_quotes[0].side == "SELL_LONG"
     assert created_quotes[0].price == Decimal("0.31")
+
+
+def test_calculate_num_pairs_across_budget_tiers():
+    # Zero or negative budget / max_limit
+    assert calculate_num_pairs(Decimal("0")) == 0
+    assert calculate_num_pairs(Decimal("-10.00")) == 0
+    assert calculate_num_pairs(Decimal("100.00"), max_limit=0) == 0
+    assert calculate_num_pairs(Decimal("100.00"), max_limit=-1) == 0
+
+    # Sub-$72 budgets: // 36, min 1
+    assert calculate_num_pairs(Decimal("50")) == 1
+    assert calculate_num_pairs(Decimal("36")) == 1
+    assert calculate_num_pairs(Decimal("71.99")) == 1
+
+    # $72 - $200 budgets: // 42, min 2
+    assert calculate_num_pairs(Decimal("80")) == 2
+    assert calculate_num_pairs(Decimal("120")) == 2
+    assert calculate_num_pairs(Decimal("137.75")) == 3
+    assert calculate_num_pairs(Decimal("180")) == 4
+    assert calculate_num_pairs(Decimal("199.99")) == 4
+
+    # >= $200 budgets: // 48, min 3, capped at max_limit (default 8)
+    assert calculate_num_pairs(Decimal("250")) == 5
+    assert calculate_num_pairs(Decimal("400")) == 8
+    assert calculate_num_pairs(Decimal("500")) == 8
+
+    # Respect max_limit parameter without floor inversion bug
+    assert calculate_num_pairs(Decimal("250"), max_limit=2) == 2
+    assert calculate_num_pairs(Decimal("400"), max_limit=4) == 4
+    assert calculate_num_pairs(Decimal("400"), max_limit=2) == 2
+    assert calculate_num_pairs(Decimal("137.75"), max_limit=2) == 2
+    assert calculate_num_pairs(Decimal("137.75"), max_limit=1) == 1
+
+
+def test_dynamic_cash_shift_triggers_reallocation():
+    logger = logging.getLogger("test_dynamic_cash_shift")
+    settings = Settings(venue="global", max_markets=4)
+    ledger = MagicMock()
+    public_client = MagicMock()
+    auth_client = MagicMock()
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    engine = LiveEngine(settings, ledger, public_client, auth_client, risk_manager, logger)
+    engine.prepare = MagicMock()
+    engine.target_slugs = ["slug-1", "slug-2"]
+    engine.last_allocated_bp = Decimal("100.00")
+    engine.last_cash_realloc_ts = 1000.0
+
+    # 1. Cooldown suppression for upward expansion: now_ts - last_cash_realloc_ts < 300
+    auth_client.get_buying_power.return_value = Decimal("137.75")
+    ret = engine.tick(now_ts=1200.0)  # 200s elapsed < 300s
+    engine.prepare.assert_not_called()
+    assert ret == 1.0
+
+    # 2. No upward shift beyond threshold: 105 vs 100 is 5% shift, same pairs (2 -> 2)
+    auth_client.get_buying_power.return_value = Decimal("105.00")
+    ret = engine.tick(now_ts=1350.0)  # 350s elapsed >= 300s
+    engine.prepare.assert_not_called()
+
+    # 3. Upward expansion: buying power shifts to 137.75 (pairs 2 -> 3, $137.75 >= $126 + $5 buffer)
+    auth_client.get_buying_power.return_value = Decimal("137.75")
+    ret = engine.tick(now_ts=1350.0)
+    engine.prepare.assert_called_once_with(is_realloc=True)
+    assert engine.last_cash_realloc_ts == 1350.0
+    assert ret == 1.0  # Immediate return 1.0 for synchronized next tick
+
+    # 4. Downward shock bypasses cooldown: drop from 137.75 to 100 is >20% drop
+    engine.prepare.reset_mock()
+    engine.last_allocated_bp = Decimal("137.75")
+    engine.last_cash_realloc_ts = 1350.0
+    auth_client.get_buying_power.return_value = Decimal("100.00")
+    # Only 30s elapsed (< 300s), but downward shock immediately triggers!
+    ret_shock = engine.tick(now_ts=1380.0)
+    engine.prepare.assert_called_once_with(is_realloc=True)
+    assert engine.last_cash_realloc_ts == 1380.0
+    assert ret_shock == 1.0
+
+
+def test_dispatch_hourly_status_ping_invokes_notifier():
+    logger = logging.getLogger("test_hourly_status_ping")
+    settings = Settings(venue="global", webhook_url="https://example.com/webhook", max_markets=4)
+    ledger = MagicMock()
+    public_client = MagicMock()
+    auth_client = MagicMock()
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("137.75")
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    # Mock get_lip_summary_since
+    def mock_summary(since_ms: int):
+        return {
+            "lip_reward_total": Decimal("0.1234"),
+            "qualifying_seconds": 3540,
+        }
+    ledger.get_lip_summary_since = MagicMock(side_effect=mock_summary)
+
+    engine = LiveEngine(settings, ledger, public_client, auth_client, risk_manager, logger)
+    engine.notifier.notify_hourly_status = MagicMock()
+    engine.condition_pairs = (("s1-yes", "s1-no"), ("s2-yes", "s2-no"), ("s3-yes", "s3-no"))
+
+    t0 = 1791596400.0  # arbitrary epoch timestamp
+    thread = engine._dispatch_hourly_status_ping(now_ts=t0, buying_power=Decimal("137.75"))
+    assert thread is not None
+    thread.join(timeout=2.0)
+
+    engine.notifier.notify_hourly_status.assert_called_once()
+    _, kwargs = engine.notifier.notify_hourly_status.call_args
+    assert kwargs["qualifying_sec_1h"] == 3540
+    assert kwargs["accrued_usd_1h"] == Decimal("0.1234")
+    assert kwargs["qualifying_sec_today"] == 3540
+    assert kwargs["accrued_usd_today"] == Decimal("0.1234")
+    assert kwargs["open_pairs"] == 3
+    assert kwargs["buying_power"] == Decimal("137.75")
+    assert kwargs["projected_payout_today"] > Decimal("0")
+
+    # Verify midnight clamp prevents post-midnight projection singularity
+    # 60 seconds after UTC midnight: elapsed_hours should be clamped to at least 1.0 hr, not 60/3600
+    engine.notifier.notify_hourly_status.reset_mock()
+    midnight_plus_60 = datetime(2026, 10, 25, 0, 1, 0, tzinfo=timezone.utc).timestamp()
+    thread_midnight = engine._dispatch_hourly_status_ping(now_ts=midnight_plus_60, buying_power=Decimal("137.75"))
+    thread_midnight.join(timeout=2.0)
+    _, kw_midnight = engine.notifier.notify_hourly_status.call_args
+    # With clamp elapsed_hours = 1.0, projected_today = 0.1234 / 1.0 * 24 = 2.9616
+    assert kw_midnight["projected_payout_today"] == Decimal("0.1234") * Decimal("24")
+
+    # Also test automated hourly trigger inside tick
+    engine.notifier.notify_hourly_status.reset_mock()
+    engine.target_slugs = []  # avoid market quoting loop
+    engine.last_hourly_notify_ts = 1000.0
+    # Before 1 hour: should not trigger
+    engine.tick(now_ts=4000.0)  # 3000s elapsed < 3600s
+    engine.notifier.notify_hourly_status.assert_not_called()
+
+    # After 1 hour: triggers background dispatch and resets timestamp
+    with patch.object(engine, "_dispatch_hourly_status_ping") as mock_ping:
+        engine.tick(now_ts=4601.0)  # 3601s elapsed >= 3600s
+        mock_ping.assert_called_once_with(4601.0, Decimal("137.75"))
+    assert engine.last_hourly_notify_ts == 4601.0
+
+
+def test_allocate_markets_condition_cap_ceiling_enforced():
+    logger = logging.getLogger("test_cond_cap_ceiling")
+    conds = [
+        make_condition(cond_id="c1", pool="500", target="200"),
+        make_condition(cond_id="c2", pool="400", target="200"),
+    ]
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = conds
+    client.fetch_book.return_value = make_book([("0.48", "500")], [("0.52", "500")])
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("500.00"),
+        max_per_market=Decimal("25.00"),
+        max_collateral_per_market=Decimal("30.00"),
+        max_markets=4,
+        max_contracts_per_market=500,
+    )
+
+    _, alloc = allocate_markets(settings, client, logger)
+    for cond in conds:
+        yes_budget = alloc.side_budgets.get((cond.yes.slug, "bid"), Decimal("0"))
+        no_budget = alloc.side_budgets.get((cond.no.slug, "bid"), Decimal("0"))
+        assert yes_budget + no_budget <= Decimal("85.00")
+
+
+def test_live_engine_prepare_zero_buying_power_sets_zero_allocated_bp():
+    logger = logging.getLogger("test_zero_bp")
+    settings = Settings(venue="global", total_budget=Decimal("100.00"), max_markets=4)
+    ledger = MagicMock()
+    public_client = MagicMock()
+    auth_client = MagicMock()
+    risk_manager = MagicMock()
+
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("0.00")
+
+    engine = LiveEngine(settings, ledger, public_client, auth_client, risk_manager, logger)
+    engine.last_allocated_bp = Decimal("50.00")
+    engine.prepare()
+
+    assert engine.last_allocated_bp == Decimal("0")
+    assert engine.target_slugs == []
+
+
+

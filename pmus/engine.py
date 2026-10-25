@@ -1,5 +1,6 @@
 import dataclasses
 import logging
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -135,6 +136,29 @@ def resolve_market(client: Any, slug: str) -> Market:
         mutually_exclusive=False,
     )
 
+
+def calculate_num_pairs(budget: Decimal, max_limit: int = 8) -> int:
+    if max_limit <= 0 or budget <= Decimal("0"):
+        return 0
+    if budget < Decimal("72"):
+        target = max(1, int(budget // Decimal("36")))
+    elif budget < Decimal("200"):
+        target = max(2, int(budget // Decimal("42")))
+    else:
+        target = max(3, int(budget // Decimal("48")))
+    return min(max_limit, target)
+
+
+def get_pair_tier_threshold(pairs: int) -> Decimal:
+    if pairs <= 1:
+        return Decimal("0.00")
+    if pairs == 2:
+        return Decimal("72.00")
+    if pairs in (3, 4):
+        return Decimal(str(pairs * 42))
+    return Decimal(str(pairs * 48))
+
+
 def allocate_markets(
     settings: Settings,
     client: Any,
@@ -149,10 +173,12 @@ def allocate_markets(
     if is_global and hasattr(client, "fetch_reward_conditions"):
         conditions = client.fetch_reward_conditions()
         base_cond_cap = min(settings.max_per_market, settings.max_collateral_per_market)
-        if is_global and budget >= Decimal("100") and settings.pair_preference <= Decimal("0") and settings.max_markets <= 4:
-            num_pairs = max(2, min(8, int(budget // Decimal("55"))))
+        if is_global and settings.pair_preference <= Decimal("0") and settings.max_markets <= 4:
+            num_pairs = calculate_num_pairs(budget, settings.max_markets)
             effective_max_conditions = num_pairs
-            max_cost_per_condition = max(base_cond_cap, budget / Decimal(str(num_pairs)))
+            per_pair = budget / Decimal(str(num_pairs)) if num_pairs > 0 else Decimal("0")
+            cond_ceiling = max(base_cond_cap, Decimal("85.00"))
+            max_cost_per_condition = min(cond_ceiling, max(base_cond_cap, per_pair))
         else:
             num_pairs = max(1, settings.max_markets // 2)
             max_cost_per_condition = (
@@ -506,6 +532,9 @@ class LiveEngine:
         self.local_fill_positions: dict[str, tuple[Position, float]] = {}
         self.expected_portfolio_rate_sec: Decimal = Decimal("0")
         self.last_prepare_ts: float = 0.0
+        self.last_allocated_bp: Decimal = Decimal("0")
+        self.last_cash_realloc_ts: float = 0.0
+        self.last_hourly_notify_ts: float = 0.0
         self.yield_collapse_streak: int = 0
         self.underdeployed_streak: int = 0
         self.degraded_slugs_until: dict[str, float] = {}
@@ -635,6 +664,8 @@ class LiveEngine:
             except Exception:
                 pass
             if bp > Decimal("0"):
+                self.last_allocated_bp = bp
+                self.last_cash_realloc_ts = time.time()
                 if self.settings.venue == "global":
                     cash_buffer = max(Decimal("3.00"), min(Decimal("10.00"), bp * Decimal("0.03")))
                     avail_cash = max(Decimal("0"), bp - cash_buffer)
@@ -645,11 +676,7 @@ class LiveEngine:
 
                     dynamic_stop = max(self.settings.daily_loss_stop, bp * Decimal("0.08"))
                     dynamic_max_col = max(effective_budget, self.settings.max_collateral)
-                    est_pairs = (
-                        max(2, min(8, int(effective_budget // Decimal("55"))))
-                        if effective_budget >= Decimal("100")
-                        else max(1, self.settings.max_markets // 2)
-                    )
+                    est_pairs = calculate_num_pairs(effective_budget, self.settings.max_markets)
                     est_cond_cap = (
                         min(
                             Decimal("85.00"),
@@ -676,8 +703,13 @@ class LiveEngine:
                 else:
                     fee_buffer = max(Decimal("3.00"), bp * Decimal("0.05"))
                     effective_budget = min(self.settings.total_budget, max(Decimal("0"), bp - fee_buffer))
+            else:
+                self.last_allocated_bp = Decimal("0")
+                effective_budget = Decimal("0")
         except Exception as exc:
             self.logger.warning("Could not fetch buying power for allocation: %s", exc)
+            self.last_allocated_bp = Decimal("0")
+            effective_budget = Decimal("0")
         held_positions = None
         pos_map = None
         try:
@@ -891,6 +923,56 @@ class LiveEngine:
         except Exception as exc:
             self.logger.error("Shutdown cancel failed for %s: %s", self.target_slugs, exc)
 
+    def _dispatch_hourly_status_ping(self, now_ts: float, buying_power: Decimal) -> threading.Thread:
+        def _query_and_send() -> None:
+            try:
+                now_dt = datetime.fromtimestamp(now_ts, timezone.utc)
+                midnight_dt = datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=timezone.utc)
+                get_summary = getattr(self.ledger, "get_lip_summary_since", getattr(self.ledger, "get_lip_stats", None))
+                if callable(get_summary):
+                    summary_1h = get_summary(int((now_ts - 3600.0) * 1000))
+                    summary_today = get_summary(int(midnight_dt.timestamp() * 1000))
+                else:
+                    summary_1h = {}
+                    summary_today = {}
+
+                qualifying_sec_1h = int(summary_1h.get("qualifying_seconds", 0))
+                accrued_usd_1h = Decimal(str(summary_1h.get("lip_reward_total", "0")))
+
+                qualifying_sec_today = int(summary_today.get("qualifying_seconds", 0))
+                accrued_usd_today = Decimal(str(summary_today.get("lip_reward_total", "0")))
+
+                elapsed_sec = (now_dt - midnight_dt).total_seconds()
+                elapsed_hours = max(Decimal("1.0"), Decimal(str(elapsed_sec)) / Decimal("3600"))
+                projected_today = (accrued_usd_today / elapsed_hours) * Decimal("24")
+
+                open_pairs = len(self.condition_pairs) if self.condition_pairs else (len(self.target_slugs) // 2)
+
+                self.notifier.notify_hourly_status(
+                    qualifying_sec_1h=qualifying_sec_1h,
+                    accrued_usd_1h=accrued_usd_1h,
+                    qualifying_sec_today=qualifying_sec_today,
+                    accrued_usd_today=accrued_usd_today,
+                    projected_payout_today=projected_today,
+                    open_pairs=open_pairs,
+                    buying_power=buying_power,
+                )
+                self.logger.info(
+                    "Hourly status ping dispatched: 1h=$%s (%ds qual), today=$%s (proj=$%s), pairs=%d, bp=$%s",
+                    accrued_usd_1h,
+                    qualifying_sec_1h,
+                    accrued_usd_today,
+                    projected_today,
+                    open_pairs,
+                    buying_power,
+                )
+            except Exception as exc:
+                self.logger.warning("Failed to dispatch hourly status ping: %s", exc)
+
+        thread = threading.Thread(target=_query_and_send, daemon=True)
+        thread.start()
+        return thread
+
     def tick(self, now_ts: float) -> float:
         now_dt = datetime.fromtimestamp(now_ts, timezone.utc)
         now_ms = int(now_ts * 1000)
@@ -923,6 +1005,12 @@ class LiveEngine:
             self.logger.warning("Exchange sync failed, skipping tick: %s", exc)
             return 1.0
 
+        if self.last_hourly_notify_ts <= 0.0:
+            self.last_hourly_notify_ts = now_ts
+        elif now_ts - self.last_hourly_notify_ts >= 3600.0:
+            self._dispatch_hourly_status_ping(now_ts, buying_power)
+            self.last_hourly_notify_ts = now_ts
+
         live_positions = {p.slug: p for p in positions}
         self._ingest_fills(fills, live_positions=live_positions, now_ts=now_ts)
         for slug, (opt_pos, fill_ts) in list(self.local_fill_positions.items()):
@@ -931,6 +1019,41 @@ class LiveEngine:
             else:
                 live_positions[slug] = opt_pos
         self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms, live_positions=live_positions)
+
+        if self.last_allocated_bp > Decimal("0") and self.target_slugs:
+            new_pairs = calculate_num_pairs(buying_power, self.settings.max_markets)
+            curr_pairs = calculate_num_pairs(self.last_allocated_bp, self.settings.max_markets)
+
+            # Downward shock: >= 20% drop bypasses 300s cooldown to protect against solvency/margin risk
+            is_downward_shock = (
+                buying_power < self.last_allocated_bp
+                and ((self.last_allocated_bp - buying_power) / self.last_allocated_bp) >= Decimal("0.20")
+            )
+
+            # Upward expansion: respects 300s cooldown and requires $5.00 buffer above tier threshold or 25%+ bp expansion
+            tier_thresh = get_pair_tier_threshold(new_pairs)
+            has_tier_expansion = new_pairs > curr_pairs and buying_power >= (tier_thresh + Decimal("5.00"))
+            has_bp_expansion = buying_power >= (self.last_allocated_bp * Decimal("1.25"))
+            is_upward_expansion = (
+                (now_ts - self.last_cash_realloc_ts >= 300.0)
+                and (has_tier_expansion or has_bp_expansion)
+            )
+
+            if is_downward_shock or is_upward_expansion:
+                reason = "downward shock" if is_downward_shock else "upward expansion"
+                bp_shift = abs(buying_power - self.last_allocated_bp) / self.last_allocated_bp
+                self.logger.info(
+                    "Dynamic cash shift detected (%s: bp=$%s vs last=$%s, shift=%.1f%%, pairs=%d->%d); triggering reallocation",
+                    reason,
+                    buying_power,
+                    self.last_allocated_bp,
+                    float(bp_shift * 100),
+                    curr_pairs,
+                    new_pairs,
+                )
+                self.prepare(is_realloc=True)
+                self.last_cash_realloc_ts = now_ts
+                return 1.0
         raw_realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
         today_utc_str = now_dt.date().isoformat()
         if not self.baseline_utc_date:
