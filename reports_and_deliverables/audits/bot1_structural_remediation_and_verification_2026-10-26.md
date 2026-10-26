@@ -1,7 +1,8 @@
-# Bot 1 (`pmus`) Structural Remediation & 12-Agent Verification Report
+# Bot 1 (`pmus`) Structural Remediation & Hardening Verification Report
 **Date:** October 26, 2026  
 **Branch:** `pmus-rebuild`  
-**Verification Suite:** `529 passed in 8.19s` (`0 failed`)
+**Commits:** `e3dc7c5`, `fa2f0ec`  
+**Verification Suite:** `533 passed in 5.49s` (`0 failed`, `0 deselected`)
 
 ---
 
@@ -15,29 +16,36 @@ The `$59` cash jump on October 26 was not an external bank deposit. It came from
 
 ---
 
-## 2. Recovery of Deleted Session & 12-Agent Architecture
+## 2. Forensic Gap Review & Residual Risks Addressed
 
-When conversation `bc168649-bfa8-4048-b042-2ef480e68497` was deleted, three `/swarm` workers (`95c0b012`, `5dd1d325`, `200070e9`) were still running in isolated git worktrees. Coordinator `e736ba98-7d80-4604-90e0-f4ad74342fae` re-attached all 3 live workers via `send_message` and completed the 12-agent execution pipeline:
+During the deep forensic review, four critical operational hazards were uncovered and structurally resolved:
 
-1. **Agent 1 (`95c0b012`) — Swarm Worker 1**: Unit 1 (`pmus/ledger.py`, `pmus/notify.py`, `pmus/dashboard.py`).
-2. **Agent 2 (`5dd1d325`) — Swarm Worker 2**: Unit 2 (`pmus/models.py`, `pmus/clob_venue.py`, `pmus/strategy/fill_risk.py`).
-3. **Agent 3 (`200070e9`) — Swarm Worker 3**: Unit 3 (`pmus/strategy/condition_selector.py`, `pmus/strategy/lip_quoter.py`, `pmus/strategy/global_rewards.py`, `pmus/shadow.py`).
-4. **Agent 4 (`101b8f3a`) — Arena Candidate A**: Unit 4 (`pmus/engine.py`, `pmus/config.py`, `pmus/tests/test_engine.py`) — Winner (`24.3 / 25`).
-5. **Agent 5 (`bf436da9`) — Arena Candidate B**: Unit 4 Runner-Up (`23.8 / 25`) — Contributed 5 surgical edge-case grafts.
-6. **Agent 6 (`2dcb7d13`) — Arena Cross-Judge**: Evaluated Candidates A and B across 5 weighted criteria.
-7. **Agent 7 (`6dbcea9c`) — Interrogate Reviewer A (`pro`)**: Correctness, Edge Cases & Code Quality audit.
-8. **Agent 8 (`6d2304c3`) — Interrogate Reviewer B (`inherit`)**: Architecture & Cross-Module Contracts audit.
-9. **Agent 9 (`eb4dbebf`) — Interrogate Reviewer C (`flash`)**: Risk, Security & Regression audit.
-10. **Agent 10 (`4b26540c`) — Cross-Model Decision Trail Auditor (`flash`)**: Audited `decisions.tsv` and operator checkpoints.
-11. **Agent 11 (`a0c16480`) — Reflect Judgment Reviewer (`inherit`)**: Extracted durable session pickup and sequential integration principles.
-12. **Agent 12 (`bd0a8b6a`) — Reflect Tooling & Divergent Reviewer (`flash`)**: Extracted Windows CRLF patch normalization and orphan-worker handoff diffs.
+1. **Historical $0.00 Bag Leakage Eliminated**:
+   - Live query of proxy wallet `0xe7d565d58c61e2b96adb0e4518e7c33978402e7f` revealed 16 unredeemed $0.00 positions dating back to October 6 (`Albania vs San Marino`, `Spain`, `Scotland vs Slovenia`, etc.) totaling `$38.00+` in sunken losses. Indiscriminately summing these would cause an immediate halt on tick 1 every day.
+   - `_compute_redeemable_loss()` was updated to gate losses strictly to positions active or traded *today* (`ledger.has_fill_since()` since midnight UTC, `local_fill_positions`, or `target_slugs`), shielding the bot from ancient dead bag halts.
+2. **Persistent 24-Hour Toxic Market Cooldowns**:
+   - `loss_cooldown_until` was previously stored only in RAM. Process restarts or reboot bounces wiped the table, immediately re-admitting toxic markets.
+   - Added persistent SQLite storage in `loss_cooldowns` table. `LiveEngine.__init__` now seeds active cooldowns directly from the database on startup.
+3. **Automated SQLite Corruption Recovery**:
+   - `Ledger.__init__` was hardened to catch `sqlite3.DatabaseError` (e.g. malformed disk image), auto-backup the corrupted file to `ledger.db.corrupt_<timestamp>`, clear stale lock files, and cleanly re-initialize the schema without unhandled process termination.
+4. **Timing-Attack Hardened Dashboard Authentication**:
+   - Updated `dashboard.py` password verification to use constant-time `hmac.compare_digest`.
 
 ---
 
-## 3. Remediated Structural Defects
+## 3. Comprehensive Defect Remediation Summary
 
-- **Post-Fill Synthetic Pair Hedge Completion & Dynamic Leg Cap**: `allocate_conditions` and `_waterfill_conditions` enforce `max_leg_collateral`, cap post-fill opposite-leg hedges at `1.00 - filled_avg_price` down to `HEDGE_LEG_MIN_PRICE = $0.05` (with matching `$0.05` floor in `lip_quoter.desired_quotes`), and verify `p_yes + p_no <= $0.99`.
-- **Hair-Trigger Stop-Unwind Abolished & 24h Loss Cooldown**: `LIQUID_STOP_UNWIND` requires `allow_stop_unwind=True` and a `>= 15%` drawdown from entry (`mid <= avg_price * 0.85`). Realized loss exits trigger an 86,400s (`24h`) cooldown on both sibling slugs and zero out active bid budgets immediately.
+- **Post-Fill Synthetic Pair Merge Completion**: `allocate_conditions` and `_waterfill_conditions` enforce `max_leg_collateral`, cap post-fill opposite-leg hedges at `1.00 - filled_avg_price` down to `HEDGE_LEG_MIN_PRICE = $0.05` (with matching `$0.05` floor in `lip_quoter.desired_quotes`), and verify `p_yes + p_no <= $0.99`.
+- **Hair-Trigger Stop-Unwind Abolished**: `LIQUID_STOP_UNWIND` requires `allow_stop_unwind=True` and a `>= 15%` drawdown from entry (`mid <= avg_price * 0.85`). Realized loss exits trigger an 86,400s (`24h`) cooldown on both sibling slugs and zero out active bid budgets immediately.
 - **Redeemable $0.00 Loss Recognition & Risk-Stop Ordering**: `LiveEngine.tick()` evaluates `daily_loss_stop` before cash-shift reallocation, incorporates sibling-netted `_compute_redeemable_loss(live_positions)` (excluding `archived` positions and null `cur_price` values) inside `daily_loss_baseline` subtraction, and enforces `PMUS_DAILY_LOSS_BASELINE_DATE`.
 - **Taker Multi-Maker VWAP & LIP Scoring Symmetry**: `parse_trade_fills` computes true matched notional across maker legs (including complement pricing `1.00 - maker_price` on cross-asset fills); `side_score` filters sub-`min_size` dust levels; `estimate_global_pair_score` strips own resting orders before computing `adjusted_mid`.
 - **SQLite WAL Pruning, Webhook Concurrency & Fail-Closed Dashboard**: `Ledger` caches schema columns at init and prunes snapshots older than 7 days; `Notifier` bounds concurrency with `BoundedSemaphore(4)`, redacts webhook URLs/tokens in error logs, and reports `engine_state` and `mtm_equity`; `dashboard.check_password()` fails closed unless `PMUS_DASHBOARD_PASSWORD` or `PMUS_DASHBOARD_ALLOW_UNAUTH_LOCAL=1` is set.
+
+---
+
+## 4. Verification Receipt
+
+```text
+& "d:\neststock\scripts\polymarket_bot\venv\Scripts\python.exe" -m pytest pmus/tests -q
+533 passed in 5.49s
+```
