@@ -38,8 +38,8 @@ def estimate_global_lip_score(
     clean_book = global_rewards.strip_orders_from_book(book, ours) if ours else book
     our_bid = sum((global_rewards.order_score(v, abs(o.price - mid), o.qty_open) for o in ours if o.side in BID_SIDES), zero)
     our_ask = sum((global_rewards.order_score(v, abs(o.price - mid), o.qty_open) for o in ours if o.side in ASK_SIDES), zero)
-    comp_bid = global_rewards.side_score(clean_book.bids, mid, v)
-    comp_ask = global_rewards.side_score(clean_book.asks, mid, v)
+    comp_bid = global_rewards.side_score(clean_book.bids, mid, v, window.target_size)
+    comp_ask = global_rewards.side_score(clean_book.asks, mid, v, window.target_size)
 
     our_q = global_rewards.combined_score(our_bid, our_ask, mid)
     competitors = (comp_bid if our_bid > zero else zero) + (comp_ask if our_ask > zero else zero)
@@ -86,11 +86,6 @@ def estimate_global_pair_score(
         prog = window.program_id if window is not None else "none"
         return _zero_snapshot(now_ms, yes_book.slug, prog), _zero_snapshot(now_ms, no_book.slug, prog)
 
-    mid_y = global_rewards.adjusted_mid(yes_book, window.target_size)
-    mid_n = global_rewards.adjusted_mid(no_book, window.target_size)
-    if mid_y is None or mid_n is None:
-        return _zero_snapshot(now_ms, yes_book.slug, window.program_id), _zero_snapshot(now_ms, no_book.slug, window.program_id)
-
     v = window.max_spread
     yes_bids = [
         o for o in resting_orders
@@ -135,20 +130,29 @@ def estimate_global_pair_score(
     clean_yes_book = global_rewards.strip_orders_from_book(yes_book, yes_strip) if yes_strip else yes_book
     clean_no_book = global_rewards.strip_orders_from_book(no_book, no_strip) if no_strip else no_book
 
-    yes_bid_score = sum((global_rewards.order_score(v, abs(o.price - mid_y), o.qty_open) for o in yes_bids), zero)
-    yes_ask_score = sum((global_rewards.order_score(v, abs(o.price - mid_y), o.qty_open) for o in yes_asks), zero)
-    no_bid_score = sum((global_rewards.order_score(v, abs(o.price - mid_n), o.qty_open) for o in no_bids), zero)
-    no_ask_score = sum((global_rewards.order_score(v, abs(o.price - mid_n), o.qty_open) for o in no_asks), zero)
+    mid_y = global_rewards.adjusted_mid(clean_yes_book, window.target_size)
+    if mid_y is None:
+        mid_y = global_rewards.adjusted_mid(yes_book, window.target_size)
+    mid_n = global_rewards.adjusted_mid(clean_no_book, window.target_size)
+    if mid_n is None:
+        mid_n = global_rewards.adjusted_mid(no_book, window.target_size)
+    if mid_y is None or mid_n is None:
+        return _zero_snapshot(now_ms, yes_book.slug, window.program_id), _zero_snapshot(now_ms, no_book.slug, window.program_id)
 
-    s_one = yes_bid_score + no_ask_score
-    s_two = no_bid_score + yes_ask_score
+    our_bid_y = sum((global_rewards.order_score(v, abs(o.price - mid_y), o.qty_open) for o in yes_bids), zero)
+    our_ask_y = sum((global_rewards.order_score(v, abs(o.price - mid_y), o.qty_open) for o in yes_asks), zero)
+    our_bid_n = sum((global_rewards.order_score(v, abs(o.price - mid_n), o.qty_open) for o in no_bids), zero)
+    our_ask_n = sum((global_rewards.order_score(v, abs(o.price - mid_n), o.qty_open) for o in no_asks), zero)
+
+    s_one = our_bid_y + our_ask_n
+    s_two = our_bid_n + our_ask_y
 
     ours = global_rewards.combined_score(s_one, s_two, mid_y)
     competitors = global_rewards.competitor_q(clean_yes_book, clean_no_book, window, mid_y=mid_y, mid_n=mid_n)
     reward = global_rewards.reward_rate(window.pool_usd, ours, competitors)
 
-    yes_total_ours = yes_bid_score + yes_ask_score
-    no_total_ours = no_bid_score + no_ask_score
+    yes_total_ours = our_bid_y + our_ask_y
+    no_total_ours = our_bid_n + our_ask_n
     total_ours_raw = yes_total_ours + no_total_ours
     if total_ours_raw > zero:
         reward_y = (reward * yes_total_ours) / total_ours_raw
@@ -157,38 +161,39 @@ def estimate_global_pair_score(
         reward_y = zero
         reward_n = zero
 
-    comp_bid_y = global_rewards.side_score(clean_yes_book.bids, mid_y, v)
-    comp_bid_n = global_rewards.side_score(clean_no_book.bids, mid_n, v)
-    comp_ask_y = global_rewards.side_score(clean_yes_book.asks, mid_y, v) if yes_ask_score > zero else zero
-    comp_ask_n = global_rewards.side_score(clean_no_book.asks, mid_n, v) if no_ask_score > zero else zero
-    qualifies = ours > zero
+    comp_bid_y = global_rewards.side_score(clean_yes_book.bids, mid_y, v, window.target_size)
+    comp_bid_n = global_rewards.side_score(clean_no_book.bids, mid_n, v, window.target_size)
+    comp_ask_y = global_rewards.side_score(clean_yes_book.asks, mid_y, v, window.target_size) if our_ask_y > zero else zero
+    comp_ask_n = global_rewards.side_score(clean_no_book.asks, mid_n, v, window.target_size) if our_ask_n > zero else zero
+    yes_qualifies = bool(ours > zero and yes_total_ours > zero)
+    no_qualifies = bool(ours > zero and no_total_ours > zero)
 
     return (
         LipSnapshot(
             ts_ms=now_ms,
             slug=yes_book.slug,
             program_id=window.program_id,
-            trader_bid_score=yes_bid_score,
-            total_bid_score=comp_bid_y + yes_bid_score,
-            trader_ask_score=yes_ask_score,
-            total_ask_score=comp_ask_y + yes_ask_score,
-            qualifies=qualifies,
+            trader_bid_score=our_bid_y,
+            total_bid_score=comp_bid_y + our_bid_y,
+            trader_ask_score=our_ask_y,
+            total_ask_score=comp_ask_y + our_ask_y,
+            qualifies=yes_qualifies,
             reward_usd=reward_y,
-            bid_qualifies=qualifies and yes_bid_score > zero,
-            ask_qualifies=qualifies and yes_ask_score > zero,
+            bid_qualifies=yes_qualifies and our_bid_y > zero,
+            ask_qualifies=yes_qualifies and our_ask_y > zero,
         ),
         LipSnapshot(
             ts_ms=now_ms,
             slug=no_book.slug,
             program_id=window.program_id,
-            trader_bid_score=no_bid_score,
-            total_bid_score=comp_bid_n + no_bid_score,
-            trader_ask_score=no_ask_score,
-            total_ask_score=comp_ask_n + no_ask_score,
-            qualifies=qualifies,
+            trader_bid_score=our_bid_n,
+            total_bid_score=comp_bid_n + our_bid_n,
+            trader_ask_score=our_ask_n,
+            total_ask_score=comp_ask_n + our_ask_n,
+            qualifies=no_qualifies,
             reward_usd=reward_n,
-            bid_qualifies=qualifies and no_bid_score > zero,
-            ask_qualifies=qualifies and no_ask_score > zero,
+            bid_qualifies=no_qualifies and our_bid_n > zero,
+            ask_qualifies=no_qualifies and our_ask_n > zero,
         ),
     )
 

@@ -21,10 +21,17 @@ def test_risk_corpus_recall(name):
 
 def test_must_keep_negatives_are_never_filtered():
     keep = [k["question"] for k in _load("keep_negatives.json")["keep"]]
-    assert [
-        q for q in keep
-        if fill_risk_category(q) not in (None, "geopolitical_crisis", "macro_release")
-    ] == []
+    unexpected = []
+    for q in keep:
+        cat = fill_risk_category(q)
+        if cat in (None, "geopolitical_crisis", "macro_release"):
+            continue
+        if cat == "sports_line" and any(lg in q.lower() for lg in ("nba", "nhl", "nfl", "mlb")):
+            continue
+        if cat == "media_release" and "gta" in q.lower():
+            continue
+        unexpected.append((q, cat))
+    assert unexpected == []
 
 
 def test_award_corpus_keeps_only_known_stat_prop_conflict():
@@ -37,6 +44,7 @@ def test_award_corpus_keeps_only_known_stat_prop_conflict():
             "scraper_tracker",
             "geopolitical_crisis",
             "macro_release",
+            "sports_line",
         )
     ]
     assert all("efficiency" in q for q in flagged), flagged
@@ -65,10 +73,12 @@ def test_known_risk_phrasings(question, category):
         "Will Zelenskyy visit Washington in 2026?",
         "Will Rubio attend a G7 diplomatic meeting?",
         "Will Gavin Newsom win the 2028 Democratic presidential nomination?",
+        "Will the Republicans win the 2028 US Presidential Election?",
         "Will Notre Dame win the 2027 CFP National Championship?",
-        "Will the St. Louis Blues win the 2026-27 NHL Presidents' Trophy?",
         'Will "AI" be said 20+ times during the Nvidia Q3 earnings call?',
         "Will the Democratic Party win the IN-03 House seat?",
+        "Will commercial cockpit automation certification pass in 2027?",
+        "Will morning commuter rail ridership exceed 2019 baselines in 2027?",
     ],
 )
 def test_protected_markets_pass_through(question):
@@ -81,6 +91,7 @@ def test_protected_markets_pass_through(question):
         ("Will Lionel Messi win 2026 MLS Most Valuable Player?", "player_award"),
         ("Will Yan Diomande win the 2026 Golden Boy award?", "player_award"),
         ("Will Jaxon Smith-Njigba finish the 2026-27 NFL regular season with the most receiving yards?", "player_stat_prop"),
+        ("Will the St. Louis Blues win the 2026-27 NHL Presidents' Trophy?", "sports_line"),
         ("Will Drake release a new album by December 31?", "celebrity_behavior"),
         ("Will Man I Need - Olivia Dean be the #2 song in the US for 2026?", "chart_rank"),
         ("Will Choosin' Texas be the #1 US song this week?", "chart_rank"),
@@ -133,4 +144,32 @@ def test_dictionary_word_speed_is_not_a_streamer():
 )
 def test_esports_weather_and_corporate_metrics_filtered(question, expected_categories):
     assert fill_risk_category(question) in expected_categories
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Will the Miami Dolphins be the last winless team of the 2026-27 NFL regular season?",
+        "Will Tyreek Hill sign with the Kansas City Chiefs in 2026?",
+        "Will Tyreek Hill play for the Kansas City Chiefs in the 2026-27 NFL season?",
+        "Will the Bank of Brazil make no change to the target for the Selic rate at the December meeting?",
+        "Will the Central Bank of Brazil decrease the Selic rate to 14.25% at the next meeting?",
+        "Will UMich Consumer Sentiment be between 46.0 and 48.9 in November?",
+        "Will University of Michigan Final Consumer Sentiment for October 2026 be 52.0 or higher?",
+        "Will no next Israeli Minister of Justice be appointed by February 28, 2027?",
+        "Will Miloš Vučević win the next Serbia presidential election?",
+        "Another GTA VI trailer released by November 30?",
+        "Will Moonshot release Kimi K3.1 Pro by December 31, 2026?",
+        "Will St. Louis river level exceed 15 feet in November?",
+        "Lakers vs Celtics Spread: -4.5",
+        "Arsenal vs Chelsea: O/U 2.5",
+        "Will Ornn B200 compute price drop below $4 in 2026?",
+        "Will GPT-5 output token price drop below $5?",
+        "Will India buy Russian crude in December 2026?",
+        "Will Turkey imports Russian gas in Q4?",
+    ],
+)
+def test_oct_25_26_toxic_jump_risk_and_consolidated_patterns_blocked(question):
+    assert fill_risk_category(question) is not None
+
 

@@ -121,7 +121,7 @@ def test_competitor_q_in_band_and_tail():
     no_book = book([("0.49", "200")], [("0.51", "200")])
 
     q_in_band = global_rewards.competitor_q(yes_book, no_book, w)
-    expected_in_band = Decimal("25") + Decimal("87.5") / Decimal("3")
+    expected_in_band = Decimal("112.5") / Decimal("3")
     assert abs(q_in_band - expected_in_band) < Decimal("1e-20")
 
     w_tail = window(target="50", max_spread=Decimal("0.02"))
@@ -213,4 +213,28 @@ def test_size_below_target_returns_zero():
         global_rewards.expected_single_reward_sec(yes_b, no_b, w_no_spread, Decimal("0.49"), Decimal("50"))
         == Decimal("0")
     )
+
+
+def test_competitor_q_symmetry_and_sub_target_dust_filtering():
+    w = window(pool="100", target="50", max_spread=Decimal("0.04"))
+    yes_clean = book([("0.48", "100")], [("0.52", "100")])
+    no_clean = book([("0.49", "120")], [("0.51", "120")])
+    yes_dusty = book([("0.49", "49"), ("0.48", "100"), ("0.47", "12")], [("0.52", "100")])
+    no_dusty = book([("0.495", "30"), ("0.49", "120"), ("0.48", "5")], [("0.51", "120")])
+
+    q_clean = global_rewards.competitor_q(yes_clean, no_clean, w)
+    q_dusty = global_rewards.competitor_q(yes_dusty, no_dusty, w)
+    q_swapped = global_rewards.competitor_q(no_dusty, yes_dusty, w)
+
+    q_one = global_rewards.side_score(yes_clean.bids, Decimal("0.50"), Decimal("0.04"), Decimal("50"))
+    q_two = global_rewards.side_score(no_clean.bids, Decimal("0.50"), Decimal("0.04"), Decimal("50"))
+    expected = global_rewards.combined_score(q_one, q_two, Decimal("0.50"))
+
+    assert q_clean == expected
+    assert q_dusty == q_clean
+    assert q_swapped == q_clean
+    assert global_rewards.expected_bid_reward_sec(yes_dusty, w, Decimal("0.48"), Decimal("50")) == global_rewards.expected_bid_reward_sec(
+        yes_clean, w, Decimal("0.48"), Decimal("50")
+    )
+
 

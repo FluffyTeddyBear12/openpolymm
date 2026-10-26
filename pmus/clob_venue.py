@@ -65,129 +65,18 @@ MAX_MARKET_CACHE_SIZE = 10000
 CHAMPIONSHIP_SERIES_PATTERN = re.compile(
     r"\b(?:world series|japan series|nba finals|stanley cup(?: finals)?|mlb postseason|korean series|world baseball classic)\b"
 )
-EXCLUDED_QUESTION_PATTERNS = (
-    "temperature in ",
-    "weather in ",
-    "highest temp",
-    "lowest temp",
-    "rain in ",
-    "snow in ",
-    "spread:",
-    "o/u ",
-    "quarterly earnings",
-    "beat earnings",
-    "views on day",
-    "valorant",
-    "first blood",
-    "cs2",
-    "counter-strike",
-    "dota",
-    "league of legends",
-    "typhoon",
-    "hurricane",
-    "cyclone",
-    "tropical storm",
-    "comp sales",
-    "organic sales",
-    "comparable store sales",
-    "comparable sales",
-    "same-restaurant sales",
-    "same-store sales",
-    "sales growth",
-    "identical sales",
-    "unit case volume",
-    "organic revenue",
-    "operating margin",
-    "gross margin",
-    "adjusted ebitda",
-    "ornn ",
-    "h100 index",
-    "h200 index",
-    "ships transit",
-    "bab el-mandeb",
-    "west nile",
-    "neuroinvasive",
-    "home value",
-    "debut at a score of",
-    "output token price",
-    "output price be at or below",
-    "output price be at or above",
-    "next fable model",
-    "claude fable",
-    "next astra model",
-    "gpt astra",
-    "approval rating hit",
-    "ceasefire",
-    "state of emergency",
-    "curfew",
-    "martial law",
-    "#1 us song",
-    "#1 song",
-    "gdp",
-    "cpi",
-    "inflation",
-    "unemployment rate",
-    "nonfarm payroll",
-    "openrouter",
-    "tokens the week of",
-    "ukmto",
-    "notices between",
-    "rhine river",
-    "return to normal levels",
-    "approval rating be between",
-    "critical incident",
-    "senate odds",
-    "house odds",
-    "ai agent lab",
-    "humanity's last exam",
-    "humanity\u2019s last exam",
-    "gemini pro model",
-    "volatility index",
-    "us dollar index",
-    "wettest month",
-    "driest month",
-    "hottest month",
-    "coldest month",
-    "tornado",
-    "earthquake",
-    "opening weekend box office",
-    "first week sales",
-    " arr ",
-    "military action",
-    "highest-scoring rb",
-    "highest-scoring wr",
-    "highest-scoring qb",
-    "cloud9",
-    "sentinels",
-    "fnatic",
-    "paper rex",
-    "100 thieves",
-    "karmine corp",
-    "team vitality",
-    "team heretics",
-    "evil geniuses",
-    "faze clan",
-    "natus vincere",
-    "astralis",
-    "virtus.pro",
-    "market capitalization be between",
-    "market cap be between",
-    "hormuz",
-    "us-iran",
-    "us x iran",
-    "debate live",
-    "most seats in the 2026 israeli",
-    "united arab list",
-    "ra'am",
-    "russian diesel",
-    "imports russian",
-    "russian oil",
-    "russian petroleum",
-    "russian lng",
-    "russian gas",
-    "russian crude",
-    "blockade",
-)
+EXCLUDED_MARKET_TAGS = frozenset({
+    "sports",
+    "nfl",
+    "nba",
+    "mlb",
+    "nhl",
+    "ncaa",
+    "ufc",
+    "soccer",
+    "tennis",
+    "esports",
+})
 
 logger = logging.getLogger(__name__)
 
@@ -230,9 +119,29 @@ def parse_trade_fills(trade: dict, proxy_address: str) -> list[ShadowFill]:
         return []
     ts_ms = int(trade["match_time"]) * 1000
     if trade.get("trader_side") == "TAKER":
+        taker_asset = str(trade["asset_id"])
+        total_qty = Decimal("0")
+        total_usdc = Decimal("0")
+        for m in trade.get("maker_orders") or []:
+            if not isinstance(m, dict) or m.get("matched_amount") in (None, "") or m.get("price") in (None, ""):
+                continue
+            m_qty = Decimal(str(m["matched_amount"]))
+            raw_m_px = Decimal(str(m["price"]))
+            if m_qty > Decimal("0") and raw_m_px > Decimal("0"):
+                m_asset = str(m.get("asset_id") or "").strip()
+                m_px = (Decimal("1") - raw_m_px) if (m_asset and m_asset != taker_asset) else raw_m_px
+                if m_px > Decimal("0"):
+                    total_qty += m_qty
+                    total_usdc += m_qty * m_px
+        if total_qty > Decimal("0"):
+            taker_qty: Any = total_qty
+            taker_price: Any = total_usdc / total_qty
+        else:
+            taker_qty = trade["size"]
+            taker_price = trade["price"]
         legs = [(
             trade["taker_order_id"], trade["asset_id"], trade["side"],
-            trade["size"], trade["price"], trade.get("fee_rate_bps"), False,
+            taker_qty, taker_price, trade.get("fee_rate_bps"), False,
         )]
     else:
         proxy = proxy_address.lower()
@@ -244,8 +153,8 @@ def parse_trade_fills(trade: dict, proxy_address: str) -> list[ShadowFill]:
 
     fills = []
     for order_id, asset_id, side, qty, price, fee_bps, is_maker in legs:
-        px = Decimal(str(price))
-        size = Decimal(str(qty))
+        px = price if isinstance(price, Decimal) else Decimal(str(price))
+        size = qty if isinstance(qty, Decimal) else Decimal(str(qty))
         fills.append(
             ShadowFill(
                 fill_id=f"{trade['id']}:{order_id}",
@@ -490,12 +399,25 @@ class ClobVenueClient:
                 market_slug = str(m.get("market_slug", "") or cond_id)
                 tick = Decimal(str(m.get("minimum_tick_size", "0.001")))
                 min_qty = Decimal(str(m.get("minimum_order_size", "5")))
+                raw_tags = m.get("tags") or ()
+                if isinstance(raw_tags, (list, tuple)):
+                    tags = tuple(
+                        s
+                        for s in (
+                            str(t.get("slug") or t.get("label") or "").strip()
+                            if isinstance(t, dict)
+                            else str(t).strip()
+                            for t in raw_tags
+                        )
+                        if s
+                    )
+                else:
+                    tags = ()
                 question = str(m.get("question", ""))
                 q_lower = question.lower()
                 risk_cat = fill_risk_category(question)
-                is_excluded = risk_cat is None and any(pat in q_lower for pat in EXCLUDED_QUESTION_PATTERNS)
-                if is_excluded:
-                    risk_cat = "sports_line" if ("spread:" in q_lower or "o/u " in q_lower) else "excluded_pattern"
+                if risk_cat is None and any(t.lower() in EXCLUDED_MARKET_TAGS for t in tags):
+                    risk_cat = "sports_tag"
 
                 raw_tokens = m.get("tokens") or []
                 if isinstance(raw_tokens, (list, tuple)):
@@ -579,12 +501,6 @@ class ClobVenueClient:
                     seen_conds.add(cond_id)
 
                 neg_risk_market_id = str(m.get("neg_risk_market_id") or m.get("negRiskMarketID") or "").strip()
-                raw_tags = m.get("tags") or ()
-                tags = (
-                    tuple(str(t).strip() for t in raw_tags if str(t).strip())
-                    if isinstance(raw_tags, (list, tuple))
-                    else ()
-                )
 
                 token_copies = tuple(dict(t) for t in tokens if isinstance(t, dict))
                 parsed.append(
@@ -955,11 +871,15 @@ class ClobVenueClient:
             side = BUY if "BUY" in quote.side else SELL
             args = OrderArgs(
                 token_id=quote.slug,
-                price=float(quote.price),
-                size=float(quote.qty),
+                price=round(float(quote.price), 4),
+                size=round(float(quote.qty), 4),
                 side=side,
             )
-            resp = self.client.create_and_post_order(args)
+            try:
+                resp = self.client.create_and_post_order(args)
+            except Exception as exc:
+                logger.warning("Order post failed for %s %s @ %s: %s", quote.slug, quote.side, quote.price, exc)
+                continue
             if isinstance(resp, dict):
                 err_msg = str(resp.get("errorMsg") or resp.get("error") or "").strip()
                 success_flag = resp.get("success")
@@ -1107,6 +1027,7 @@ class ClobVenueClient:
                 if s is not None and s not in sig_candidates:
                     sig_candidates.append(s)
 
+        saw_zero = False
         for sig in sig_candidates:
             try:
                 resp = self.client.get_balance_allowance(
@@ -1119,14 +1040,25 @@ class ClobVenueClient:
                 else:
                     bal = str(resp)
                 val = Decimal(str(bal)) / Decimal("1000000")
-                if val > Decimal("0"):
+                if self._resolved_bp_sig_type is not None and sig == self._resolved_bp_sig_type:
+                    if val >= Decimal("0"):
+                        self._buying_power_cache = val
+                        self._buying_power_cache_ts = now_mono
+                        return val
+                elif val > Decimal("0"):
                     self._resolved_bp_sig_type = sig
                     self._buying_power_cache = val
                     self._buying_power_cache_ts = now_mono
                     return val
+                elif val == Decimal("0"):
+                    saw_zero = True
             except Exception:
                 continue
 
+        if saw_zero:
+            self._buying_power_cache = Decimal("0")
+            self._buying_power_cache_ts = now_mono
+            return Decimal("0")
         if self._buying_power_cache is not None:
             return self._buying_power_cache
         return Decimal("0")
@@ -1221,7 +1153,14 @@ class ClobVenueClient:
                 if not page:
                     break
                 positions.extend(
-                    Position(slug=str(p["asset"]), net_qty=Decimal(str(p["size"])), avg_price=Decimal(str(p["avgPrice"])))
+                    Position(
+                        slug=str(p["asset"]),
+                        net_qty=Decimal(str(p["size"])),
+                        avg_price=Decimal(str(p["avgPrice"])),
+                        cur_price=Decimal(str(p["curPrice"])) if p.get("curPrice") not in (None, "") else None,
+                        redeemable=bool(p.get("redeemable", False)),
+                        archived=bool(p.get("archived", False)),
+                    )
                     for p in page
                 )
                 if len(page) < POSITIONS_PAGE_SIZE:

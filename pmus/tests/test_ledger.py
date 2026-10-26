@@ -1,15 +1,22 @@
-import sqlite3
 from datetime import datetime, timedelta, timezone
-import time
 from decimal import Decimal
+from pathlib import Path
+import sqlite3
+import tempfile
+import threading
+import time
+from unittest.mock import patch
 import pytest
 
 from pmus.ledger import Ledger
 from pmus.models import LipSnapshot, LiveOrder, Position, Quote, ShadowFill
 
+
 @pytest.fixture
 def ledger(tmp_path):
-    return Ledger(tmp_path / "test_ledger.db")
+    inst = Ledger(tmp_path / "test_ledger.db")
+    yield inst
+    inst.close()
 
 def test_ledger_orders_lifecycle(ledger):
     order = LiveOrder(
@@ -290,8 +297,8 @@ def test_record_lip_snapshot_scales_by_elapsed_dt_and_caps_at_90s(ledger):
         bid_qualifies=True,
     )
     ledger.record_lip_snapshot(snap1)
-    ledger.record_lip_snapshot(snap2)
-    ledger.record_lip_snapshot(snap3)
+    ledger.record_lip_snapshot(snap2, elapsed_sec=Decimal("10"))
+    ledger.record_lip_snapshot(snap3, elapsed_sec=Decimal("120"))
 
     stats = ledger.get_lip_stats(0)
     assert stats["lip_reward_total"] == Decimal("1.01")
@@ -299,16 +306,52 @@ def test_record_lip_snapshot_scales_by_elapsed_dt_and_caps_at_90s(ledger):
     assert ledger.get_latest_lip_snapshots()["mkt-dt"].reward_usd == Decimal("0.01")
 
 
+def test_record_lip_snapshot_does_not_extrapolate_wall_clock_gaps(ledger):
+    s1 = LipSnapshot(
+        ts_ms=1_000_000,
+        slug="mkt-gap",
+        program_id="p-gap",
+        trader_bid_score=Decimal("50"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("0"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.01"),
+        bid_qualifies=True,
+    )
+    s2 = LipSnapshot(
+        ts_ms=1_060_000,
+        slug="mkt-gap",
+        program_id="p-gap",
+        trader_bid_score=Decimal("50"),
+        total_bid_score=Decimal("100"),
+        trader_ask_score=Decimal("0"),
+        total_ask_score=Decimal("100"),
+        qualifies=True,
+        reward_usd=Decimal("0.01"),
+        bid_qualifies=True,
+    )
+    ledger.record_lip_snapshot(s1)
+    ledger.record_lip_snapshot(s2)
+
+    stats = ledger.get_lip_stats(0)
+    assert stats["qualifying_seconds"] == 2
+    assert stats["lip_reward_total"] == Decimal("0.02")
+
+
 def test_get_realized_pnl_since_respects_include_fees_flag(tmp_path):
     ledger = Ledger(tmp_path / "pnl_fees.db")
-    ledger.record_fill(
-        ShadowFill("f1", "o1", "m-fee", "BUY_LONG", Decimal("0.40"), Decimal("50"), Decimal("0.50"), False, 1000)
-    )
-    ledger.record_fill(
-        ShadowFill("f2", "o2", "m-fee", "SELL_LONG", Decimal("0.50"), Decimal("50"), Decimal("0.25"), False, 2000)
-    )
-    assert ledger.get_realized_pnl_since(1500, include_fees=False) == Decimal("5.00")
-    assert ledger.get_realized_pnl_since(1500, include_fees=True) == Decimal("4.75")
+    try:
+        ledger.record_fill(
+            ShadowFill("f1", "o1", "m-fee", "BUY_LONG", Decimal("0.40"), Decimal("50"), Decimal("0.50"), False, 1000)
+        )
+        ledger.record_fill(
+            ShadowFill("f2", "o2", "m-fee", "SELL_LONG", Decimal("0.50"), Decimal("50"), Decimal("0.25"), False, 2000)
+        )
+        assert ledger.get_realized_pnl_since(1500, include_fees=False) == Decimal("5.00")
+        assert ledger.get_realized_pnl_since(1500, include_fees=True) == Decimal("4.75")
+    finally:
+        ledger.close()
 
 
 def test_get_lip_stats_since_ms_matches_materialized_summary_with_persisted_dt_sec(ledger):
@@ -337,6 +380,7 @@ def test_get_lip_stats_since_ms_matches_materialized_summary_with_persisted_dt_s
         reward_usd=Decimal("0.03"),
         bid_qualifies=True,
         ask_qualifies=True,
+        dt_sec=15,
     )
     s3 = LipSnapshot(
         ts_ms=45_000,
@@ -364,3 +408,113 @@ def test_get_lip_stats_since_ms_matches_materialized_summary_with_persisted_dt_s
     assert stats_all["qualifying_bid_seconds"] == stats_since["qualifying_bid_seconds"] == 36
     assert stats_all["qualifying_ask_seconds"] == stats_since["qualifying_ask_seconds"] == 35
     assert stats_all["lip_reward_total"] == stats_since["lip_reward_total"] == Decimal("0.67")
+
+
+def test_ledger_reuses_thread_local_connection_and_skips_pragma_table_info_on_queries(tmp_path):
+    real_connect = sqlite3.connect
+    with patch("pmus.ledger.sqlite3.connect", wraps=real_connect) as spy_connect:
+        ledger = Ledger(tmp_path / "reuse.db")
+        try:
+            executed_sql: list[str] = []
+            with ledger._get_connection() as conn:
+                conn.set_trace_callback(executed_sql.append)
+
+            for i in range(5):
+                ts = 1000 + i * 100
+                ledger.record_quote(Quote(slug="mkt-r", side="BUY_LONG", price=Decimal("0.45"), qty=Decimal("10")), ts)
+                ledger.record_lip_snapshot(
+                    LipSnapshot(
+                        ts_ms=ts,
+                        slug="mkt-r",
+                        program_id="p-r",
+                        trader_bid_score=Decimal("10"),
+                        total_bid_score=Decimal("100"),
+                        trader_ask_score=Decimal("10"),
+                        total_ask_score=Decimal("100"),
+                        qualifies=True,
+                        reward_usd=Decimal("0.001"),
+                        bid_qualifies=True,
+                        ask_qualifies=True,
+                    ),
+                    elapsed_sec=Decimal("2"),
+                )
+                ledger.get_lip_stats(500)
+                ledger.get_lip_snapshots_since(500)
+
+            assert spy_connect.call_count <= 3
+            assert not any("PRAGMA table_info" in sql for sql in executed_sql)
+        finally:
+            ledger.close()
+
+
+def test_ledger_close_releases_tempdir_and_rolls_back_on_error():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        ledger = Ledger(Path(tmp_dir) / "temp_win.db")
+        ledger.record_quote(Quote(slug="mkt-c", side="BUY_LONG", price=Decimal("0.50"), qty=Decimal("5")), 1000)
+
+        with pytest.raises(RuntimeError):
+            with ledger._get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO quotes (ts_ms, slug, side, price, qty) VALUES (?, ?, ?, ?, ?)",
+                    (2000, "mkt-c", "BUY_LONG", "0.51", "5"),
+                )
+                raise RuntimeError("boom")
+
+        with ledger._get_connection() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM quotes").fetchone()[0]
+            assert count == 1
+
+        worker_done = threading.Event()
+
+        def worker():
+            assert ledger.get_lip_stats(0)["qualifying_seconds"] == 0
+            ledger.close()
+            worker_done.set()
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join(timeout=2.0)
+        assert worker_done.is_set()
+        ledger.close()
+        ledger.close()
+
+
+def test_prune_old_snapshots_deletes_expired_rows_and_vacuums(ledger):
+    day_ms = 86_400_000
+    now_ms = 20 * day_ms
+    old_ts = now_ms - 8 * day_ms
+    boundary_ts = now_ms - 7 * day_ms
+    recent_ts = now_ms - 1 * day_ms
+
+    for ts in (old_ts, boundary_ts, recent_ts):
+        ledger.record_quote(Quote(slug="mkt-p", side="BUY_LONG", price=Decimal("0.40"), qty=Decimal("10")), ts)
+        ledger.record_lip_snapshot(
+            LipSnapshot(
+                ts_ms=ts,
+                slug="mkt-p",
+                program_id="p-p",
+                trader_bid_score=Decimal("10"),
+                total_bid_score=Decimal("100"),
+                trader_ask_score=Decimal("0"),
+                total_ask_score=Decimal("100"),
+                qualifies=True,
+                reward_usd=Decimal("0.01"),
+                bid_qualifies=True,
+            )
+        )
+
+    ledger.record_fill(
+        ShadowFill("f-old", "o-old", "mkt-p", "BUY_LONG", Decimal("0.40"), Decimal("10"), Decimal("0"), True, old_ts)
+    )
+
+    deleted = ledger.prune_old_snapshots(retention_days=7, now_ms=now_ms, vacuum=True)
+    assert deleted == 2
+
+    remaining_snaps = ledger.get_lip_snapshots_since(0)
+    assert [s.ts_ms for s in remaining_snaps] == [boundary_ts, recent_ts]
+
+    with ledger._get_connection() as conn:
+        quote_ts = [r[0] for r in conn.execute("SELECT ts_ms FROM quotes ORDER BY ts_ms ASC").fetchall()]
+    assert quote_ts == [boundary_ts, recent_ts]
+    assert len(ledger.get_fills_since(0)) == 1
+    assert ledger.get_lip_stats(0)["lip_reward_total"] == Decimal("0.03")

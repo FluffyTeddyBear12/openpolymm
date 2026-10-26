@@ -178,12 +178,12 @@ def test_budget_and_max_markets_respected():
     cond3 = make_condition(cond_id="c3", pool="100", target="50")
 
     books = {
-        cond1.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond1.yes.slug),
-        cond1.no.slug: make_book([("0.47", "100")], [("0.53", "100")], slug=cond1.no.slug),
-        cond2.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond2.yes.slug),
-        cond2.no.slug: make_book([("0.47", "100")], [("0.53", "100")], slug=cond2.no.slug),
-        cond3.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond3.yes.slug),
-        cond3.no.slug: make_book([("0.47", "100")], [("0.53", "100")], slug=cond3.no.slug),
+        cond1.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond1.yes.slug),
+        cond1.no.slug: make_book([("0.47", "250")], [("0.53", "250")], slug=cond1.no.slug),
+        cond2.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond2.yes.slug),
+        cond2.no.slug: make_book([("0.47", "250")], [("0.53", "250")], slug=cond2.no.slug),
+        cond3.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond3.yes.slug),
+        cond3.no.slug: make_book([("0.47", "250")], [("0.53", "250")], slug=cond3.no.slug),
     }
 
     targets = allocate_conditions(
@@ -215,9 +215,9 @@ def test_missing_book_skipped():
     cond2 = make_condition(cond_id="c2", pool="200")
 
     books = {
-        cond1.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond1.yes.slug),
-        cond2.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond2.yes.slug),
-        cond2.no.slug: make_book([("0.47", "100")], [("0.53", "100")], slug=cond2.no.slug),
+        cond1.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond1.yes.slug),
+        cond2.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond2.yes.slug),
+        cond2.no.slug: make_book([("0.47", "250")], [("0.53", "250")], slug=cond2.no.slug),
     }
 
     targets = allocate_conditions(
@@ -381,10 +381,10 @@ def test_allocate_conditions_skips_condition_when_inventory_at_or_above_cap():
     cond1 = make_condition(cond_id="c1", pool="200", target="50")
     cond2 = make_condition(cond_id="c2", pool="150", target="50")
     books = {
-        cond1.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond1.yes.slug),
-        cond1.no.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond1.no.slug),
-        cond2.yes.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond2.yes.slug),
-        cond2.no.slug: make_book([("0.48", "100")], [("0.52", "100")], slug=cond2.no.slug),
+        cond1.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond1.yes.slug),
+        cond1.no.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond1.no.slug),
+        cond2.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond2.yes.slug),
+        cond2.no.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond2.no.slug),
     }
     positions = {
         cond1.no.slug: Position(slug=cond1.no.slug, net_qty=Decimal("540"), avg_price=Decimal("0.184")),
@@ -510,7 +510,7 @@ def test_single_sided_tail_token_below_20c_blocked_while_two_sided_allowed():
     )
     assert target_both_blocked is None
 
-    no_at_floor_b = make_book([("0.20", "100")], [("0.22", "100")], slug=cond.no.slug)
+    no_at_floor_b = make_book([("0.20", "250")], [("0.22", "250")], slug=cond.no.slug)
     target_allowed = evaluate_condition(
         cond=cond,
         yes_book=yes_wide_b,
@@ -552,8 +552,8 @@ def test_single_sided_crossed_against_opposite_book_blocked():
 
 def test_zero_pair_preference_strictly_blocks_single_sided_fallback():
     cond = make_condition(pool="500", target="50", max_spread="0.05")
-    yes_b = make_book([("0.30", "100")], [("0.32", "100")], slug=cond.yes.slug)
-    no_b = make_book([], [("0.70", "100")], slug=cond.no.slug)
+    yes_b = make_book([("0.30", "250")], [("0.32", "250")], slug=cond.yes.slug)
+    no_b = make_book([("0.55", "50")], [("0.85", "250")], slug=cond.no.slug)
 
     target_fallback = evaluate_condition(
         cond=cond,
@@ -675,7 +675,10 @@ def test_evaluate_and_allocate_conditions_skip_two_sided_when_leg_filled_at_targ
         pair_preference=Decimal("0.0"),
         positions=filled_yes_positions,
     )
-    assert target_filled_pair_only is None
+    assert target_filled_pair_only is not None
+    assert target_filled_pair_only.mode == "no_only"
+    assert target_filled_pair_only.size == Decimal("50")
+    assert target_filled_pair_only.no_price == Decimal("0.48")
 
     target_filled_single_fallback = evaluate_condition(
         cond=cond1,
@@ -688,9 +691,27 @@ def test_evaluate_and_allocate_conditions_skip_two_sided_when_leg_filled_at_targ
     )
     assert target_filled_single_fallback is not None
     assert target_filled_single_fallback.mode == "no_only"
+    assert target_filled_single_fallback.size == Decimal("50")
+
+    both_filled_positions = {
+        cond1.yes.slug: Position(slug=cond1.yes.slug, net_qty=Decimal("50"), avg_price=Decimal("0.48")),
+        cond1.no.slug: Position(slug=cond1.no.slug, net_qty=Decimal("50"), avg_price=Decimal("0.48")),
+    }
+    assert (
+        evaluate_condition(
+            cond=cond1,
+            yes_book=books[cond1.yes.slug],
+            no_book=books[cond1.no.slug],
+            max_cost=Decimal("100"),
+            max_contracts=Decimal("1000"),
+            pair_preference=Decimal("0.0"),
+            positions=both_filled_positions,
+        )
+        is None
+    )
 
     high_cost_yes_positions = {
-        cond1.yes.slug: Position(slug=cond1.yes.slug, net_qty=Decimal("50"), avg_price=Decimal("0.52")),
+        cond1.yes.slug: Position(slug=cond1.yes.slug, net_qty=Decimal("50"), avg_price=Decimal("0.56")),
     }
     assert (
         evaluate_condition(
@@ -715,8 +736,7 @@ def test_evaluate_and_allocate_conditions_skip_two_sided_when_leg_filled_at_targ
         pair_preference=Decimal("0.0"),
         positions=filled_yes_positions,
     )
-    assert [t.condition.condition_id for t in allocated] == ["c2"]
-    assert allocated[0].mode == "two_sided"
+    assert {t.condition.condition_id: t.mode for t in allocated} == {"c2": "two_sided", "c1": "no_only"}
 
     allocated_waterfill = allocate_conditions(
         conditions=[cond1, cond2],
@@ -728,8 +748,7 @@ def test_evaluate_and_allocate_conditions_skip_two_sided_when_leg_filled_at_targ
         pair_preference=Decimal("0.0"),
         positions=filled_yes_positions,
     )
-    assert [t.condition.condition_id for t in allocated_waterfill] == ["c2"]
-    assert allocated_waterfill[0].mode == "two_sided"
+    assert {t.condition.condition_id: t.mode for t in allocated_waterfill} == {"c2": "two_sided", "c1": "no_only"}
 
 
 def test_waterfill_min_tier_prevents_20_share_dust_allocations():
@@ -946,4 +965,246 @@ def test_stem_dedup_deadlines_and_strikes_120_budget_diversification_and_fill_ri
         fill_risk_category("Will Nvidia be the largest company in the world at the end of 2026?")
         == "corporate_metrics"
     )
+
+
+def test_max_leg_collateral_caps_two_sided_and_single_sided_across_greedy_and_waterfill():
+    cond1 = make_condition(
+        cond_id="leg-cap-1",
+        pool="300",
+        target="20",
+        min_qty="5",
+        max_spread="0.05",
+        question="Will the Federal Reserve cut rates at the March 2027 FOMC meeting?",
+    )
+    cond2 = make_condition(
+        cond_id="leg-cap-2",
+        pool="260",
+        target="20",
+        min_qty="5",
+        max_spread="0.05",
+        question="Will the Bank of Japan hike rates in Q2 2027?",
+    )
+    yes_b1 = make_book([("0.75", "300")], [("0.77", "300")], slug=cond1.yes.slug)
+    no_b1 = make_book([("0.22", "300")], [("0.24", "300")], slug=cond1.no.slug)
+    yes_b2 = make_book([("0.74", "300")], [("0.76", "300")], slug=cond2.yes.slug)
+    no_b2 = make_book([("0.23", "300")], [("0.25", "300")], slug=cond2.no.slug)
+
+    uncapped = evaluate_condition(
+        cond=cond1,
+        yes_book=yes_b1,
+        no_book=no_b1,
+        max_cost=Decimal("100.00"),
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+    )
+    assert uncapped is not None
+    assert uncapped.mode == "two_sided"
+    assert uncapped.size == Decimal("100")
+
+    capped = evaluate_condition(
+        cond=cond1,
+        yes_book=yes_b1,
+        no_book=no_b1,
+        max_cost=Decimal("100.00"),
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+        max_leg_collateral=Decimal("30.00"),
+    )
+    assert capped is not None
+    assert capped.mode == "two_sided"
+    assert capped.size == Decimal("40")
+    assert capped.yes_price is not None and capped.size * capped.yes_price <= Decimal("30.00")
+
+    partial_yes = {
+        cond1.yes.slug: Position(slug=cond1.yes.slug, net_qty=Decimal("10"), avg_price=Decimal("0.75")),
+    }
+    capped_with_held = evaluate_condition(
+        cond=cond1,
+        yes_book=yes_b1,
+        no_book=no_b1,
+        max_cost=Decimal("100.00"),
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+        positions=partial_yes,
+        max_leg_collateral=Decimal("30.00"),
+    )
+    assert capped_with_held is not None
+    assert capped_with_held.size == Decimal("30")
+    assert capped_with_held.yes_price is not None
+    assert capped_with_held.size * capped_with_held.yes_price + Decimal("7.50") <= Decimal("30.00")
+
+    assert (
+        evaluate_condition(
+            cond=cond1,
+            yes_book=yes_b1,
+            no_book=no_b1,
+            max_cost=Decimal("100.00"),
+            max_contracts=Decimal("500"),
+            pair_preference=Decimal("0.0"),
+            positions=partial_yes,
+            max_leg_collateral=Decimal("20.00"),
+        )
+        is None
+    )
+
+    single_capped = evaluate_condition(
+        cond=cond1,
+        yes_book=yes_b1,
+        no_book=no_b1,
+        max_cost=Decimal("100.00"),
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("1.0"),
+        positions=partial_yes,
+        max_leg_collateral=Decimal("20.00"),
+    )
+    assert single_capped is not None
+    assert single_capped.mode == "no_only"
+    assert single_capped.cost <= Decimal("20.00")
+
+    books = {
+        cond1.yes.slug: yes_b1,
+        cond1.no.slug: no_b1,
+        cond2.yes.slug: yes_b2,
+        cond2.no.slug: no_b2,
+    }
+    for budget in (Decimal("200.00"), Decimal("600.00")):
+        targets = allocate_conditions(
+            conditions=[cond1, cond2],
+            books=books,
+            total_budget=budget,
+            max_cost_per_condition=Decimal("120.00"),
+            max_markets=4,
+            max_contracts=Decimal("500"),
+            pair_preference=Decimal("0.0"),
+            max_leg_collateral=Decimal("30.00"),
+        )
+        assert len(targets) == 2
+        for t in targets:
+            if t.yes_price is not None:
+                assert t.size * t.yes_price <= Decimal("30.00")
+            if t.no_price is not None:
+                assert t.size * t.no_price <= Decimal("30.00")
+
+
+def test_post_fill_opposite_leg_hedge_completion_clamps_price_and_size_and_enforces_unhedged_comp_floor():
+    cond = make_condition(
+        cond_id="hedge-1",
+        pool="300",
+        target="50",
+        min_qty="5",
+        max_spread="0.05",
+    )
+    yes_b = make_book([("0.48", "300")], [("0.52", "300")], slug=cond.yes.slug)
+    no_b = make_book([("0.49", "300")], [("0.51", "300")], slug=cond.no.slug)
+
+    clamped_hedge = evaluate_condition(
+        cond=cond,
+        yes_book=yes_b,
+        no_book=no_b,
+        max_cost=Decimal("100.00"),
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+        positions={
+            cond.yes.slug: Position(slug=cond.yes.slug, net_qty=Decimal("65"), avg_price=Decimal("0.53")),
+        },
+    )
+    assert clamped_hedge is not None
+    assert clamped_hedge.mode == "no_only"
+    assert clamped_hedge.no_price == Decimal("0.47")
+    assert clamped_hedge.size == Decimal("65")
+
+    assert (
+        evaluate_condition(
+            cond=cond,
+            yes_book=yes_b,
+            no_book=no_b,
+            max_cost=Decimal("100.00"),
+            max_contracts=Decimal("500"),
+            pair_preference=Decimal("0.0"),
+            positions={
+                cond.yes.slug: Position(slug=cond.yes.slug, net_qty=Decimal("65"), avg_price=Decimal("0.55")),
+            },
+        )
+        is None
+    )
+
+    yes_hedge = evaluate_condition(
+        cond=cond,
+        yes_book=yes_b,
+        no_book=no_b,
+        max_cost=Decimal("100.00"),
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+        positions={
+            cond.no.slug: Position(slug=cond.no.slug, net_qty=Decimal("80"), avg_price=Decimal("0.53")),
+            cond.yes.slug: Position(slug=cond.yes.slug, net_qty=Decimal("20"), avg_price=Decimal("0.46")),
+        },
+    )
+    assert yes_hedge is not None
+    assert yes_hedge.mode == "yes_only"
+    assert yes_hedge.yes_price == Decimal("0.47")
+    assert yes_hedge.size == Decimal("60")
+
+    fav_yes_b = make_book([("0.90", "300")], [("0.92", "300")], slug=cond.yes.slug)
+    tail_no_b = make_book([("0.08", "300")], [("0.10", "300")], slug=cond.no.slug)
+    fav_positions = {
+        cond.yes.slug: Position(slug=cond.yes.slug, net_qty=Decimal("50"), avg_price=Decimal("0.91")),
+    }
+    fav_hedge = evaluate_condition(
+        cond=cond,
+        yes_book=fav_yes_b,
+        no_book=tail_no_b,
+        max_cost=Decimal("100.00"),
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+        positions=fav_positions,
+    )
+    assert fav_hedge is not None
+    assert fav_hedge.mode == "no_only"
+    assert fav_hedge.no_price == Decimal("0.08")
+    assert fav_hedge.size == Decimal("50")
+
+    wf_fav = allocate_conditions(
+        conditions=[cond],
+        books={cond.yes.slug: fav_yes_b, cond.no.slug: tail_no_b},
+        total_budget=Decimal("600.00"),
+        max_cost_per_condition=Decimal("100.00"),
+        max_markets=2,
+        max_contracts=Decimal("500"),
+        pair_preference=Decimal("0.0"),
+        positions=fav_positions,
+    )
+    assert len(wf_fav) == 1
+    assert wf_fav[0].mode == "no_only"
+    assert wf_fav[0].no_price == Decimal("0.08")
+
+    assert (
+        evaluate_condition(
+            cond=cond,
+            yes_book=fav_yes_b,
+            no_book=tail_no_b,
+            max_cost=Decimal("100.00"),
+            max_contracts=Decimal("500"),
+            pair_preference=Decimal("0.0"),
+            positions={
+                cond.yes.slug: Position(slug=cond.yes.slug, net_qty=Decimal("50"), avg_price=Decimal("0.96")),
+            },
+        )
+        is None
+    )
+
+    thin_yes_b = make_book([("0.48", "100")], [("0.52", "100")], slug=cond.yes.slug)
+    wide_no_b = make_book([("0.30", "100")], [("0.70", "100")], slug=cond.no.slug)
+    assert (
+        evaluate_condition(
+            cond=cond,
+            yes_book=thin_yes_b,
+            no_book=wide_no_b,
+            max_cost=Decimal("100.00"),
+            max_contracts=Decimal("500"),
+            pair_preference=Decimal("1.0"),
+        )
+        is None
+    )
+
 

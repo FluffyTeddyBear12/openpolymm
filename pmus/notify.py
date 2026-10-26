@@ -1,8 +1,10 @@
-import logging
-import threading
 from datetime import datetime, timezone
 from decimal import Decimal
+import logging
+import re
+import threading
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 
@@ -10,10 +12,15 @@ from pmus.config import Settings
 
 logger = logging.getLogger("pmus.notify")
 
+
 class Notifier:
     def __init__(self, settings: Settings, timeout: float = 5.0):
         self.webhook_url = settings.webhook_url
         self.timeout = timeout
+        self._semaphore = threading.BoundedSemaphore(4)
+
+    def close(self) -> None:
+        return None
 
     @staticmethod
     def format_payload(
@@ -44,11 +51,26 @@ class Notifier:
 
         payload = self.format_payload(title=title, message=message, level=level, extra=extra)
 
-        def _dispatch():
-            try:
-                requests.post(self.webhook_url, json=payload, timeout=self.timeout)
-            except Exception as exc:
-                logger.warning("Failed to dispatch webhook notification: %s", exc)
+        def _dispatch() -> None:
+            with self._semaphore:
+                try:
+                    requests.post(self.webhook_url, json=payload, timeout=self.timeout)
+                except Exception as exc:
+                    redacted_msg = str(exc)
+                    if self.webhook_url:
+                        redacted_msg = redacted_msg.replace(self.webhook_url, "[REDACTED_URL]")
+                    redacted_msg = re.sub(r"https?://\S+", "[REDACTED_URL]", redacted_msg)
+                    if self.webhook_url:
+                        parsed = urlsplit(self.webhook_url)
+                        if parsed.path and parsed.path != "/":
+                            redacted_msg = redacted_msg.replace(parsed.path, "[REDACTED_URL]")
+                        if parsed.query:
+                            redacted_msg = redacted_msg.replace(parsed.query, "[REDACTED_QUERY]")
+                    logger.warning(
+                        "Failed to dispatch webhook notification (%s): %s",
+                        type(exc).__name__,
+                        redacted_msg,
+                    )
 
         thread = threading.Thread(target=_dispatch, daemon=True)
         thread.start()
@@ -99,14 +121,36 @@ class Notifier:
         open_pairs: int,
         buying_power: Decimal,
         extra: dict[str, Any] | None = None,
+        *,
+        engine_state: str = "QUOTING",
+        open_orders_count: int | None = None,
+        realized_pnl_today: Decimal = Decimal("0"),
+        unrealized_pnl: Decimal = Decimal("0"),
+        mtm_equity: Decimal | None = None,
     ) -> threading.Thread | None:
         title = "Hourly Status Ping"
-        msg = (
-            f"1h Accrual: ${accrued_usd_1h:.4f} ({qualifying_sec_1h}s qual) | "
-            f"Today: ${accrued_usd_today:.2f} (Proj 24h: ${projected_payout_today:.2f}) | "
-            f"Active: {open_pairs} pairs | Cash: ${buying_power:.2f}"
+        net_est_today = accrued_usd_today + realized_pnl_today
+
+        parts = [f"State: {engine_state}"]
+        if open_orders_count is not None:
+            parts.append(f"Orders: {open_orders_count}")
+        parts.extend(
+            [
+                f"Active: {open_pairs} pairs",
+                f"1h LIP: ${accrued_usd_1h:.4f} ({qualifying_sec_1h}s qual)",
+                f"Today LIP: ${accrued_usd_today:.2f} (Proj 24h: ${projected_payout_today:.2f})",
+                f"Realized PnL: ${realized_pnl_today:+.2f}",
+                f"Net Est: ${net_est_today:+.2f}",
+                f"Unrealized: ${unrealized_pnl:+.2f}",
+            ]
         )
-        combined_extra = {
+        if mtm_equity is not None:
+            parts.append(f"Equity: ${mtm_equity:.2f}")
+        parts.append(f"Cash: ${buying_power:.2f}")
+        msg = " | ".join(parts)
+
+        level = "warning" if (engine_state != "QUOTING" or net_est_today < Decimal("0")) else "info"
+        combined_extra: dict[str, Any] = {
             "qualifying_sec_1h": qualifying_sec_1h,
             "accrued_usd_1h": str(accrued_usd_1h),
             "qualifying_sec_today": qualifying_sec_today,
@@ -114,7 +158,13 @@ class Notifier:
             "projected_payout_today": str(projected_payout_today),
             "open_pairs": open_pairs,
             "buying_power": str(buying_power),
+            "engine_state": engine_state,
+            "open_orders_count": open_orders_count,
+            "realized_pnl_today": str(realized_pnl_today),
+            "net_est_today": str(net_est_today),
+            "unrealized_pnl": str(unrealized_pnl),
+            "mtm_equity": str(mtm_equity) if mtm_equity is not None else None,
         }
         if extra:
             combined_extra.update(extra)
-        return self.send(title=title, message=msg, level="info", extra=combined_extra)
+        return self.send(title=title, message=msg, level=level, extra=combined_extra)

@@ -1,4 +1,5 @@
 import dataclasses
+import inspect
 import logging
 import threading
 import time
@@ -21,7 +22,7 @@ from pmus.venue import AuthenticatedClient, PublicGatewayClient
 
 MarketState = Literal["IDLE", "QUOTING", "PAUSED", "FLATTENING"]
 
-CANDIDATE_BOOK_LIMIT = 3000
+CANDIDATE_BOOK_LIMIT = 600
 FALLBACK_BOOK_CONDITION_LIMIT = 150
 FILL_LOOKBACK_SECONDS = 60
 FILL_WINDOW_SECONDS = 3600
@@ -33,6 +34,7 @@ YIELD_COLLAPSE_TICKS = 15
 CAPITAL_UTILIZATION_RATIO = Decimal("0.75")
 CAPITAL_UNDERDEPLOYED_TICKS = 30
 DEGRADED_SLUG_COOLDOWN_SECONDS = 300.0
+LOSS_SLUG_COOLDOWN_SECONDS = 86400.0
 MANUAL_SELL_EDIT_GRACE_SECONDS = 90.0
 SELL_HYSTERESIS_BAND = Decimal("0.015")
 RETAINED_QTY_TOLERANCE_RATIO = Decimal("0.20")
@@ -112,7 +114,7 @@ def update_position_from_fill(current_pos: Position, fill_side: str, fill_price:
         else:
             new_avg = old_avg
 
-    return Position(slug=current_pos.slug, net_qty=new_qty, avg_price=new_avg)
+    return dataclasses.replace(current_pos, net_qty=new_qty, avg_price=new_avg)
 
 def resolve_market(client: Any, slug: str) -> Market:
     market = None
@@ -135,6 +137,12 @@ def resolve_market(client: Any, slug: str) -> Market:
         active=True,
         mutually_exclusive=False,
     )
+
+
+def _effective_max_pairs(max_markets: int) -> int:
+    if max_markets <= 4:
+        return max(1, max_markets)
+    return max(1, max_markets // 2)
 
 
 def calculate_num_pairs(budget: Decimal, max_limit: int = 8) -> int:
@@ -167,30 +175,36 @@ def allocate_markets(
     positions: dict[str, Position] | None = None,
     open_orders: list[LiveOrder] | None = None,
     excluded_slugs: set[str] | frozenset[str] | None = None,
+    max_leg_collateral: Decimal | None = None,
 ) -> tuple[dict[str, IncentiveWindow], AllocationResult]:
     budget = available_budget if available_budget is not None else settings.total_budget
     is_global = settings.venue == "global"
     if is_global and hasattr(client, "fetch_reward_conditions"):
         conditions = client.fetch_reward_conditions()
         base_cond_cap = min(settings.max_per_market, settings.max_collateral_per_market)
-        if is_global and settings.pair_preference <= Decimal("0") and settings.max_markets <= 4:
-            num_pairs = calculate_num_pairs(budget, settings.max_markets)
+        if is_global and settings.pair_preference <= Decimal("0"):
+            max_pairs = _effective_max_pairs(settings.max_markets)
+            num_pairs = (
+                calculate_num_pairs(budget, max_pairs)
+                if (available_budget is not None or settings.max_markets <= 4)
+                else max_pairs
+            )
             effective_max_conditions = num_pairs
             per_pair = budget / Decimal(str(num_pairs)) if num_pairs > 0 else Decimal("0")
             cond_ceiling = max(base_cond_cap, Decimal("85.00"))
-            max_cost_per_condition = min(cond_ceiling, max(base_cond_cap, per_pair))
+            max_cost_per_condition = (
+                min(cond_ceiling, max(base_cond_cap, per_pair))
+                if (available_budget is not None or settings.max_markets <= 4)
+                else base_cond_cap
+            )
         else:
-            num_pairs = max(1, settings.max_markets // 2)
+            num_pairs = _effective_max_pairs(settings.max_markets)
             max_cost_per_condition = (
                 max(base_cond_cap, budget / Decimal(str(num_pairs)))
                 if available_budget is not None
                 else base_cond_cap
             )
-            effective_max_conditions = (
-                num_pairs if settings.max_markets <= 6 else min(settings.max_markets, max(1, max(settings.max_markets // 2, int(budget // Decimal("48")))))
-                if (settings.pair_preference <= Decimal("0") and available_budget is not None)
-                else settings.max_markets
-            )
+            effective_max_conditions = settings.max_markets
         max_contracts = Decimal(str(settings.max_contracts_per_market))
         if settings.pair_preference <= Decimal("0") and max_cost_per_condition > Decimal("0"):
             max_affordable_contracts = min(
@@ -297,16 +311,27 @@ def allocate_markets(
                 if slug in candidate_books:
                     candidate_books[slug] = global_rewards.strip_orders_from_book(candidate_books[slug], s_orders)
 
-        targets = allocate_conditions(
-            conditions=allocatable,
-            books=candidate_books,
-            total_budget=budget,
-            max_cost_per_condition=max_cost_per_condition,
-            max_markets=effective_max_conditions,
-            max_contracts=max_contracts,
-            pair_preference=settings.pair_preference,
-            positions=positions,
-        )
+        cond_kwargs: dict[str, Any] = {
+            "conditions": allocatable,
+            "books": candidate_books,
+            "total_budget": budget,
+            "max_cost_per_condition": max_cost_per_condition,
+            "max_markets": effective_max_conditions,
+            "max_contracts": max_contracts,
+            "pair_preference": settings.pair_preference,
+            "positions": positions,
+        }
+        if max_leg_collateral is not None:
+            try:
+                sig = inspect.signature(allocate_conditions)
+                if (
+                    "max_leg_collateral" in sig.parameters
+                    or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                ):
+                    cond_kwargs["max_leg_collateral"] = max_leg_collateral
+            except (ValueError, TypeError):
+                pass
+        targets = allocate_conditions(**cond_kwargs)
         for target in targets:
             daily_usd = target.expected_reward_sec * global_rewards.SECONDS_PER_DAY
             logger.info(
@@ -538,6 +563,7 @@ class LiveEngine:
         self.yield_collapse_streak: int = 0
         self.underdeployed_streak: int = 0
         self.degraded_slugs_until: dict[str, float] = {}
+        self.loss_cooldown_until: dict[str, float] = {}
         self.dead_unwind_slugs: set[str] = set()
         self.manual_sell_order_ids: set[str] = set()
         self.manual_sell_cooldown_until: dict[str, float] = {}
@@ -546,6 +572,37 @@ class LiveEngine:
         self.known_sibling_by_slug: dict[str, str] = {}
         self.known_pair_by_slug: dict[str, tuple[str, str]] = {}
         self._last_tick_ts: float = 0.0
+        self.last_prune_ts: float = 0.0
+
+    def _compute_redeemable_loss(self, live_positions: dict[str, Position]) -> Decimal:
+        redeemable_loss = Decimal("0")
+        for p in live_positions.values():
+            if (
+                getattr(p, "redeemable", False) is True
+                and not getattr(p, "archived", False)
+                and isinstance(getattr(p, "net_qty", None), Decimal)
+                and isinstance(getattr(p, "avg_price", None), Decimal)
+                and p.net_qty > Decimal("0")
+                and p.avg_price > Decimal("0")
+            ):
+                cur_px = getattr(p, "cur_price", None)
+                if isinstance(cur_px, Decimal) and cur_px <= Decimal("0.01"):
+                    leg_loss = p.net_qty * max(Decimal("0"), p.avg_price - cur_px)
+                    sib_slug = self.known_sibling_by_slug.get(p.slug)
+                    sib_pos = live_positions.get(sib_slug) if sib_slug else None
+                    sib_gain = Decimal("0")
+                    if (
+                        sib_pos is not None
+                        and not getattr(sib_pos, "archived", False)
+                        and isinstance(getattr(sib_pos, "net_qty", None), Decimal)
+                        and isinstance(getattr(sib_pos, "avg_price", None), Decimal)
+                        and isinstance(getattr(sib_pos, "cur_price", None), Decimal)
+                        and sib_pos.net_qty > Decimal("0")
+                        and sib_pos.cur_price > sib_pos.avg_price
+                    ):
+                        sib_gain = sib_pos.net_qty * (sib_pos.cur_price - sib_pos.avg_price)
+                    redeemable_loss += max(Decimal("0"), leg_loss - sib_gain)
+        return redeemable_loss
 
     def _record_known_pair(self, yes_slug: str, no_slug: str) -> None:
         if not yes_slug or not no_slug or yes_slug == no_slug:
@@ -653,6 +710,7 @@ class LiveEngine:
     def prepare(self, is_realloc: bool = False) -> None:
         old_targets = list(self.target_slugs)
         effective_budget = self.settings.total_budget
+        dynamic_leg_col: Decimal = self.settings.max_collateral_per_market
         open_orders: list[LiveOrder] = []
         try:
             bp = self.auth_client.get_buying_power()
@@ -676,7 +734,10 @@ class LiveEngine:
 
                     dynamic_stop = max(self.settings.daily_loss_stop, bp * Decimal("0.08"))
                     dynamic_max_col = max(effective_budget, self.settings.max_collateral)
-                    est_pairs = calculate_num_pairs(effective_budget, self.settings.max_markets)
+                    est_pairs = calculate_num_pairs(
+                        effective_budget,
+                        _effective_max_pairs(self.settings.max_markets),
+                    )
                     est_cond_cap = (
                         min(
                             Decimal("85.00"),
@@ -736,6 +797,12 @@ class LiveEngine:
             else (dict(ledger_pos_map) if ledger_pos_map else None)
         )
         now_prep = time.time()
+        if (now_prep - self.last_prune_ts) >= 86400.0 and hasattr(self.ledger, "prune_old_snapshots"):
+            try:
+                self.ledger.prune_old_snapshots(retention_days=7)
+            except Exception as exc:
+                self.logger.warning("Failed to prune old snapshots: %s", exc)
+            self.last_prune_ts = now_prep
         for slug, (opt_pos, fill_ts) in list(self.local_fill_positions.items()):
             if now_prep - fill_ts > LOCAL_FILL_POSITION_TTL_SECONDS:
                 self.local_fill_positions.pop(slug, None)
@@ -748,13 +815,19 @@ class LiveEngine:
         self.degraded_slugs_until = {
             s: ts for s, ts in self.degraded_slugs_until.items() if ts > now_prep
         }
-        excl_slugs = set(self.degraded_slugs_until.keys())
+        self.loss_cooldown_until = {
+            s: ts for s, ts in self.loss_cooldown_until.items() if ts > now_prep
+        }
+        loss_excl = set(self.loss_cooldown_until.keys())
+        excl_slugs = set(self.degraded_slugs_until.keys()) | loss_excl
         try:
             alloc_kwargs: dict[str, Any] = {
                 "available_budget": effective_budget,
                 "positions": effective_pos_map,
                 "open_orders": open_orders,
             }
+            if self.settings.venue == "global":
+                alloc_kwargs["max_leg_collateral"] = dynamic_leg_col
             if excl_slugs:
                 alloc_kwargs["excluded_slugs"] = excl_slugs
             self.active_windows, alloc_res = allocate_markets(
@@ -764,16 +837,17 @@ class LiveEngine:
                 **alloc_kwargs,
             )
             if (
-                excl_slugs
+                excl_slugs > loss_excl
                 and sum(alloc_res.side_budgets.values(), Decimal("0")) < effective_budget * Decimal("0.80")
             ):
+                fallback_kwargs = {k: v for k, v in alloc_kwargs.items() if k != "excluded_slugs"}
+                if loss_excl:
+                    fallback_kwargs["excluded_slugs"] = loss_excl
                 self.active_windows, alloc_res = allocate_markets(
                     self.settings,
                     self.public_client,
                     self.logger,
-                    available_budget=effective_budget,
-                    positions=effective_pos_map,
-                    open_orders=open_orders,
+                    **fallback_kwargs,
                 )
         except Exception as exc:
             if is_realloc:
@@ -923,7 +997,14 @@ class LiveEngine:
         except Exception as exc:
             self.logger.error("Shutdown cancel failed for %s: %s", self.target_slugs, exc)
 
-    def _dispatch_hourly_status_ping(self, now_ts: float, buying_power: Decimal) -> threading.Thread:
+    def _dispatch_hourly_status_ping(
+        self,
+        now_ts: float,
+        buying_power: Decimal,
+        open_orders_count: int = 0,
+        live_positions: dict[str, Position] | None = None,
+        realized_loss_today: Decimal | None = None,
+    ) -> threading.Thread:
         def _query_and_send() -> None:
             try:
                 now_dt = datetime.fromtimestamp(now_ts, timezone.utc)
@@ -946,28 +1027,97 @@ class LiveEngine:
                 elapsed_hours = max(Decimal("1.0"), Decimal(str(elapsed_sec)) / Decimal("3600"))
                 projected_today = (accrued_usd_today / elapsed_hours) * Decimal("24")
 
-                open_pairs = len(self.condition_pairs) if self.condition_pairs else (len(self.target_slugs) // 2)
+                engine_state = "HALTED" if (self.kill_switch_active or self.daily_loss_stop_tripped) else "QUOTING"
+                if engine_state != "QUOTING":
+                    active_open_pairs = 0
+                elif self.side_budgets:
+                    if self.condition_pairs:
+                        active_open_pairs = sum(
+                            1
+                            for y_s, n_s in self.condition_pairs
+                            if self.side_budgets.get((y_s, "bid"), Decimal("0")) > Decimal("0")
+                            or self.side_budgets.get((n_s, "bid"), Decimal("0")) > Decimal("0")
+                        )
+                    else:
+                        active_slug_count = sum(
+                            1
+                            for s in self.target_slugs
+                            if self.side_budgets.get((s, "bid"), Decimal("0")) > Decimal("0")
+                        )
+                        active_open_pairs = active_slug_count // 2
+                else:
+                    active_open_pairs = (
+                        len(self.condition_pairs) if self.condition_pairs else (len(self.target_slugs) // 2)
+                    )
 
-                self.notifier.notify_hourly_status(
-                    qualifying_sec_1h=qualifying_sec_1h,
-                    accrued_usd_1h=accrued_usd_1h,
-                    qualifying_sec_today=qualifying_sec_today,
-                    accrued_usd_today=accrued_usd_today,
-                    projected_payout_today=projected_today,
-                    open_pairs=open_pairs,
-                    buying_power=buying_power,
-                )
+                if realized_loss_today is not None:
+                    loss_today = realized_loss_today
+                else:
+                    try:
+                        raw_loss = self.ledger.get_realized_loss_today(now_dt)
+                        loss_today = raw_loss if isinstance(raw_loss, Decimal) else Decimal("0")
+                    except Exception:
+                        loss_today = Decimal("0")
+                realized_pnl_today = -loss_today
+
+                positions_val = Decimal("0")
+                unrealized_pnl = Decimal("0")
+                for p in (live_positions or {}).values():
+                    if not getattr(p, "archived", False) and isinstance(getattr(p, "net_qty", None), Decimal) and p.net_qty > Decimal("0"):
+                        cur_px = getattr(p, "cur_price", None)
+                        if not isinstance(cur_px, Decimal):
+                            cur_px = Decimal("0") if getattr(p, "redeemable", False) else p.avg_price
+                        positions_val += p.net_qty * cur_px
+                        unrealized_pnl += p.net_qty * (cur_px - p.avg_price)
+                mtm_equity = buying_power + positions_val
+
+                notify_kwargs: dict[str, Any] = {
+                    "qualifying_sec_1h": qualifying_sec_1h,
+                    "accrued_usd_1h": accrued_usd_1h,
+                    "qualifying_sec_today": qualifying_sec_today,
+                    "accrued_usd_today": accrued_usd_today,
+                    "projected_payout_today": projected_today,
+                    "open_pairs": active_open_pairs,
+                    "buying_power": buying_power,
+                }
+                extra_fields = {
+                    "engine_state": engine_state,
+                    "open_orders_count": open_orders_count,
+                    "realized_pnl_today": realized_pnl_today,
+                    "unrealized_pnl": unrealized_pnl,
+                    "mtm_equity": mtm_equity,
+                }
+                try:
+                    sig = inspect.signature(self.notifier.notify_hourly_status)
+                    has_var_kw = any(
+                        p.kind == inspect.Parameter.VAR_KEYWORD
+                        for p in sig.parameters.values()
+                    )
+                    for k, v in extra_fields.items():
+                        if has_var_kw or k in sig.parameters:
+                            notify_kwargs[k] = v
+                except (ValueError, TypeError):
+                    pass
+
+                self.notifier.notify_hourly_status(**notify_kwargs)
                 self.logger.info(
-                    "Hourly status ping dispatched: 1h=$%s (%ds qual), today=$%s (proj=$%s), pairs=%d, bp=$%s",
+                    "Hourly status ping dispatched: state=%s, 1h=$%s (%ds qual), today=$%s (proj=$%s), pairs=%d, bp=$%s",
+                    engine_state,
                     accrued_usd_1h,
                     qualifying_sec_1h,
                     accrued_usd_today,
                     projected_today,
-                    open_pairs,
+                    active_open_pairs,
                     buying_power,
                 )
             except Exception as exc:
                 self.logger.warning("Failed to dispatch hourly status ping: %s", exc)
+            finally:
+                if hasattr(self.ledger, "close"):
+                    try:
+                        self.ledger.close()
+                    except Exception:
+                        pass
 
         thread = threading.Thread(target=_query_and_send, daemon=True)
         thread.start()
@@ -983,6 +1133,7 @@ class LiveEngine:
             self.notifier.notify_kill_switch(is_kill)
         if is_kill:
             self.yield_collapse_streak = 0
+            self.underdeployed_streak = 0
             self._last_tick_ts = 0.0
             self.logger.warning("Kill switch active! Canceling orders and pausing.")
             self._cancel_targets(now_ts)
@@ -990,6 +1141,7 @@ class LiveEngine:
 
         if self.risk_manager.is_maintenance_active(now_dt):
             self.yield_collapse_streak = 0
+            self.underdeployed_streak = 0
             self._last_tick_ts = 0.0
             self.logger.warning("Exchange weekly maintenance window active! Canceling orders and pausing.")
             self._cancel_targets(now_ts)
@@ -1005,12 +1157,6 @@ class LiveEngine:
             self.logger.warning("Exchange sync failed, skipping tick: %s", exc)
             return 1.0
 
-        if self.last_hourly_notify_ts <= 0.0:
-            self.last_hourly_notify_ts = now_ts
-        elif now_ts - self.last_hourly_notify_ts >= 3600.0:
-            self._dispatch_hourly_status_ping(now_ts, buying_power)
-            self.last_hourly_notify_ts = now_ts
-
         live_positions = {p.slug: p for p in positions}
         self._ingest_fills(fills, live_positions=live_positions, now_ts=now_ts)
         for slug, (opt_pos, fill_ts) in list(self.local_fill_positions.items()):
@@ -1020,17 +1166,75 @@ class LiveEngine:
                 live_positions[slug] = opt_pos
         self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms, live_positions=live_positions)
 
-        if self.last_allocated_bp > Decimal("0") and self.target_slugs:
-            new_pairs = calculate_num_pairs(buying_power, self.settings.max_markets)
-            curr_pairs = calculate_num_pairs(self.last_allocated_bp, self.settings.max_markets)
+        raw_realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
+        today_utc_str = now_dt.date().isoformat()
+        raw_baseline = getattr(self.settings, "daily_loss_baseline", Decimal("0"))
+        baseline = (
+            raw_baseline
+            if (bool(self.baseline_utc_date) and today_utc_str == self.baseline_utc_date)
+            else Decimal("0")
+        )
+        realized_loss_today = max(
+            Decimal("0"),
+            raw_realized_loss_today + self._compute_redeemable_loss(live_positions) - baseline,
+        )
+        dyn_stop = getattr(self.risk_manager, "dynamic_daily_loss_stop", None)
+        effective_loss_stop = (
+            dyn_stop
+            if isinstance(dyn_stop, Decimal) and dyn_stop > Decimal("0")
+            else self.settings.daily_loss_stop
+        )
+        if realized_loss_today >= effective_loss_stop:
+            self.yield_collapse_streak = 0
+            self.underdeployed_streak = 0
+            self._last_tick_ts = 0.0
+            if not self.daily_loss_stop_tripped:
+                self.daily_loss_stop_tripped = True
+                self.notifier.notify_daily_loss_stop(realized_loss_today, effective_loss_stop)
+                self.logger.warning(
+                    "Daily loss stop tripped ($%s >= $%s)! Canceling all orders and pausing.",
+                    realized_loss_today,
+                    effective_loss_stop,
+                )
+                self._cancel_targets(now_ts)
+            elif any(o.order_id not in self.manual_sell_order_ids for o in exchange_open):
+                self._cancel_targets(now_ts)
+            if self.last_hourly_notify_ts <= 0.0:
+                self.last_hourly_notify_ts = now_ts
+            elif now_ts - self.last_hourly_notify_ts >= 3600.0:
+                self._dispatch_hourly_status_ping(
+                    now_ts,
+                    buying_power,
+                    open_orders_count=0,
+                    live_positions=live_positions,
+                    realized_loss_today=realized_loss_today,
+                )
+                self.last_hourly_notify_ts = now_ts
+            return 10.0
+        self.daily_loss_stop_tripped = False
 
-            # Downward shock: >= 20% drop bypasses 300s cooldown to protect against solvency/margin risk
+        if self.last_hourly_notify_ts <= 0.0:
+            self.last_hourly_notify_ts = now_ts
+        elif now_ts - self.last_hourly_notify_ts >= 3600.0:
+            self._dispatch_hourly_status_ping(
+                now_ts,
+                buying_power,
+                open_orders_count=len(exchange_open),
+                live_positions=live_positions,
+                realized_loss_today=realized_loss_today,
+            )
+            self.last_hourly_notify_ts = now_ts
+
+        if self.last_allocated_bp > Decimal("0") and self.target_slugs:
+            eff_max_pairs = _effective_max_pairs(self.settings.max_markets)
+            new_pairs = calculate_num_pairs(buying_power, eff_max_pairs)
+            curr_pairs = calculate_num_pairs(self.last_allocated_bp, eff_max_pairs)
+
             is_downward_shock = (
                 buying_power < self.last_allocated_bp
                 and ((self.last_allocated_bp - buying_power) / self.last_allocated_bp) >= Decimal("0.20")
             )
 
-            # Upward expansion: respects 300s cooldown and requires $5.00 buffer above tier threshold or 25%+ bp expansion
             tier_thresh = get_pair_tier_threshold(new_pairs)
             has_tier_expansion = new_pairs > curr_pairs and buying_power >= (tier_thresh + Decimal("5.00"))
             has_bp_expansion = buying_power >= (self.last_allocated_bp * Decimal("1.25"))
@@ -1054,33 +1258,6 @@ class LiveEngine:
                 self.prepare(is_realloc=True)
                 self.last_cash_realloc_ts = now_ts
                 return 1.0
-        raw_realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
-        today_utc_str = now_dt.date().isoformat()
-        if not self.baseline_utc_date:
-            self.baseline_utc_date = today_utc_str
-        raw_baseline = getattr(self.settings, "daily_loss_baseline", Decimal("0"))
-        baseline = raw_baseline if today_utc_str == self.baseline_utc_date else Decimal("0")
-        realized_loss_today = max(Decimal("0"), raw_realized_loss_today - baseline)
-        dyn_stop = getattr(self.risk_manager, "dynamic_daily_loss_stop", None)
-        effective_loss_stop = (
-            dyn_stop
-            if isinstance(dyn_stop, Decimal) and dyn_stop > Decimal("0")
-            else self.settings.daily_loss_stop
-        )
-        if realized_loss_today >= effective_loss_stop:
-            self.yield_collapse_streak = 0
-            self._last_tick_ts = 0.0
-            if not self.daily_loss_stop_tripped:
-                self.daily_loss_stop_tripped = True
-                self.notifier.notify_daily_loss_stop(realized_loss_today, effective_loss_stop)
-            self.logger.warning(
-                "Daily loss stop tripped ($%s >= $%s)! Canceling all orders and pausing.",
-                realized_loss_today,
-                effective_loss_stop,
-            )
-            self._cancel_targets(now_ts)
-            return 10.0
-        self.daily_loss_stop_tripped = False
 
         if self._last_tick_ts > 0.0 and now_ts > self._last_tick_ts:
             tick_elapsed_sec = min(
@@ -1157,7 +1334,9 @@ class LiveEngine:
         if self.expected_portfolio_rate_sec > Decimal("0"):
             if self.last_prepare_ts <= 0.0:
                 self.last_prepare_ts = now_ts
-            if active_slugs:
+            if (now_ts - self.last_prepare_ts) < YIELD_COLLAPSE_COOLDOWN_SECONDS:
+                self.yield_collapse_streak = 0
+            elif active_slugs:
                 if live_portfolio_rate_sec < (self.expected_portfolio_rate_sec * YIELD_COLLAPSE_RATIO):
                     self.yield_collapse_streak += 1
                 else:
@@ -1184,51 +1363,54 @@ class LiveEngine:
         if self.settings.venue == "global" and allocated_bid_budget > Decimal("0") and active_slugs:
             if self.last_prepare_ts <= 0.0:
                 self.last_prepare_ts = now_ts
-            post_tick_open = self.ledger.get_open_orders()
-            open_buy_slugs = {
-                o.slug for o in post_tick_open if o.side in ("BUY", "BUY_LONG")
-            }
-            deployed_buy_col = sum(
-                (o.price * o.qty_open for o in post_tick_open if o.side in ("BUY", "BUY_LONG")),
-                Decimal("0"),
-            )
-            filled_cond_credit = Decimal("0")
-            for s in self.target_slugs:
-                p_curr = live_positions.get(s)
-                w_curr = self.active_windows.get(s)
-                if (
-                    (p_curr is not None and w_curr is not None and p_curr.net_qty >= w_curr.target_size)
-                    or (s in scored_bid_slugs and s not in open_buy_slugs)
-                ):
-                    filled_cond_credit += self.side_budgets.get((s, "bid"), Decimal("0"))
-            effective_deployed = deployed_buy_col + filled_cond_credit
-            if effective_deployed < (allocated_bid_budget * CAPITAL_UTILIZATION_RATIO):
-                self.underdeployed_streak += 1
+            if (now_ts - self.last_prepare_ts) < YIELD_COLLAPSE_COOLDOWN_SECONDS:
+                self.underdeployed_streak = 0
             else:
-                self.underdeployed_streak = 0
-            if (
-                self.underdeployed_streak >= CAPITAL_UNDERDEPLOYED_TICKS
-                and (now_ts - self.last_prepare_ts) >= YIELD_COLLAPSE_COOLDOWN_SECONDS
-            ):
-                for (s, side), b_val in self.side_budgets.items():
-                    if side == "bid" and b_val > Decimal("0") and s not in open_buy_slugs and s not in scored_bid_slugs:
-                        p_curr = live_positions.get(s)
-                        w_curr = self.active_windows.get(s)
-                        if not (p_curr is not None and w_curr is not None and p_curr.net_qty >= w_curr.target_size):
-                            self.degraded_slugs_until[s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
-                            for y_s, n_s in self.condition_pairs:
-                                if s in (y_s, n_s):
-                                    self.degraded_slugs_until[y_s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
-                                    self.degraded_slugs_until[n_s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
-                self.logger.info(
-                    f"Capital under-deployment detected: deployed $%s < {int(CAPITAL_UTILIZATION_RATIO * 100)}%% of allocated $%s for %d ticks; rotating conditions",
-                    effective_deployed,
-                    allocated_bid_budget,
-                    self.underdeployed_streak,
+                post_tick_open = self.ledger.get_open_orders()
+                open_buy_slugs = {
+                    o.slug for o in post_tick_open if o.side in ("BUY", "BUY_LONG")
+                }
+                deployed_buy_col = sum(
+                    (o.price * o.qty_open for o in post_tick_open if o.side in ("BUY", "BUY_LONG")),
+                    Decimal("0"),
                 )
-                self.underdeployed_streak = 0
-                self.last_prepare_ts = now_ts
-                self.prepare(is_realloc=True)
+                filled_cond_credit = Decimal("0")
+                for s in self.target_slugs:
+                    p_curr = live_positions.get(s)
+                    w_curr = self.active_windows.get(s)
+                    if (
+                        (p_curr is not None and w_curr is not None and p_curr.net_qty >= w_curr.target_size)
+                        or (s in scored_bid_slugs and s not in open_buy_slugs)
+                    ):
+                        filled_cond_credit += self.side_budgets.get((s, "bid"), Decimal("0"))
+                effective_deployed = deployed_buy_col + filled_cond_credit
+                if effective_deployed < (allocated_bid_budget * CAPITAL_UTILIZATION_RATIO):
+                    self.underdeployed_streak += 1
+                else:
+                    self.underdeployed_streak = 0
+                if (
+                    self.underdeployed_streak >= CAPITAL_UNDERDEPLOYED_TICKS
+                    and (now_ts - self.last_prepare_ts) >= YIELD_COLLAPSE_COOLDOWN_SECONDS
+                ):
+                    for (s, side), b_val in self.side_budgets.items():
+                        if side == "bid" and b_val > Decimal("0") and s not in open_buy_slugs and s not in scored_bid_slugs:
+                            p_curr = live_positions.get(s)
+                            w_curr = self.active_windows.get(s)
+                            if not (p_curr is not None and w_curr is not None and p_curr.net_qty >= w_curr.target_size):
+                                self.degraded_slugs_until[s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
+                                for y_s, n_s in self.condition_pairs:
+                                    if s in (y_s, n_s):
+                                        self.degraded_slugs_until[y_s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
+                                        self.degraded_slugs_until[n_s] = now_ts + DEGRADED_SLUG_COOLDOWN_SECONDS
+                    self.logger.info(
+                        f"Capital under-deployment detected: deployed $%s < {int(CAPITAL_UTILIZATION_RATIO * 100)}%% of allocated $%s for %d ticks; rotating conditions",
+                        effective_deployed,
+                        allocated_bid_budget,
+                        self.underdeployed_streak,
+                    )
+                    self.underdeployed_streak = 0
+                    self.last_prepare_ts = now_ts
+                    self.prepare(is_realloc=True)
 
         return 1.0
 
@@ -1257,6 +1439,31 @@ class LiveEngine:
                     base_pos = live_positions[f.slug]
                 else:
                     base_pos = self.ledger.get_position(f.slug)
+                if (
+                    f.side in ("SELL", "SELL_LONG")
+                    and isinstance(getattr(base_pos, "net_qty", None), Decimal)
+                    and isinstance(getattr(base_pos, "avg_price", None), Decimal)
+                    and base_pos.net_qty > Decimal("0")
+                    and base_pos.avg_price > Decimal("0")
+                    and f.price < base_pos.avg_price
+                ):
+                    cooldown_exp = ts + LOSS_SLUG_COOLDOWN_SECONDS
+                    self.loss_cooldown_until[f.slug] = cooldown_exp
+                    self.degraded_slugs_until[f.slug] = cooldown_exp
+                    self.side_budgets[(f.slug, "bid")] = Decimal("0")
+                    sib = self.known_sibling_by_slug.get(f.slug)
+                    if not sib:
+                        for y_s, n_s in self.condition_pairs:
+                            if f.slug == y_s:
+                                sib = n_s
+                                break
+                            if f.slug == n_s:
+                                sib = y_s
+                                break
+                    if sib:
+                        self.loss_cooldown_until[sib] = cooldown_exp
+                        self.degraded_slugs_until[sib] = cooldown_exp
+                        self.side_budgets[(sib, "bid")] = Decimal("0")
                 updated_pos = update_position_from_fill(base_pos, f.side, f.price, f.qty)
                 self.local_fill_positions[f.slug] = (updated_pos, ts)
                 self.ledger.update_position(updated_pos, ts_ms=f.ts_ms)
@@ -1622,14 +1829,9 @@ class LiveEngine:
                     )
                 )
                 extra_dq_kwargs["allow_stop_unwind"] = (
-                    allocated_slug_bid_budget <= Decimal("0")
-                    or window is None
-                    or window.pool_usd <= Decimal("0")
-                    or (
-                        pos.avg_price > Decimal("0")
-                        and mid_for_unwind is not None
-                        and mid_for_unwind <= (pos.avg_price * ACTIVE_STOP_UNWIND_MID_RATIO)
-                    )
+                    pos.avg_price > Decimal("0")
+                    and mid_for_unwind is not None
+                    and mid_for_unwind <= (pos.avg_price * ACTIVE_STOP_UNWIND_MID_RATIO)
                 )
                 if is_binary_cond:
                     extra_dq_kwargs["other_book"] = other_quote_book

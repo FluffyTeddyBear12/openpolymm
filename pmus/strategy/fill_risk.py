@@ -70,31 +70,40 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "severe_weather",
         re.compile(
-            r"\b(?:temperature in |weather in |highest temp|lowest temp|rain in |snow in |typhoon|hurricane|cyclone|tropical storm|peak at category [1-5]|category [1-5] (?:storm|hurricane|cyclone|typhoon)|wettest month|driest month|hottest month|coldest month|tornado(?:es)?|earthquake)\b"
+            r"\b(?:temperature in|weather in|highest temp|lowest temp|rain in|snow in|river level|water level|flood stage|typhoon|hurricane|cyclone|tropical storm|peak at category [1-5]|category [1-5] (?:storm|hurricane|cyclone|typhoon)|wettest month|driest month|hottest month|coldest month|tornado(?:es)?|earthquake)\b"
         ),
     ),
     (
         "corporate_metrics",
         re.compile(
-            r"(?:\([a-z]{1,5}\)\s+(?:q[1-4]|fy\d{2,4})\b|(?:#\d+|\b(?:second|third|fourth|fifth|\d+(?:st|nd|rd|th)))-(?:largest|biggest) company\b|\b(?:(?:the )?(?:largest|biggest) company|quarterly earnings|beat earnings|market capitalization be between|market cap be between|market cap on |valuation|ipo\b|arr|comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|gross dollar volume|q[1-4]\b.*?\b(?:revenue|revenues|sales|eps|margin|income|deliveries|profit|guidance|volume|bookings|arr|rpo)))\b"
+            r"(?:\([a-z]{1,5}\)\s+(?:q[1-4]|fy\d{2,4})\b|(?:#\d+|\b(?:second|third|fourth|fifth|\d+(?:st|nd|rd|th)))-(?:largest|biggest) company\b|\b(?:(?:the )?(?:largest|biggest) company|quarterly earnings|beat earnings|market capitalization be between|market cap be between|market cap on|valuation|ipo\b|arr|comp sales|organic sales|comparable (?:store )?sales|same-(?:restaurant|store) sales|sales growth|identical sales|unit case volume|organic revenue|operating margin|gross margin|adjusted ebitda|gross dollar volume|q[1-4]\b.*?\b(?:revenue|revenues|sales|eps|margin|income|deliveries|profit|guidance|volume|bookings|arr|rpo)))\b"
         ),
     ),
     (
         "scraper_tracker",
         re.compile(
-            r"(?:(?:#\d+|[1-9]\d*)\s+ai\s+lab\b|\b(?:ornn\s+h[12]00|h[12]00\s+index|ships\s+transit|bab\s+el-mandeb|west\s+nile|neuroinvasive|home\s+value|debut\s+(?:at|with|in)\s+(?:a\s+score\s+of|an?\s+hle|the\s+top\s+\d+)|hle-diamond|livebench|text\s+arena|code\s+arena|webdev|style\s+control|best\s+(?:chinese\s+)?ai\s+(?:model|company|lab)|(?:second|third|fourth)-best\s+(?:chinese\s+)?ai\s+(?:model|company|lab)|chinese\s+ai\s+(?:model|company|lab)|next\s+(?:fable|astra|kimi|claude|gpt|gemini)\s+(?:[a-z0-9.]+\s+)?model|claude\s+(?:fable|opus)|gpt\s+(?:astra|terra)|meta\s+muse|gemini-\d|dllm|millennium\s+prize|output\s+(?:token\s+)?price\s+be\s+at\s+or\s+(?:below|above)|approval\s+rating\s+hit|openrouter|tokens\s+the\s+week\s+of|rhine\s+river|return\s+to\s+normal\s+levels|approval\s+rating\s+be\s+between|critical\s+incident|senate\s+odds|house\s+odds|ai\s+agent\s+lab|humanity(?:'|\u2019)?s\s+last\s+exam|gemini\s+pro\s+model|volatility\s+index|us\s+dollar\s+index|dxy|ukmto|notices\s+between|php\s+(?:security\s+)?flaw|security\s+flaw|hacked\s+via|cve-\d{4}))"
+            r"(?:(?:#\d+|[1-9]\d*)\s+ai\s+lab\b|\b(?:ornn\b|h[12]00\s+index|ships\s+transit|bab\s+el-mandeb|west\s+nile|neuroinvasive|home\s+value|debut\s+(?:at|with|in)\s+(?:a\s+score\s+of|an?\s+hle|the\s+top\s+\d+)|hle-diamond|moonshot\b|kimi\s+k\d+\b|image\s+edit\s+ai\b|livebench|text\s+arena|code\s+arena|webdev|style\s+control|best\s+(?:chinese\s+)?ai\s+(?:model|company|lab)|(?:second|third|fourth)-best\s+(?:chinese\s+)?ai\s+(?:model|company|lab)|chinese\s+ai\s+(?:model|company|lab)|next\s+(?:fable|astra|kimi|claude|gpt|gemini)\s+(?:[a-z0-9.]+\s+)?model|claude\s+(?:fable|opus)|gpt\s+(?:astra|terra)|meta\s+muse|gemini-\d|dllm\b|millennium\s+prize|output\s+token\s+price\b|output\s+(?:token\s+)?price\s+be\s+at\s+or\s+(?:below|above)|approval\s+rating\s+hit|openrouter\b|tokens\s+the\s+week\s+of|rhine\s+river|return\s+to\s+normal\s+levels|approval\s+rating\s+be\s+between|critical\s+incident|senate\s+odds|house\s+odds|ai\s+agent\s+lab|humanity(?:'|\u2019)?s\s+last\s+exam|gemini\s+pro\s+model|volatility\s+index|us\s+dollar\s+index|dxy\b|ukmto\b|notices\s+between|php\s+(?:security\s+)?flaw|security\s+flaw|hacked\s+via|cve-\d{4}))"
         ),
     ),
     (
         "geopolitical_crisis",
         re.compile(
-            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action|blockade|hormuz|us-iran|us x iran|debate live|airspace (?:be )?closed|(?:first-|second-|third-|fourth-)?most seats in the \d{4} israeli|(?:us|u\.s\.|israel)\s+(?:strikes?|attacks?|bombs?)\s+iran|united arab list|ra'am)\b"
+            r"\b(?:ceasefire|state of emergency|curfew|martial law|airstrike|missile strike|invade|invasion|declare war|nuclear strike|nuclear weapon|truce|military action|blockade|hormuz|us-iran|us x iran|debate live|airspace (?:be )?closed|(?:first-|second-|third-|fourth-)?most seats in the \d{4} israeli|(?:us|u\.s\.|israel)\s+(?:strikes?|attacks?|bombs?)\s+iran|united arab list|ra'am|minister of|cabinet|appointed by|next (?!u\.?s\.?\b|united states\b)[\w .'-]+ presidential election|win the (?:next|\d{4}) (?!u\.?s\.?\b|united states\b)[\w .'-]+ presidential election)\b"
         ),
     ),
     (
         "macro_release",
         re.compile(
-            r"\b(?:gdp|cpi|inflation|pce|unemployment rate|nonfarm payrolls?|consumer price index|interest rates?|rate hike|rate cut|\d+\s*bps|treasury yield|crude oil|\boil be (?:below|at least|above)\b|kospi|(?:bitcoin|btc|ethereum|eth|solana|sol)\s+(?:reach|hit|dip|above|below)|all-time high|floor price reach)\b"
+            r"\b(?:"
+            r"gdp|cpi|pce|ppi|pmi|inflation|unemployment rate|nonfarm payrolls?|retail sales|"
+            r"umich|consumer sentiment|consumer price index|"
+            r"selic|central bank|bank of (?:brazil|england|japan|canada|mexico|korea|russia)|"
+            r"(?:make no change|decrease|increase|raise|cut|lower)\b.*\brates?|"
+            r"interest rates?|rate hike|rate cut|\d+\s*bps|treasury yield|crude oil|"
+            r"oil be (?:below|at least|above)|kospi|"
+            r"(?:bitcoin|btc|ethereum|eth|solana|sol)\s+(?:reach|hit|dip|above|below)|"
+            r"all-time high|floor price reach"
+            r")\b"
         ),
     ),
     (
@@ -116,11 +125,27 @@ FILL_RISK_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
         "sanctions_commodities",
         re.compile(
             r"\b(?:"
-            r"(?:us|u\.s\.|eu|europe|uk|g7)?\s*imports?\s+russian\s+(?:diesel|oil|petroleum|gas|crude|fuel|lng|energy)|"
+            r"(?:us|u\.s\.|eu|europe|uk|g7)?\s*imports?\s+russian(?:\s+(?:diesel|oil|petroleum|gas|crude|fuel|lng|energy))?|"
             r"(?:ban|embargo|sanctions?|price\s+cap)\s+(?:on\s+)?russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|lng|energy|banks?|assets?|exports?)|"
-            r"russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|lng|energy)\s+(?:imports?|exports?|ban|embargo|sanctions?|price\s+cap)|"
+            r"russian\s+(?:diesel|oil|petroleum|gas|crude(?:\s+oil)?|fuel|lng|energy)(?:\s+(?:imports?|exports?|ban|embargo|sanctions?|price\s+cap))?|"
             r"russian\s+sanctions?"
             r")\b"
+        ),
+    ),
+    (
+        "media_release",
+        re.compile(
+            r"\b(?:trailer\b.*\breleased|release[ds]?\b.*\btrailer|gta\s*(?:vi|6))\b"
+        ),
+    ),
+    (
+        "sports_line",
+        re.compile(
+            r"(?:\bspread:|\bo/u\b|\b(?:"
+            r"nfl|nba|nhl|mlb|winless|undefeated|regular season|"
+            r"sign with|traded to|"
+            r"play for\s+(?:the\s+)?[a-z0-9 .'-]+\s+in\s+(?:the\s+)?202\d"
+            r")\b)"
         ),
     ),
 )

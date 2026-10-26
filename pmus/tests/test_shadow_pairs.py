@@ -49,7 +49,7 @@ def test_symmetric_pair_gives_approx_three_times_single_in_band():
     snap_single_y, snap_single_n = estimate_global_pair_score(yes_b, no_b, w, [o_yes], ts_ms=2000)
     single_total = snap_single_y.reward_usd + snap_single_n.reward_usd
 
-    expected_single = (Decimal("100") / Decimal("86400")) * (Decimal("1") / Decimal("5"))
+    expected_single = (Decimal("100") / Decimal("86400")) * (Decimal("1") / Decimal("4"))
     assert abs(single_total - expected_single) < Decimal("1e-20")
     assert abs(snap_single_y.reward_usd - expected_single) < Decimal("1e-20")
     assert snap_single_n.reward_usd == Decimal("0")
@@ -59,7 +59,7 @@ def test_symmetric_pair_gives_approx_three_times_single_in_band():
     assert abs(snap_single_n.total_bid_score - Decimal("400") / Decimal("9")) < Decimal("1e-20")
     assert snap_single_y.qualifies is True
     assert snap_single_y.bid_qualifies is True
-    assert snap_single_n.qualifies is True
+    assert snap_single_n.qualifies is False
     assert snap_single_n.bid_qualifies is False
 
     snap_pair_y, snap_pair_n = estimate_global_pair_score(yes_b, no_b, w, [o_yes, o_no], ts_ms=2000)
@@ -79,8 +79,8 @@ def test_symmetric_pair_gives_approx_three_times_single_in_band():
     assert snap_pair_n.bid_qualifies is True
 
     ratio = pair_total / single_total
-    assert abs(ratio - Decimal("5") / Decimal("2")) < Decimal("1e-20")
-    assert Decimal("2") < ratio < Decimal("3.5")
+    assert abs(ratio - Decimal("2")) < Decimal("1e-20")
+    assert Decimal("1.8") < ratio < Decimal("3.5")
 
 
 def test_tail_market_single_zero_pair_positive():
@@ -255,3 +255,42 @@ def test_report_sums_both_tokens_without_dedup_drop(tmp_path):
     assert f"Estimated LIP Accrued:   ${condition_total:.4f} (estimate)" in report_text
     assert f"Market {yes_b.slug}:" in report_text
     assert f"Market {no_b.slug}:" in report_text
+
+
+def test_estimate_global_pair_score_strips_own_orders_before_mid_and_marks_zero_leg_unqualified():
+    w = make_window(pool="86400", target="50", max_spread=Decimal("0.04"))
+    yes_b = Book(
+        slug="tok-yes",
+        bids=(
+            Level(Decimal("0.49"), Decimal("50")),
+            Level(Decimal("0.48"), Decimal("20")),
+            Level(Decimal("0.47"), Decimal("200")),
+        ),
+        asks=(Level(Decimal("0.51"), Decimal("200")),),
+        ts_ms=1000,
+    )
+    no_b = Book(
+        slug="tok-no",
+        bids=(
+            Level(Decimal("0.49"), Decimal("10")),
+            Level(Decimal("0.48"), Decimal("200")),
+        ),
+        asks=(Level(Decimal("0.52"), Decimal("200")),),
+        ts_ms=1000,
+    )
+    o_yes = LiveOrder("o-y", "tok-yes", "BUY_LONG", Decimal("0.49"), Decimal("50"))
+    o_no_out = LiveOrder("o-n-out", "tok-no", "BUY_LONG", Decimal("0.46"), Decimal("50"))
+
+    snap_y, snap_n = estimate_global_pair_score(yes_b, no_b, w, [o_yes, o_no_out], ts_ms=3000)
+
+    assert snap_y.trader_bid_score == Decimal("50")
+    assert snap_n.trader_bid_score == Decimal("0")
+    assert snap_y.qualifies is True
+    assert snap_y.bid_qualifies is True
+    assert snap_y.ask_qualifies is False
+    assert snap_n.qualifies is False
+    assert snap_n.bid_qualifies is False
+    assert snap_n.ask_qualifies is False
+    assert snap_n.reward_usd == Decimal("0")
+    assert snap_y.total_bid_score == Decimal("50") + (((Decimal("0.04") - Decimal("0.02")) / Decimal("0.04")) ** 2) * Decimal("200")
+

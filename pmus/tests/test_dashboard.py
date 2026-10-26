@@ -453,8 +453,13 @@ def test_get_clob_venue_client_caching():
         assert mock_cls.call_count == 1
 
 
-def test_check_password_empty():
+def test_check_password_empty(monkeypatch):
     settings = Settings(dashboard_password="")
+    monkeypatch.delenv("PMUS_DASHBOARD_ALLOW_UNAUTH_LOCAL", raising=False)
+    with patch("pmus.dashboard.st") as mock_st:
+        assert check_password(settings) is False
+        mock_st.error.assert_called_once()
+    monkeypatch.setenv("PMUS_DASHBOARD_ALLOW_UNAUTH_LOCAL", "1")
     assert check_password(settings) is True
 
 

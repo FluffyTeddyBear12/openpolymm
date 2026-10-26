@@ -1575,6 +1575,7 @@ def test_unwind_regimes_hedged_pair_liquid_stop_collapsed_stub_and_min_bid_floor
         is_global=True,
         paired=True,
         other_position_qty=Decimal("30"),
+        allow_stop_unwind=True,
     )
     assert len(partial_quotes) == 1
     assert partial_quotes[0].side == "SELL_LONG"
@@ -1595,6 +1596,7 @@ def test_unwind_regimes_hedged_pair_liquid_stop_collapsed_stub_and_min_bid_floor
             min_exit=Decimal("0.42"),
             budget=Decimal("0"),
             bid_budget=Decimal("0"),
+            allow_stop_unwind=True,
         )
         == UnwindRegime.LIQUID_STOP_UNWIND
     )
@@ -1702,6 +1704,7 @@ def test_collapsed_book_below_stop_floor_uses_collapsed_stub_hold_and_pair_max_b
             bid_budget=Decimal("0"),
             avg_price=Decimal("0.60"),
             tick=Decimal("0.01"),
+            allow_stop_unwind=True,
         )
         == UnwindRegime.COLLAPSED_STUB_HOLD
     )
@@ -1713,6 +1716,7 @@ def test_collapsed_book_below_stop_floor_uses_collapsed_stub_hold_and_pair_max_b
         budget=Decimal("0"),
         bid_budget=Decimal("0"),
         is_global=True,
+        allow_stop_unwind=True,
     )
     assert unwind_quotes == [
         Quote(slug="yes-cap", side="SELL_LONG", price=Decimal("0.60"), qty=Decimal("50"))
@@ -1746,4 +1750,128 @@ def test_collapsed_book_below_stop_floor_uses_collapsed_stub_hold_and_pair_max_b
     assert capped_quotes[0].side == "BUY_LONG"
     assert capped_quotes[0].price <= Decimal("0.78")
     assert capped_quotes[0].price == Decimal("0.78")
+
+
+def test_stop_unwind_requires_explicit_flag_and_fifteen_percent_dip_and_strict_spread_clamp():
+    from pmus.strategy.lip_quoter import UnwindRegime, _guarded_bid_price, classify_unwind_regime
+
+    market = Market(
+        slug="yes-guard",
+        event_id="ev-guard",
+        category="politics",
+        tick=Decimal("0.01"),
+        min_qty=Decimal("5"),
+        active=True,
+    )
+    zero_pool_win = IncentiveWindow(
+        slug="yes-guard",
+        program_id="unwind",
+        pool_usd=Decimal("0"),
+        discount=Decimal("0"),
+        target_size=Decimal("20"),
+        max_spread=Decimal("0.04"),
+        start=datetime.now(timezone.utc) - timedelta(hours=1),
+        end=datetime.now(timezone.utc) + timedelta(days=30),
+        status="active",
+    )
+    deep_dip_book = Book(
+        slug="yes-guard",
+        bids=(Level(Decimal("0.34"), Decimal("600")), Level(Decimal("0.33"), Decimal("600"))),
+        asks=(Level(Decimal("0.35"), Decimal("600")), Level(Decimal("0.36"), Decimal("600"))),
+        ts_ms=1000,
+    )
+
+    for flag in (False, None):
+        regime = classify_unwind_regime(
+            market=market,
+            book=deep_dip_book,
+            window=zero_pool_win,
+            unhedged_net=Decimal("50"),
+            ask_qty=Decimal("50"),
+            best_bid=Decimal("0.34"),
+            bid_price=Decimal("0.34"),
+            ask_price=Decimal("0.35"),
+            mid=Decimal("0.345"),
+            min_exit=Decimal("0.59"),
+            budget=Decimal("0"),
+            bid_budget=Decimal("0"),
+            avg_price=Decimal("0.59"),
+            tick=Decimal("0.01"),
+            allow_stop_unwind=flag,
+        )
+        assert regime != UnwindRegime.LIQUID_STOP_UNWIND
+        quotes_no_stop = desired_quotes(
+            market=market,
+            book=deep_dip_book,
+            window=zero_pool_win,
+            position=Position(slug="yes-guard", net_qty=Decimal("50"), avg_price=Decimal("0.59")),
+            budget=Decimal("0"),
+            bid_budget=Decimal("0"),
+            is_global=True,
+            allow_stop_unwind=flag,
+        )
+        assert quotes_no_stop == [
+            Quote(slug="yes-guard", side="SELL_LONG", price=Decimal("0.59"), qty=Decimal("50"))
+        ]
+
+    modest_dip_book = Book(
+        slug="yes-guard",
+        bids=(Level(Decimal("0.51"), Decimal("600")), Level(Decimal("0.50"), Decimal("600"))),
+        asks=(Level(Decimal("0.53"), Decimal("600")), Level(Decimal("0.54"), Decimal("600"))),
+        ts_ms=1000,
+    )
+    assert (
+        classify_unwind_regime(
+            market=market,
+            book=modest_dip_book,
+            window=zero_pool_win,
+            unhedged_net=Decimal("50"),
+            ask_qty=Decimal("50"),
+            best_bid=Decimal("0.51"),
+            bid_price=Decimal("0.51"),
+            ask_price=Decimal("0.53"),
+            mid=Decimal("0.52"),
+            min_exit=Decimal("0.59"),
+            budget=Decimal("0"),
+            bid_budget=Decimal("0"),
+            avg_price=Decimal("0.59"),
+            tick=Decimal("0.01"),
+            allow_stop_unwind=True,
+        )
+        == UnwindRegime.IN_SPREAD_SCRATCH
+    )
+
+    active_win = IncentiveWindow(
+        slug="yes-guard",
+        program_id="global-active",
+        pool_usd=Decimal("100"),
+        discount=Decimal("0"),
+        target_size=Decimal("20"),
+        max_spread=Decimal("0.05"),
+        start=datetime.now(timezone.utc) - timedelta(hours=1),
+        end=datetime.now(timezone.utc) + timedelta(days=30),
+        status="active",
+    )
+    mid_book = Book(
+        slug="yes-guard",
+        bids=(Level(Decimal("0.49"), Decimal("600")), Level(Decimal("0.48"), Decimal("600"))),
+        asks=(Level(Decimal("0.51"), Decimal("600")), Level(Decimal("0.52"), Decimal("600"))),
+        ts_ms=1000,
+    )
+    assert (
+        _guarded_bid_price(
+            book=mid_book,
+            window=active_win,
+            tick=Decimal("0.01"),
+            max_bid_price=Decimal("0.45"),
+        )
+        is None
+    )
+    assert _guarded_bid_price(
+        book=mid_book,
+        window=active_win,
+        tick=Decimal("0.01"),
+        max_bid_price=Decimal("0.46"),
+    ) == Decimal("0.46")
+
 

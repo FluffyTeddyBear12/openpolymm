@@ -694,7 +694,7 @@ def test_allocate_markets_caps_candidate_books_at_3000():
     )
     allocate_markets(settings_under, client, logger)
     slugs_under = client.fetch_books_batch.call_args[0][0]
-    assert len(slugs_under) == 3000
+    assert len(slugs_under) == 600
 
     client.fetch_reward_conditions.return_value = list(conditions)
     client.fetch_books_batch.reset_mock()
@@ -708,7 +708,7 @@ def test_allocate_markets_caps_candidate_books_at_3000():
     )
     allocate_markets(settings_above, client, logger)
     slugs_above = client.fetch_books_batch.call_args[0][0]
-    assert len(slugs_above) == 3000
+    assert len(slugs_above) == 600
 
 
 def test_allocate_markets_prioritizes_affordable_pair_target_size_and_strips_open_orders():
@@ -849,6 +849,7 @@ def test_live_engine_daily_loss_baseline_offsets_acknowledged_unwind_loss():
         venue="global",
         daily_loss_stop=Decimal("15.00"),
         daily_loss_baseline=Decimal("56.72"),
+        daily_loss_baseline_date="2026-10-15",
         total_budget=Decimal("100.00"),
         max_per_market=Decimal("50.00"),
         max_collateral_per_market=Decimal("50.00"),
@@ -1296,9 +1297,9 @@ def test_allocate_markets_scales_max_cost_per_condition_with_available_budget():
     assert len(alloc.condition_pairs) == 3
     total_deployed_cost = sum(alloc.side_budgets.values())
     assert total_deployed_cost > Decimal("165.00")
-    assert total_deployed_cost == Decimal("288.00")
+    assert total_deployed_cost == Decimal("244.80")
     for (slug, side), qty in alloc.side_qtys.items():
-        assert qty == Decimal("100")
+        assert qty == Decimal("85")
 
     _, alloc_static = allocate_markets(settings, client, logger)
     for (slug, side), qty in alloc_static.side_qtys.items():
@@ -1701,7 +1702,7 @@ def test_quote_market_clamps_and_freezes_unfilled_leg_when_partner_holds_invento
     logger = logging.getLogger("test_quote_freeze")
     mkt_y = Market(slug="y1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
     mkt_n = Market(slug="n1", event_id="e1", category="sports", tick=Decimal("0.01"), min_qty=Decimal("5"), active=True)
-    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.05"), datetime.now(timezone.utc), None, "active")
+    w = IncentiveWindow("y1", "p1", Decimal("100"), Decimal("0.30"), Decimal("50"), Decimal("0.08"), datetime.now(timezone.utc), None, "active")
 
     client = MagicMock()
     auth_client = MagicMock()
@@ -2002,20 +2003,26 @@ def test_live_engine_yield_collapse_early_reallocation():
         for i in range(1, 20):
             engine.tick(t0 + float(i))
         mock_prep.assert_not_called()
-        assert engine.yield_collapse_streak == 19
+        assert engine.yield_collapse_streak == 0
+
+    with patch("pmus.engine.estimate_global_pair_score", return_value=collapsed_snaps), patch.object(engine, "prepare") as mock_prep:
+        for i in range(10):
+            engine.tick(t0 + 180.0 + float(i))
+        mock_prep.assert_not_called()
+        assert engine.yield_collapse_streak == 10
 
     with patch("pmus.engine.estimate_global_pair_score", return_value=healthy_snaps), patch.object(engine, "prepare") as mock_prep:
-        engine.tick(t0 + 165.0)
+        engine.tick(t0 + 190.0)
         mock_prep.assert_not_called()
         assert engine.yield_collapse_streak == 0
 
     with patch("pmus.engine.estimate_global_pair_score", return_value=collapsed_snaps), patch.object(engine, "prepare") as mock_prep:
         for i in range(14):
-            engine.tick(t0 + 170.0 + float(i))
+            engine.tick(t0 + 191.0 + float(i))
         mock_prep.assert_not_called()
         assert engine.yield_collapse_streak == 14
 
-        engine.tick(t0 + 185.0)
+        engine.tick(t0 + 206.0)
         mock_prep.assert_called_once_with(is_realloc=True)
         assert engine.yield_collapse_streak == 0
 
@@ -2079,7 +2086,7 @@ def test_allocate_markets_filters_unaffordable_conditions_and_reaches_rank_1400(
     cond_unaffordable = make_condition(cond_id="c_unaffordable", pool="1000000", target="500")
     affordable_conditions = [
         make_condition(cond_id=f"c_aff_{i}", pool=str(1500 - i), target="50")
-        for i in range(1401)
+        for i in range(290)
     ]
     all_conditions = [cond_unaffordable] + affordable_conditions
 
@@ -2099,10 +2106,10 @@ def test_allocate_markets_filters_unaffordable_conditions_and_reaches_rank_1400(
     allocate_markets(settings, client, logger)
     fetched_slugs = client.fetch_books_batch.call_args[0][0]
     assert "c_aff_0-yes" in fetched_slugs
-    assert "c_aff_1399-yes" in fetched_slugs
-    assert "c_aff_1400-yes" in fetched_slugs
+    assert "c_aff_288-yes" in fetched_slugs
+    assert "c_aff_289-yes" in fetched_slugs
     assert cond_unaffordable.yes.slug in fetched_slugs
-    assert fetched_slugs.index("c_aff_1400-no") < fetched_slugs.index(cond_unaffordable.yes.slug)
+    assert fetched_slugs.index("c_aff_289-no") < fetched_slugs.index(cond_unaffordable.yes.slug)
 
 
 def test_allocate_markets_sequential_fallback_caps_at_fallback_limit_and_warns(caplog):
@@ -2443,7 +2450,7 @@ def test_allocate_markets_caps_effective_max_conditions_to_prevent_dust_waterfil
     )
 
     _, alloc_res = allocate_markets(settings, client, logger, available_budget=Decimal("320.00"))
-    assert len(alloc_res.condition_pairs) == 6
+    assert len(alloc_res.condition_pairs) == 5
     assert all(qty >= Decimal("35") for qty in alloc_res.side_qtys.values())
 
 
@@ -3072,6 +3079,7 @@ def test_reconcile_minor_upsize_tolerance_hedged_pair_hold_and_baseline_midnight
         max_per_market=Decimal("50"),
         daily_loss_stop=Decimal("20"),
         daily_loss_baseline=Decimal("50"),
+        daily_loss_baseline_date="2026-10-20",
     )
     engine = LiveEngine(
         settings=settings,
@@ -3536,10 +3544,15 @@ def test_dispatch_hourly_status_ping_invokes_notifier():
     engine.tick(now_ts=4000.0)  # 3000s elapsed < 3600s
     engine.notifier.notify_hourly_status.assert_not_called()
 
-    # After 1 hour: triggers background dispatch and resets timestamp
     with patch.object(engine, "_dispatch_hourly_status_ping") as mock_ping:
-        engine.tick(now_ts=4601.0)  # 3601s elapsed >= 3600s
-        mock_ping.assert_called_once_with(4601.0, Decimal("137.75"))
+        engine.tick(now_ts=4601.0)
+        mock_ping.assert_called_once_with(
+            4601.0,
+            Decimal("137.75"),
+            open_orders_count=0,
+            live_positions={},
+            realized_loss_today=Decimal("0"),
+        )
     assert engine.last_hourly_notify_ts == 4601.0
 
 
@@ -3587,6 +3600,253 @@ def test_live_engine_prepare_zero_buying_power_sets_zero_allocated_bp():
 
     assert engine.last_allocated_bp == Decimal("0")
     assert engine.target_slugs == []
+
+
+def test_effective_max_pairs_converts_legs_to_pairs_and_forwards_max_leg_collateral():
+    from pmus.engine import _effective_max_pairs
+
+    assert _effective_max_pairs(1) == 1
+    assert _effective_max_pairs(4) == 4
+    assert _effective_max_pairs(6) == 3
+    assert _effective_max_pairs(8) == 4
+
+    logger = logging.getLogger("test_eff_max_pairs")
+    conds = [make_condition(cond_id=f"c{i}", pool=str(400 - i * 10), target="50") for i in range(4)]
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = conds
+    client.fetch_book.return_value = make_book([("0.48", "500")], [("0.52", "500")])
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("0.00"),
+        max_per_market=Decimal("25.00"),
+        max_collateral_per_market=Decimal("30.00"),
+        max_markets=6,
+        max_contracts_per_market=100,
+    )
+
+    auth_client = MagicMock()
+    auth_client.get_buying_power.return_value = Decimal("100.00")
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_positions.return_value = []
+    risk_manager = MagicMock()
+
+    engine = LiveEngine(settings, MagicMock(), client, auth_client, risk_manager, logger)
+    with patch("pmus.engine.allocate_markets", wraps=allocate_markets) as spy_alloc:
+        engine.prepare()
+        assert spy_alloc.call_args.kwargs["max_leg_collateral"] == Decimal("44.62")
+        assert len(engine.condition_pairs) == 2
+
+    captured_kwargs = {}
+
+    def fake_alloc_conds(**kwargs):
+        captured_kwargs.update(kwargs)
+        return []
+
+    with patch("pmus.engine.allocate_conditions", side_effect=fake_alloc_conds):
+        allocate_markets(
+            settings,
+            client,
+            logger,
+            available_budget=Decimal("100.00"),
+            max_leg_collateral=Decimal("44.62"),
+        )
+    assert captured_kwargs["max_markets"] == 2
+    assert captured_kwargs["max_leg_collateral"] == Decimal("44.62")
+
+
+def test_daily_loss_stop_precedes_cash_shift_and_halts_without_redundant_cancels():
+    logger = logging.getLogger("test_loss_stop_order")
+    settings = Settings(
+        venue="global",
+        daily_loss_stop=Decimal("15.00"),
+        daily_loss_baseline=Decimal("72.62"),
+        daily_loss_baseline_date="",
+        max_markets=6,
+    )
+    ledger = MagicMock()
+    ledger.get_realized_loss_today.return_value = Decimal("20.00")
+    ledger.get_open_orders.return_value = []
+
+    public_client = MagicMock()
+    auth_client = MagicMock()
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("60.00")
+    auth_client.cancel_all_scoped.return_value = []
+
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+    risk_manager.dynamic_daily_loss_stop = None
+
+    engine = LiveEngine(settings, ledger, public_client, auth_client, risk_manager, logger)
+    engine.notifier = MagicMock()
+    engine.target_slugs = ["s1-yes", "s1-no"]
+    engine.last_allocated_bp = Decimal("120.00")
+    engine.prepare = MagicMock()
+
+    t0 = datetime(2026, 10, 26, 12, 0, tzinfo=timezone.utc).timestamp()
+    period1 = engine.tick(t0)
+    assert period1 == 10.0
+    assert engine.daily_loss_stop_tripped is True
+    engine.prepare.assert_not_called()
+    engine.notifier.notify_daily_loss_stop.assert_called_once_with(Decimal("20.00"), Decimal("15.00"))
+    assert auth_client.cancel_all_scoped.call_count == 1
+
+    auth_client.cancel_all_scoped.reset_mock()
+    period2 = engine.tick(t0 + 10.0)
+    assert period2 == 10.0
+    engine.prepare.assert_not_called()
+    auth_client.cancel_all_scoped.assert_not_called()
+
+
+def test_redeemable_zero_price_position_trips_daily_loss_stop_and_reports_halted_status():
+    logger = logging.getLogger("test_redeemable_loss")
+    settings = Settings(venue="global", daily_loss_stop=Decimal("10.00"), max_markets=6)
+    ledger = MagicMock()
+    ledger.get_realized_loss_today.return_value = Decimal("0.00")
+    ledger.get_open_orders.return_value = []
+    ledger.get_lip_summary_since.return_value = {"lip_reward_total": Decimal("0"), "qualifying_seconds": 0}
+
+    wiped_pos = Position(slug="resolved-loser", net_qty=Decimal("50"), avg_price=Decimal("0.40"))
+    object.__setattr__(wiped_pos, "cur_price", Decimal("0.00"))
+    object.__setattr__(wiped_pos, "redeemable", True)
+
+    active_pos = Position(slug="active-leg", net_qty=Decimal("20"), avg_price=Decimal("0.50"))
+    object.__setattr__(active_pos, "cur_price", Decimal("0.55"))
+    object.__setattr__(active_pos, "redeemable", False)
+
+    auth_client = MagicMock()
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = []
+    auth_client.get_positions.return_value = [wiped_pos, active_pos]
+    auth_client.get_buying_power.return_value = Decimal("80.00")
+    auth_client.cancel_all_scoped.return_value = []
+
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+    risk_manager.dynamic_daily_loss_stop = None
+
+    engine = LiveEngine(settings, ledger, MagicMock(), auth_client, risk_manager, logger)
+    engine.notifier = MagicMock()
+    engine.target_slugs = ["s1-yes", "s1-no"]
+    engine.condition_pairs = (("s1-yes", "s1-no"),)
+    engine.side_budgets = {("s1-yes", "bid"): Decimal("25.00"), ("s1-no", "bid"): Decimal("25.00")}
+
+    t0 = datetime(2026, 10, 26, 14, 0, tzinfo=timezone.utc).timestamp()
+    period = engine.tick(t0)
+    assert period == 10.0
+    assert engine.daily_loss_stop_tripped is True
+    engine.notifier.notify_daily_loss_stop.assert_called_once_with(Decimal("20.00"), Decimal("10.00"))
+
+    thread = engine._dispatch_hourly_status_ping(
+        now_ts=t0,
+        buying_power=Decimal("80.00"),
+        open_orders_count=0,
+        live_positions={"resolved-loser": wiped_pos, "active-leg": active_pos},
+        realized_loss_today=Decimal("20.00"),
+    )
+    thread.join(timeout=2.0)
+    _, kwargs = engine.notifier.notify_hourly_status.call_args
+    assert kwargs["engine_state"] == "HALTED"
+    assert kwargs["open_pairs"] == 0
+    assert kwargs["realized_pnl_today"] == Decimal("-20.00")
+    assert kwargs["unrealized_pnl"] == Decimal("-19.00")
+    assert kwargs["mtm_equity"] == Decimal("91.00")
+
+
+def test_cooldown_prevents_underdeployed_streak_pre_accumulation_and_stop_unwind_requires_drop():
+    from pmus.risk import RiskGateResult
+    from pmus.strategy.lip_quoter import desired_quotes
+
+    logger = logging.getLogger("test_cooldown_and_unwind")
+    now = datetime(2026, 10, 26, 15, 0, tzinfo=timezone.utc)
+    t0 = now.timestamp()
+    w = IncentiveWindow("y1", "unwind", Decimal("0"), Decimal("0"), Decimal("20"), Decimal("0.04"), now - timedelta(hours=1), now + timedelta(hours=23), "active")
+    mkt = Market("y1", "e1", "sports", Decimal("0.01"), Decimal("5"), True)
+    book_near_entry = Book("y1", (Level(Decimal("0.47"), Decimal("200")),), (Level(Decimal("0.49"), Decimal("200")),), 1000, tick_size=Decimal("0.01"))
+
+    client = MagicMock()
+    client.fetch_books_batch.return_value = {"y1": book_near_entry}
+    client.get_market.return_value = mkt
+
+    pos = Position("y1", Decimal("50"), Decimal("0.50"))
+    auth_client = MagicMock()
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_fills.return_value = [
+        ShadowFill("f-loss", "o-loss", "stopped-yes", "SELL_LONG", Decimal("0.35"), Decimal("50"), Decimal("0"), True, int(t0 * 1000))
+    ]
+    auth_client.get_positions.return_value = [
+        pos,
+        Position("stopped-yes", Decimal("50"), Decimal("0.50")),
+    ]
+    auth_client.get_buying_power.return_value = Decimal("100.00")
+    auth_client.create_orders_batch.return_value = []
+
+    risk_manager = MagicMock()
+    risk_manager.is_kill_switch_active.return_value = False
+    risk_manager.is_maintenance_active.return_value = False
+    risk_manager.check_pre_submit.return_value = RiskGateResult(True)
+    risk_manager.dynamic_daily_loss_stop = None
+
+    ledger = MagicMock()
+    ledger.record_fill.return_value = True
+    ledger.get_open_orders.return_value = []
+    ledger.get_realized_loss_today.return_value = Decimal("0")
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_per_market=Decimal("50"))
+    engine = LiveEngine(settings, ledger, client, auth_client, risk_manager, logger)
+    engine.notifier = MagicMock()
+    engine.target_slugs = ["y1"]
+    engine.markets["y1"] = mkt
+    engine.active_windows["y1"] = w
+    engine.side_budgets = {("y1", "bid"): Decimal("0"), ("y1", "ask"): Decimal("0"), ("s2", "bid"): Decimal("25.00")}
+    engine._record_known_pair("stopped-yes", "stopped-no")
+    engine.last_prepare_ts = t0
+    engine.underdeployed_streak = 10
+
+    with patch("pmus.engine.desired_quotes", wraps=desired_quotes) as spy_dq:
+        engine.tick(t0 + 30.0)
+        assert engine.underdeployed_streak == 0
+        assert spy_dq.call_args.kwargs["allow_stop_unwind"] is False
+        assert engine.loss_cooldown_until.get("stopped-yes", 0.0) == t0 + 30.0 + 86400.0
+        assert engine.loss_cooldown_until.get("stopped-no", 0.0) == t0 + 30.0 + 86400.0
+        assert engine.side_budgets.get(("stopped-yes", "bid")) == Decimal("0")
+        assert engine.side_budgets.get(("stopped-no", "bid")) == Decimal("0")
+
+
+def test_prepare_prunes_old_snapshots_once_per_day_and_excludes_loss_cooldown():
+    logger = logging.getLogger("test_unit4_prune_and_exclude")
+    settings = Settings(venue="global", total_budget=Decimal("100.00"), max_markets=4)
+    ledger = MagicMock()
+    public_client = MagicMock()
+    auth_client = MagicMock()
+    risk_manager = MagicMock()
+
+    auth_client.get_open_orders.return_value = []
+    auth_client.get_positions.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("100.00")
+
+    engine = LiveEngine(settings, ledger, public_client, auth_client, risk_manager, logger)
+    engine.loss_cooldown_until["cooled-yes"] = datetime.now(timezone.utc).timestamp() + 3600.0
+
+    with patch("pmus.engine.allocate_markets") as mock_alloc:
+        mock_alloc.return_value = (
+            {},
+            AllocationResult([], [], [], {}, {}, None, frozenset(), ()),
+        )
+        engine.prepare()
+        ledger.prune_old_snapshots.assert_called_once_with(retention_days=7)
+        assert "cooled-yes" in mock_alloc.call_args.kwargs["excluded_slugs"]
+        assert mock_alloc.call_count == 1
+
+        ledger.prune_old_snapshots.reset_mock()
+        engine.prepare(is_realloc=True)
+        ledger.prune_old_snapshots.assert_not_called()
+
 
 
 

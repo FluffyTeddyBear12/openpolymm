@@ -12,11 +12,12 @@ from pmus.strategy.market_selector import AllocationResult, CandidateSide
 logger = logging.getLogger(__name__)
 
 SINGLE_SIDED_MIN_PRICE = Decimal("0.20")
+HEDGE_LEG_MIN_PRICE = Decimal("0.05")
 PAIR_LEG_MIN_PRICE = Decimal("0.22")
 PAIR_LEG_MAX_PRICE = Decimal("0.75")
 PAIR_MIN_PRICE_SUM = Decimal("0.92")
 PAIR_MAX_PRICE_SUM = Decimal("0.98")
-MIN_COMPETITOR_SCORE = Decimal("45")
+MIN_COMPETITOR_SCORE = Decimal("40")
 ADMISSION_HYSTERESIS = Decimal("1.3")
 MAX_SINGLE_CONDITION_BUDGET_SHARE = Decimal("0.42")
 MIN_DIVERSIFIED_COST_FLOOR = Decimal("36.00")
@@ -213,6 +214,7 @@ def evaluate_condition(
     max_contracts: Decimal,
     pair_preference: Decimal = Decimal("1.0"),
     positions: dict[str, Position] | None = None,
+    max_leg_collateral: Decimal | None = None,
 ) -> ConditionTarget | None:
     window = cond.window
     lot = cond.yes.min_qty
@@ -225,7 +227,40 @@ def evaluate_condition(
     no_pos = (positions or {}).get(cond.no.slug)
     yes_held = yes_pos.net_qty if yes_pos is not None else Decimal("0")
     no_held = no_pos.net_qty if no_pos is not None else Decimal("0")
+    yes_held_cost = (
+        yes_pos.net_qty * yes_pos.avg_price
+        if (yes_pos is not None and yes_pos.net_qty > Decimal("0") and yes_pos.avg_price > Decimal("0"))
+        else Decimal("0")
+    )
+    no_held_cost = (
+        no_pos.net_qty * no_pos.avg_price
+        if (no_pos is not None and no_pos.net_qty > Decimal("0") and no_pos.avg_price > Decimal("0"))
+        else Decimal("0")
+    )
     either_leg_filled = yes_held >= min_size or no_held >= min_size
+    hedge_no_needed = (
+        yes_held >= min_size
+        and no_held < min_size
+        and yes_pos is not None
+        and yes_pos.avg_price > Decimal("0")
+    )
+    hedge_yes_needed = (
+        no_held >= min_size
+        and yes_held < min_size
+        and no_pos is not None
+        and no_pos.avg_price > Decimal("0")
+    )
+    comp_q: Decimal | None = None
+    yes_leg_cost_cap = (
+        min(max_cost, max(Decimal("0"), max_leg_collateral - yes_held_cost))
+        if (max_leg_collateral is not None and max_leg_collateral > Decimal("0"))
+        else max_cost
+    )
+    no_leg_cost_cap = (
+        min(max_cost, max(Decimal("0"), max_leg_collateral - no_held_cost))
+        if (max_leg_collateral is not None and max_leg_collateral > Decimal("0"))
+        else max_cost
+    )
 
     prices = (
         global_rewards.pair_quote_prices(
@@ -252,6 +287,23 @@ def evaluate_condition(
             and _admit(cond, no_book, p_no, no_tick, other_book=yes_book)
         ):
             size = global_rewards.pair_size(max_cost, p_yes, p_no, min_size, lot, max_contracts)
+            if max_leg_collateral is not None and max_leg_collateral > Decimal("0") and size > Decimal("0"):
+                avail_yes = max_leg_collateral - yes_held_cost
+                avail_no = max_leg_collateral - no_held_cost
+                if avail_yes <= Decimal("0") or avail_no <= Decimal("0"):
+                    size = Decimal("0")
+                else:
+                    cap_by_legs = min(avail_yes / p_yes, avail_no / p_no)
+                    if cap_by_legs < min_size:
+                        size = Decimal("0")
+                    else:
+                        leg_size = (min(size, cap_by_legs) // lot) * lot
+                        while leg_size >= min_size and (
+                            p_yes * leg_size + yes_held_cost > max_leg_collateral
+                            or p_no * leg_size + no_held_cost > max_leg_collateral
+                        ):
+                            leg_size -= lot
+                        size = leg_size if leg_size >= min_size else Decimal("0")
             cost = size * (p_yes + p_no)
             reward = global_rewards.expected_pair_reward_sec(yes_book, no_book, window, p_yes, p_no, size)
             if size > Decimal("0") and (reward * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
@@ -267,64 +319,131 @@ def evaluate_condition(
                     )
                 )
 
-    if pair_preference > Decimal("0"):
-        if yes_held < min_size:
-            p_yes = global_rewards.bid_price(yes_book, window, yes_tick)
-            opp_no_bid = no_book.bids[0].price if no_book.bids else Decimal("0")
-            held_no_px = no_pos.avg_price if (no_held > Decimal("0") and no_pos is not None and no_pos.avg_price > Decimal("0")) else Decimal("0")
+    if hedge_no_needed and yes_pos is not None and no_tick > Decimal("0"):
+        p_no_raw = global_rewards.bid_price(no_book, window, no_tick)
+        mid_n = global_rewards.adjusted_mid(no_book, min_size) if p_no_raw is not None else None
+        opp_yes_bid = yes_book.bids[0].price if yes_book.bids else None
+        if p_no_raw is not None and mid_n is not None:
+            cap_no = min(p_no_raw, Decimal("1.00") - yes_pos.avg_price)
+            if opp_yes_bid is not None and opp_yes_bid > Decimal("0"):
+                cap_no = min(cap_no, global_rewards.CROSS_MAX_SUM - opp_yes_bid)
+            p_no_hedge = (cap_no // no_tick) * no_tick
             if (
-                p_yes is not None
-                and p_yes >= SINGLE_SIDED_MIN_PRICE
-                and (p_yes + opp_no_bid) <= global_rewards.pair_max_sum(window)
-                and (p_yes + held_no_px) < Decimal("1")
-                and not (no_held >= min_size and held_no_px > Decimal("0") and (p_yes + held_no_px) > PAIR_MAX_PRICE_SUM)
-                and _book_spread_ok(yes_book, window, yes_tick)
-                and _admit(cond, yes_book, p_yes, yes_tick, other_book=no_book)
-            ):
-                size_yes = _single_size(max_cost, p_yes, min_size, lot, max_contracts)
-                cost_yes = size_yes * p_yes
-                reward_yes = global_rewards.expected_single_reward_sec(yes_book, no_book, window, p_yes, size_yes)
-                if size_yes > Decimal("0") and (reward_yes * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
-                    surviving.append(
-                        ConditionTarget(
-                            condition=cond,
-                            mode="yes_only",
-                            size=size_yes,
-                            yes_price=p_yes,
-                            no_price=None,
-                            cost=cost_yes,
-                            expected_reward_sec=reward_yes,
-                        )
-                    )
-
-        if no_held < min_size:
-            p_no = global_rewards.bid_price(no_book, window, no_tick)
-            opp_yes_bid = yes_book.bids[0].price if yes_book.bids else Decimal("0")
-            held_yes_px = yes_pos.avg_price if (yes_held > Decimal("0") and yes_pos is not None and yes_pos.avg_price > Decimal("0")) else Decimal("0")
-            if (
-                p_no is not None
-                and p_no >= SINGLE_SIDED_MIN_PRICE
-                and (p_no + opp_yes_bid) <= global_rewards.pair_max_sum(window)
-                and (p_no + held_yes_px) < Decimal("1")
-                and not (yes_held >= min_size and held_yes_px > Decimal("0") and (p_no + held_yes_px) > PAIR_MAX_PRICE_SUM)
+                p_no_hedge >= HEDGE_LEG_MIN_PRICE
+                and (window.max_spread is None or abs(p_no_hedge - mid_n) < window.max_spread)
                 and _book_spread_ok(no_book, window, no_tick)
-                and _admit(cond, no_book, p_no, no_tick, other_book=yes_book)
+                and _admit(cond, no_book, p_no_hedge, no_tick, other_book=yes_book)
             ):
-                size_no = _single_size(max_cost, p_no, min_size, cond.no.min_qty, max_contracts)
-                cost_no = size_no * p_no
-                reward_no = global_rewards.expected_single_reward_sec(no_book, yes_book, window, p_no, size_no)
-                if size_no > Decimal("0") and (reward_no * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
+                no_lot = cond.no.min_qty
+                unhedged_yes = yes_held - max(Decimal("0"), no_held)
+                hedge_cap_no = min(max_contracts, max(min_size, (unhedged_yes // no_lot) * no_lot))
+                size_no = _single_size(no_leg_cost_cap, p_no_hedge, min_size, no_lot, hedge_cap_no)
+                if size_no > Decimal("0"):
+                    cost_no = size_no * p_no_hedge
+                    reward_no = global_rewards.expected_single_reward_sec(no_book, yes_book, window, p_no_hedge, size_no)
                     surviving.append(
                         ConditionTarget(
                             condition=cond,
                             mode="no_only",
                             size=size_no,
                             yes_price=None,
-                            no_price=p_no,
+                            no_price=p_no_hedge,
                             cost=cost_no,
                             expected_reward_sec=reward_no,
                         )
                     )
+
+    if hedge_yes_needed and no_pos is not None and yes_tick > Decimal("0"):
+        p_yes_raw = global_rewards.bid_price(yes_book, window, yes_tick)
+        mid_y = global_rewards.adjusted_mid(yes_book, min_size) if p_yes_raw is not None else None
+        opp_no_bid = no_book.bids[0].price if no_book.bids else None
+        if p_yes_raw is not None and mid_y is not None:
+            cap_yes = min(p_yes_raw, Decimal("1.00") - no_pos.avg_price)
+            if opp_no_bid is not None and opp_no_bid > Decimal("0"):
+                cap_yes = min(cap_yes, global_rewards.CROSS_MAX_SUM - opp_no_bid)
+            p_yes_hedge = (cap_yes // yes_tick) * yes_tick
+            if (
+                p_yes_hedge >= HEDGE_LEG_MIN_PRICE
+                and (window.max_spread is None or abs(p_yes_hedge - mid_y) < window.max_spread)
+                and _book_spread_ok(yes_book, window, yes_tick)
+                and _admit(cond, yes_book, p_yes_hedge, yes_tick, other_book=no_book)
+            ):
+                unhedged_no = no_held - max(Decimal("0"), yes_held)
+                hedge_cap_yes = min(max_contracts, max(min_size, (unhedged_no // lot) * lot))
+                size_yes = _single_size(yes_leg_cost_cap, p_yes_hedge, min_size, lot, hedge_cap_yes)
+                if size_yes > Decimal("0"):
+                    cost_yes = size_yes * p_yes_hedge
+                    reward_yes = global_rewards.expected_single_reward_sec(yes_book, no_book, window, p_yes_hedge, size_yes)
+                    surviving.append(
+                        ConditionTarget(
+                            condition=cond,
+                            mode="yes_only",
+                            size=size_yes,
+                            yes_price=p_yes_hedge,
+                            no_price=None,
+                            cost=cost_yes,
+                            expected_reward_sec=reward_yes,
+                        )
+                    )
+
+    if not either_leg_filled and pair_preference > Decimal("0"):
+        p_yes = global_rewards.bid_price(yes_book, window, yes_tick)
+        p_no = global_rewards.bid_price(no_book, window, no_tick)
+        if p_yes is not None or p_no is not None:
+            if comp_q is None:
+                comp_q = global_rewards.competitor_q(yes_book, no_book, window)
+            if comp_q >= MIN_COMPETITOR_SCORE:
+                opp_no_bid = no_book.bids[0].price if no_book.bids else Decimal("0")
+                held_no_px = no_pos.avg_price if (no_held > Decimal("0") and no_pos is not None and no_pos.avg_price > Decimal("0")) else Decimal("0")
+                if (
+                    p_yes is not None
+                    and p_yes >= SINGLE_SIDED_MIN_PRICE
+                    and (p_yes + opp_no_bid) <= global_rewards.pair_max_sum(window)
+                    and (p_yes + held_no_px) < Decimal("1")
+                    and _book_spread_ok(yes_book, window, yes_tick)
+                    and _admit(cond, yes_book, p_yes, yes_tick, other_book=no_book)
+                ):
+                    size_yes = _single_size(yes_leg_cost_cap, p_yes, min_size, lot, max_contracts)
+                    cost_yes = size_yes * p_yes
+                    reward_yes = global_rewards.expected_single_reward_sec(yes_book, no_book, window, p_yes, size_yes)
+                    if size_yes > Decimal("0") and (reward_yes * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
+                        surviving.append(
+                            ConditionTarget(
+                                condition=cond,
+                                mode="yes_only",
+                                size=size_yes,
+                                yes_price=p_yes,
+                                no_price=None,
+                                cost=cost_yes,
+                                expected_reward_sec=reward_yes,
+                            )
+                        )
+
+                opp_yes_bid = yes_book.bids[0].price if yes_book.bids else Decimal("0")
+                held_yes_px = yes_pos.avg_price if (yes_held > Decimal("0") and yes_pos is not None and yes_pos.avg_price > Decimal("0")) else Decimal("0")
+                if (
+                    p_no is not None
+                    and p_no >= SINGLE_SIDED_MIN_PRICE
+                    and (p_no + opp_yes_bid) <= global_rewards.pair_max_sum(window)
+                    and (p_no + held_yes_px) < Decimal("1")
+                    and _book_spread_ok(no_book, window, no_tick)
+                    and _admit(cond, no_book, p_no, no_tick, other_book=yes_book)
+                ):
+                    size_no = _single_size(no_leg_cost_cap, p_no, min_size, cond.no.min_qty, max_contracts)
+                    cost_no = size_no * p_no
+                    reward_no = global_rewards.expected_single_reward_sec(no_book, yes_book, window, p_no, size_no)
+                    if size_no > Decimal("0") and (reward_no * global_rewards.SECONDS_PER_DAY) >= global_rewards.MIN_DAILY_PAYOUT_USD:
+                        surviving.append(
+                            ConditionTarget(
+                                condition=cond,
+                                mode="no_only",
+                                size=size_no,
+                                yes_price=None,
+                                no_price=p_no,
+                                cost=cost_no,
+                                expected_reward_sec=reward_no,
+                            )
+                        )
 
     if not surviving:
         return None
@@ -383,6 +502,7 @@ def _waterfill_conditions(
     max_contracts: Decimal,
     pair_preference: Decimal = Decimal("1.0"),
     positions: dict[str, Position] | None = None,
+    max_leg_collateral: Decimal | None = None,
 ) -> list[ConditionTarget]:
     max_cost = min(max_cost_per_condition, total_budget)
 
@@ -420,8 +540,9 @@ def _waterfill_conditions(
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
                 positions=positions,
+                max_leg_collateral=max_leg_collateral,
             )
-            if t is not None and t.cost > last_cost and t.expected_reward_sec > last_rew:
+            if t is not None and t.cost > last_cost and (t.expected_reward_sec > last_rew or not pts):
                 pts.append(t)
                 last_cost = t.cost
                 last_rew = t.expected_reward_sec
@@ -466,6 +587,7 @@ def _waterfill_conditions(
                     max_contracts=max_contracts,
                     pair_preference=pair_preference,
                     positions=positions,
+                    max_leg_collateral=max_leg_collateral,
                 )
                 if capped_pt is not None and (
                     not trimmed
@@ -552,6 +674,7 @@ def _waterfill_conditions(
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
                 positions=positions,
+                max_leg_collateral=max_leg_collateral,
             )
             if resized is not None and resized.cost > Decimal("0"):
                 mult = risk_adjustment_multiplier(resized, yes_book, no_book)
@@ -594,6 +717,7 @@ def _waterfill_conditions(
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
                 positions=positions,
+                max_leg_collateral=max_leg_collateral,
             )
             if (
                 topped is not None
@@ -627,6 +751,7 @@ def _waterfill_conditions(
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
                 positions=positions,
+                max_leg_collateral=max_leg_collateral,
             )
             if (
                 swept is not None
@@ -650,6 +775,7 @@ def allocate_conditions(
     max_contracts: Decimal,
     pair_preference: Decimal = Decimal("1.0"),
     positions: dict[str, Position] | None = None,
+    max_leg_collateral: Decimal | None = None,
 ) -> list[ConditionTarget]:
     if total_budget >= WATERFILL_MIN_BUDGET and max_markets > 1:
         return _waterfill_conditions(
@@ -661,6 +787,7 @@ def allocate_conditions(
             max_contracts=max_contracts,
             pair_preference=pair_preference,
             positions=positions,
+            max_leg_collateral=max_leg_collateral,
         )
     max_cost = min(max_cost_per_condition, total_budget)
     scored_candidates: list[tuple[Decimal, tuple[str, ...], ConditionTarget]] = []
@@ -686,6 +813,7 @@ def allocate_conditions(
             max_contracts=max_contracts,
             pair_preference=pair_preference,
             positions=positions,
+            max_leg_collateral=max_leg_collateral,
         )
         if target is not None:
             mult = risk_adjustment_multiplier(target, yes_book, no_book)
@@ -714,6 +842,7 @@ def allocate_conditions(
                     max_contracts=max_contracts,
                     pair_preference=pair_preference,
                     positions=positions,
+                    max_leg_collateral=max_leg_collateral,
                 )
                 if capped_target is not None:
                     mult = risk_adjustment_multiplier(capped_target, yes_book, no_book)
@@ -757,6 +886,7 @@ def allocate_conditions(
                 max_contracts=max_contracts,
                 pair_preference=pair_preference,
                 positions=positions,
+                max_leg_collateral=max_leg_collateral,
             )
             if resized is not None and resized.cost <= remaining_budget:
                 selected.append(resized)

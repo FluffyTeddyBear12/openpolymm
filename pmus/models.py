@@ -88,6 +88,9 @@ class Position:
     slug: str
     net_qty: Decimal
     avg_price: Decimal
+    cur_price: Decimal | None = None
+    redeemable: bool = False
+    archived: bool = False
 
 @dataclass(frozen=True)
 class BasketOpp:

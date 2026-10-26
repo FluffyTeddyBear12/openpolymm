@@ -311,3 +311,20 @@ def test_bid_price_steps_back_one_tick_on_thin_top_notional_with_003_max_spread(
     assert global_rewards.adjusted_mid(b, w.target_size) == Decimal("0.51")
     assert global_rewards.bid_price(b, w, Decimal("0.01")) == Decimal("0.49")
 
+
+def test_side_score_and_global_lip_snapshot_exclude_sub_target_dust_levels():
+    w = window(target="50", max_spread=Decimal("0.05"))
+    b_clean = book([("0.48", "100")], [("0.52", "100")])
+    b_dust = book([("0.49", "49"), ("0.48", "100")], [("0.52", "100")])
+
+    rew_clean = global_rewards.expected_bid_reward_sec(b_clean, w, Decimal("0.48"), Decimal("50"))
+    rew_dust = global_rewards.expected_bid_reward_sec(b_dust, w, Decimal("0.48"), Decimal("50"))
+    assert rew_dust == rew_clean
+
+    ours = [LiveOrder("o1", "tok", "BUY_LONG", Decimal("0.48"), Decimal("50"))]
+    snap_clean = estimate_global_lip_score(b_clean, w, ours, ts_ms=1)
+    snap_dust = estimate_global_lip_score(b_dust, w, ours, ts_ms=1)
+    assert snap_dust.total_bid_score == snap_clean.total_bid_score
+    assert snap_dust.reward_usd == snap_clean.reward_usd
+
+

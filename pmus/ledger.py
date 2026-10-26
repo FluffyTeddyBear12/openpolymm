@@ -1,28 +1,52 @@
+from contextlib import contextmanager
 from datetime import datetime
-import sqlite3
-import time
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+import sqlite3
+import threading
+import time
+from typing import Any, Iterator
 
 from pmus.models import LipSnapshot, LiveOrder, Position, Quote, ShadowFill
+
 
 class Ledger:
     def __init__(self, db_path: Path | str):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._local = threading.local()
+        self._has_dt_sec = True
+        self._has_side_qual = True
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout = 5000")
-        conn.execute("PRAGMA synchronous = NORMAL")
-        return conn
+    @contextmanager
+    def _get_connection(self) -> Iterator[sqlite3.Connection]:
+        conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(str(self.db_path))
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            self._local.conn = conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    def close(self) -> None:
+        conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
+        if conn is not None:
+            self._local.conn = None
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS quotes (
@@ -35,6 +59,7 @@ class Ledger:
                 )
                 """
             )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_quotes_ts ON quotes (ts_ms)")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orders (
@@ -86,13 +111,18 @@ class Ledger:
                 """
             )
             cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
-            cols = [row["name"] for row in cursor.fetchall()]
+            cols = {row["name"] for row in cursor.fetchall()}
             if cols and "bid_qualifies" not in cols:
                 conn.execute("ALTER TABLE lip_snapshots ADD COLUMN bid_qualifies INTEGER DEFAULT 0")
+                cols.add("bid_qualifies")
             if cols and "ask_qualifies" not in cols:
                 conn.execute("ALTER TABLE lip_snapshots ADD COLUMN ask_qualifies INTEGER DEFAULT 0")
+                cols.add("ask_qualifies")
             if cols and "dt_sec" not in cols:
                 conn.execute("ALTER TABLE lip_snapshots ADD COLUMN dt_sec INTEGER NOT NULL DEFAULT 1")
+                cols.add("dt_sec")
+            self._has_dt_sec = "dt_sec" in cols
+            self._has_side_qual = "bid_qualifies" in cols and "ask_qualifies" in cols
 
             conn.execute(
                 """
@@ -250,24 +280,13 @@ class Ledger:
             )
             return cursor.rowcount == 1
 
-    def record_lip_snapshot(self, snap: LipSnapshot, elapsed_sec: Decimal | None = None) -> None:
+    def record_lip_snapshot(self, snap: LipSnapshot, elapsed_sec: Decimal | float | None = None) -> None:
+        if elapsed_sec is not None:
+            dt_sec = max(1, min(90, int(round(float(elapsed_sec)))))
+        else:
+            dt_sec = max(1, int(getattr(snap, "dt_sec", 1)))
+        accrued_reward = snap.reward_usd * Decimal(dt_sec)
         with self._get_connection() as conn:
-            dt_sec = Decimal("1")
-            if elapsed_sec is not None and elapsed_sec > Decimal("0"):
-                dt_sec = min(elapsed_sec, Decimal("90"))
-            else:
-                prev = conn.execute(
-                    "SELECT ts_ms FROM lip_latest WHERE slug = ?",
-                    (snap.slug,),
-                ).fetchone()
-                if prev is not None and snap.ts_ms > int(prev["ts_ms"]):
-                    raw_dt = Decimal(str(snap.ts_ms - int(prev["ts_ms"]))) / Decimal("1000")
-                    if Decimal("1.5") < raw_dt <= Decimal("300"):
-                        dt_sec = min(raw_dt, Decimal("90"))
-                elif getattr(snap, "dt_sec", 1) > 1:
-                    dt_sec = min(Decimal(str(snap.dt_sec)), Decimal("90"))
-            accrued_reward = snap.reward_usd * dt_sec
-            qual_inc = max(1, int(dt_sec.to_integral_value()))
             conn.execute(
                 """
                 INSERT INTO lip_snapshots (
@@ -288,7 +307,7 @@ class Ledger:
                     str(accrued_reward),
                     1 if snap.bid_qualifies else 0,
                     1 if snap.ask_qualifies else 0,
-                    qual_inc,
+                    dt_sec,
                 ),
             )
             conn.execute(
@@ -339,9 +358,9 @@ class Ledger:
                     """,
                     (
                         new_total,
-                        qual_inc if snap.qualifies else 0,
-                        qual_inc if snap.bid_qualifies else 0,
-                        qual_inc if snap.ask_qualifies else 0,
+                        dt_sec if snap.qualifies else 0,
+                        dt_sec if snap.bid_qualifies else 0,
+                        dt_sec if snap.ask_qualifies else 0,
                     ),
                 )
             else:
@@ -352,9 +371,9 @@ class Ledger:
                     """,
                     (
                         str(accrued_reward),
-                        qual_inc if snap.qualifies else 0,
-                        qual_inc if snap.bid_qualifies else 0,
-                        qual_inc if snap.ask_qualifies else 0,
+                        dt_sec if snap.qualifies else 0,
+                        dt_sec if snap.bid_qualifies else 0,
+                        dt_sec if snap.ask_qualifies else 0,
                     ),
                 )
 
@@ -409,28 +428,26 @@ class Ledger:
             ]
 
     def get_lip_snapshots_since(self, since_ms: int) -> list[LipSnapshot]:
+        has_side_cols = self._has_side_qual
+        has_dt_col = self._has_dt_sec
+        dt_select = "COALESCE(dt_sec, 1) AS dt_sec" if has_dt_col else "1 AS dt_sec"
+
+        if has_side_cols:
+            query = f"""
+                SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
+                       trader_ask_score, total_ask_score, qualifies, reward_usd,
+                       bid_qualifies, ask_qualifies, {dt_select}
+                FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
+            """
+        else:
+            query = f"""
+                SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
+                       trader_ask_score, total_ask_score, qualifies, reward_usd,
+                       {dt_select}
+                FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
+            """
+
         with self._get_connection() as conn:
-            cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
-            cols = [row["name"] for row in cursor.fetchall()]
-            has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
-            has_dt_col = "dt_sec" in cols
-            dt_select = "COALESCE(dt_sec, 1) AS dt_sec" if has_dt_col else "1 AS dt_sec"
-
-            if has_side_cols:
-                query = f"""
-                    SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
-                           trader_ask_score, total_ask_score, qualifies, reward_usd,
-                           bid_qualifies, ask_qualifies, {dt_select}
-                    FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
-                """
-            else:
-                query = f"""
-                    SELECT ts_ms, slug, program_id, trader_bid_score, total_bid_score,
-                           trader_ask_score, total_ask_score, qualifies, reward_usd,
-                           {dt_select}
-                    FROM lip_snapshots WHERE ts_ms >= ? ORDER BY ts_ms ASC
-                """
-
             rows = conn.execute(query, (since_ms,)).fetchall()
             return [
                 LipSnapshot(
@@ -470,10 +487,8 @@ class Ledger:
                     "qualifying_ask_seconds": 0,
                 }
 
-            cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
-            cols = [row["name"] for row in cursor.fetchall()]
-            has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
-            has_dt_col = "dt_sec" in cols
+            has_side_cols = self._has_side_qual
+            has_dt_col = self._has_dt_sec
             dt_expr = "MAX(1, COALESCE(dt_sec, 1))" if has_dt_col else "1"
 
             if has_side_cols:
@@ -527,9 +542,7 @@ class Ledger:
             if not rows:
                 has_snapshots = conn.execute("SELECT 1 FROM lip_snapshots LIMIT 1").fetchone()
                 if has_snapshots:
-                    cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
-                    cols = [row["name"] for row in cursor.fetchall()]
-                    has_side_cols = "bid_qualifies" in cols and "ask_qualifies" in cols
+                    has_side_cols = self._has_side_qual
 
                     if has_side_cols:
                         query = """
@@ -667,3 +680,21 @@ class Ledger:
         if total_realized_pnl < Decimal("0"):
             return abs(total_realized_pnl)
         return Decimal("0")
+
+    def prune_old_snapshots(
+        self,
+        retention_days: int = 7,
+        now_ms: int | None = None,
+        vacuum: bool = False,
+    ) -> int:
+        base_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        cutoff_ms = base_ms - int(retention_days * 86_400_000)
+        with self._get_connection() as conn:
+            cur_lip = conn.execute("DELETE FROM lip_snapshots WHERE ts_ms < ?", (cutoff_ms,))
+            cur_quotes = conn.execute("DELETE FROM quotes WHERE ts_ms < ?", (cutoff_ms,))
+            deleted = max(0, cur_lip.rowcount) + max(0, cur_quotes.rowcount)
+            if vacuum:
+                conn.commit()
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                conn.execute("VACUUM")
+            return deleted

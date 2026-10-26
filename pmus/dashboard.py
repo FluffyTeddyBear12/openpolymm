@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import html
 import json
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -52,8 +53,11 @@ def set_custom_reset_epoch_ms(settings: Settings, ts_ms: int) -> None:
 
 
 def check_password(settings: Settings) -> bool:
-    if not settings.dashboard_password:
-        return True
+    if not settings.dashboard_password or not settings.dashboard_password.strip():
+        if os.getenv("PMUS_DASHBOARD_ALLOW_UNAUTH_LOCAL", "").strip().lower() in ("1", "true"):
+            return True
+        st.error("Dashboard password not configured. Set PMUS_DASHBOARD_PASSWORD in .env.")
+        return False
     if st.session_state.get("authenticated", False):
         return True
 

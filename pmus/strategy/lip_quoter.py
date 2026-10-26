@@ -54,24 +54,18 @@ def classify_unwind_regime(
 ) -> UnwindRegime:
     if unhedged_net < market.min_qty:
         return UnwindRegime.HEDGED_PAIR_HOLD
+    ref_entry = avg_price if (avg_price is not None and avg_price > Decimal("0")) else min_exit
+    min_stop_dip = max(window.max_spread or Decimal("0.04"), ref_entry * Decimal("0.15"))
     if (
         min_exit <= Decimal("0")
         or window.max_spread is None
         or ask_price >= min_exit
-        or (min_exit - mid) < window.max_spread
+        or (ref_entry - mid) < min_stop_dip
     ):
         return UnwindRegime.IN_SPREAD_SCRATCH
 
-    if allow_stop_unwind is None:
-        flatten_mode = (
-            (bid_budget is not None and bid_budget <= Decimal("0"))
-            or budget <= Decimal("0")
-            or window.pool_usd <= Decimal("0")
-        )
-    else:
-        flatten_mode = allow_stop_unwind
+    flatten_mode = bool(allow_stop_unwind)
     eff_tick = tick if (tick is not None and tick > Decimal("0")) else (book.tick_size or market.tick)
-    ref_entry = avg_price if (avg_price is not None and avg_price > Decimal("0")) else min_exit
     stop_floor = _compute_stop_floor(ref_entry, eff_tick)
     near_band = min(window.max_spread, LIQUID_UNWIND_MAX_SPREAD)
     near_bid_usd = sum(
@@ -112,7 +106,7 @@ def _guarded_bid_price(
                 return None
             if window.max_spread is not None:
                 mid_curr = global_rewards.adjusted_mid(book, window.target_size)
-                if mid_curr is not None and abs(clamped_cap - mid_curr) > window.max_spread:
+                if mid_curr is not None and abs(clamped_cap - mid_curr) >= window.max_spread:
                     return None
             price = clamped_cap
     if min_bid_price is not None and price < min_bid_price:
@@ -243,10 +237,17 @@ def desired_quotes(
     quotes: list[Quote] = []
 
     if is_global:
+        is_post_fill_hedge = (
+            other_position_qty >= window.target_size and net < window.target_size
+        )
         effective_min_bid = (
             min_bid_price
             if min_bid_price is not None
-            else (PAIR_LEG_MIN_PRICE if paired else SINGLE_SIDED_MIN_PRICE)
+            else (
+                Decimal("0.05")
+                if is_post_fill_hedge
+                else (PAIR_LEG_MIN_PRICE if paired else SINGLE_SIDED_MIN_PRICE)
+            )
         )
         adverse_freeze = (
             net > Decimal("0")

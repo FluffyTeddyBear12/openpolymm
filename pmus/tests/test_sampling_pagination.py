@@ -466,6 +466,7 @@ def test_sampling_raw_resp_data_none_handled_cleanly(monkeypatch):
 
 def test_sampling_filtered_market_metadata_recorded_for_resolve_market(monkeypatch):
     from pmus.engine import resolve_market
+    from pmus.strategy.fill_risk import fill_risk_category
 
     raw_data = [
         {
@@ -506,7 +507,10 @@ def test_sampling_filtered_market_metadata_recorded_for_resolve_market(monkeypat
         },
     ]
 
-    monkeypatch.setattr("pmus.clob_venue.fill_risk_category", lambda q: "layoffs_risk" if "layoffs" in q else None)
+    monkeypatch.setattr(
+        "pmus.clob_venue.fill_risk_category",
+        lambda q: "layoffs_risk" if "layoffs" in q else fill_risk_category(q),
+    )
 
     resp = MagicMock()
     resp.raise_for_status.return_value = None

@@ -47,8 +47,20 @@ def order_score(max_spread: Decimal, distance: Decimal, size: Decimal) -> Decima
     return ((max_spread - distance) / max_spread) ** 2 * size
 
 
-def side_score(levels: tuple[Level, ...], mid: Decimal, max_spread: Decimal) -> Decimal:
-    return sum((order_score(max_spread, abs(lvl.price - mid), lvl.qty) for lvl in levels), ZERO)
+def side_score(
+    levels: tuple[Level, ...],
+    mid: Decimal,
+    max_spread: Decimal,
+    min_size: Decimal | None = None,
+) -> Decimal:
+    return sum(
+        (
+            order_score(max_spread, abs(lvl.price - mid), lvl.qty)
+            for lvl in levels
+            if min_size is None or min_size <= ZERO or lvl.qty >= min_size
+        ),
+        ZERO,
+    )
 
 
 def combined_score(bid_score: Decimal, ask_score: Decimal, mid: Decimal) -> Decimal:
@@ -130,7 +142,7 @@ def expected_bid_reward_sec(book: Book, window: IncentiveWindow, price: Decimal,
     if mid is None or window.max_spread is None or size < window.target_size:
         return ZERO
     ours = combined_score(order_score(window.max_spread, abs(price - mid), size), ZERO, mid)
-    return reward_rate(window.pool_usd, ours, side_score(book.bids, mid, window.max_spread))
+    return reward_rate(window.pool_usd, ours, side_score(book.bids, mid, window.max_spread, window.target_size))
 
 
 def pair_max_sum(window: IncentiveWindow | None) -> Decimal:
@@ -229,11 +241,9 @@ def competitor_q(
     eff_mid_n = mid_n if mid_n is not None else adjusted_mid(no_book, window.target_size)
     if eff_mid_y is None or eff_mid_n is None:
         return ZERO
-    q_one = side_score(yes_book.bids, eff_mid_y, window.max_spread)
-    q_two = side_score(no_book.bids, eff_mid_n, window.max_spread)
-    if mid_in_reward_band(eff_mid_y):
-        return min(q_one, q_two) + abs(q_one - q_two) / SINGLE_SIDED_DIVISOR
-    return min(q_one, q_two)
+    q_one = side_score(yes_book.bids, eff_mid_y, window.max_spread, window.target_size)
+    q_two = side_score(no_book.bids, eff_mid_n, window.max_spread, window.target_size)
+    return combined_score(q_one, q_two, eff_mid_y)
 
 
 def expected_pair_reward_sec(
