@@ -518,3 +518,36 @@ def test_prune_old_snapshots_deletes_expired_rows_and_vacuums(ledger):
     assert quote_ts == [boundary_ts, recent_ts]
     assert len(ledger.get_fills_since(0)) == 1
     assert ledger.get_lip_stats(0)["lip_reward_total"] == Decimal("0.03")
+
+
+def test_loss_cooldowns_persistence_and_expiry(ledger):
+    t0 = 1000.0
+    ledger.record_loss_cooldown("slug-1", t0 + 100.0)
+    ledger.record_loss_cooldown("slug-2", t0 + 50.0)
+
+    active = ledger.get_active_loss_cooldowns(t0 + 10.0)
+    assert active == {"slug-1": 1100.0, "slug-2": 1050.0}
+
+    active_later = ledger.get_active_loss_cooldowns(t0 + 60.0)
+    assert active_later == {"slug-1": 1100.0}
+
+
+def test_has_fill_since(ledger):
+    ledger.record_fill(
+        ShadowFill("f-1", "o-1", "tok-a", "BUY_LONG", Decimal("0.50"), Decimal("10"), Decimal("0"), True, 10000)
+    )
+    assert ledger.has_fill_since("tok-a", 5000) is True
+    assert ledger.has_fill_since("tok-a", 15000) is False
+    assert ledger.has_fill_since("tok-other", 0) is False
+
+
+def test_ledger_auto_recovers_from_corrupt_database(tmp_path):
+    db_file = tmp_path / "corrupt_ledger.db"
+    db_file.write_bytes(b"NOT A REAL SQLITE DB - TOTAL CORRUPTION")
+
+    recovered_ledger = Ledger(db_file)
+    assert db_file.exists()
+    assert recovered_ledger.get_lip_stats(0)["qualifying_seconds"] == 0
+    corrupt_backups = list(tmp_path.glob("corrupt_ledger.db.corrupt_*"))
+    assert len(corrupt_backups) == 1
+

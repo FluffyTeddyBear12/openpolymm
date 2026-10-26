@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 import html
+import hmac
 import json
 import os
 from pathlib import Path
@@ -66,7 +67,7 @@ def check_password(settings: Settings) -> bool:
     with st.form("login_form"):
         pwd = st.text_input("Dashboard Password", type="password", key="login_pwd")
         if st.form_submit_button("Unlock Dashboard"):
-            if pwd == settings.dashboard_password or (pwd.strip() and pwd.strip() == settings.dashboard_password.strip()):
+            if pwd and hmac.compare_digest(pwd.strip().encode("utf-8"), settings.dashboard_password.strip().encode("utf-8")):
                 st.session_state["authenticated"] = True
                 st.rerun()
             elif pwd:

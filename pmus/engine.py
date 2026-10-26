@@ -564,6 +564,13 @@ class LiveEngine:
         self.underdeployed_streak: int = 0
         self.degraded_slugs_until: dict[str, float] = {}
         self.loss_cooldown_until: dict[str, float] = {}
+        if hasattr(ledger, "get_active_loss_cooldowns"):
+            try:
+                loaded = ledger.get_active_loss_cooldowns(time.time())
+                if isinstance(loaded, dict):
+                    self.loss_cooldown_until.update(loaded)
+            except Exception:
+                pass
         self.dead_unwind_slugs: set[str] = set()
         self.manual_sell_order_ids: set[str] = set()
         self.manual_sell_cooldown_until: dict[str, float] = {}
@@ -574,8 +581,12 @@ class LiveEngine:
         self._last_tick_ts: float = 0.0
         self.last_prune_ts: float = 0.0
 
-    def _compute_redeemable_loss(self, live_positions: dict[str, Position]) -> Decimal:
+    def _compute_redeemable_loss(self, live_positions: dict[str, Position], now_dt: datetime | None = None) -> Decimal:
         redeemable_loss = Decimal("0")
+        today_midnight_ms = 0
+        if now_dt is not None:
+            today_midnight = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_midnight_ms = int(today_midnight.timestamp() * 1000)
         for p in live_positions.values():
             if (
                 getattr(p, "redeemable", False) is True
@@ -585,6 +596,14 @@ class LiveEngine:
                 and p.net_qty > Decimal("0")
                 and p.avg_price > Decimal("0")
             ):
+                if today_midnight_ms > 0 and hasattr(self.ledger, "has_fill_since"):
+                    is_active_today = (
+                        p.slug in self.target_slugs
+                        or p.slug in self.local_fill_positions
+                        or self.ledger.has_fill_since(p.slug, today_midnight_ms)
+                    )
+                    if not is_active_today:
+                        continue
                 cur_px = getattr(p, "cur_price", None)
                 if isinstance(cur_px, Decimal) and cur_px <= Decimal("0.01"):
                     leg_loss = p.net_qty * max(Decimal("0"), p.avg_price - cur_px)
@@ -1176,7 +1195,7 @@ class LiveEngine:
         )
         realized_loss_today = max(
             Decimal("0"),
-            raw_realized_loss_today + self._compute_redeemable_loss(live_positions) - baseline,
+            raw_realized_loss_today + self._compute_redeemable_loss(live_positions, now_dt=now_dt) - baseline,
         )
         dyn_stop = getattr(self.risk_manager, "dynamic_daily_loss_stop", None)
         effective_loss_stop = (
@@ -1451,6 +1470,11 @@ class LiveEngine:
                     self.loss_cooldown_until[f.slug] = cooldown_exp
                     self.degraded_slugs_until[f.slug] = cooldown_exp
                     self.side_budgets[(f.slug, "bid")] = Decimal("0")
+                    if hasattr(self.ledger, "record_loss_cooldown"):
+                        try:
+                            self.ledger.record_loss_cooldown(f.slug, cooldown_exp)
+                        except Exception:
+                            pass
                     sib = self.known_sibling_by_slug.get(f.slug)
                     if not sib:
                         for y_s, n_s in self.condition_pairs:
@@ -1464,6 +1488,11 @@ class LiveEngine:
                         self.loss_cooldown_until[sib] = cooldown_exp
                         self.degraded_slugs_until[sib] = cooldown_exp
                         self.side_budgets[(sib, "bid")] = Decimal("0")
+                        if hasattr(self.ledger, "record_loss_cooldown"):
+                            try:
+                                self.ledger.record_loss_cooldown(sib, cooldown_exp)
+                            except Exception:
+                                pass
                 updated_pos = update_position_from_fill(base_pos, f.side, f.price, f.qty)
                 self.local_fill_positions[f.slug] = (updated_pos, ts)
                 self.ledger.update_position(updated_pos, ts_ms=f.ts_ms)

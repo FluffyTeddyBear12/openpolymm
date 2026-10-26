@@ -3848,5 +3848,58 @@ def test_prepare_prunes_old_snapshots_once_per_day_and_excludes_loss_cooldown():
         ledger.prune_old_snapshots.assert_not_called()
 
 
+def test_historical_unredeemed_bags_ignored_and_loss_cooldown_persisted(tmp_path):
+    now_dt = datetime(2026, 10, 26, 14, 0, tzinfo=timezone.utc)
+    now_ts = now_dt.timestamp()
+    start_of_day_ms = int(now_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
+
+    ledger = Ledger(tmp_path / "test_persist.db")
+    # Record an active cooldown in ledger
+    ledger.record_loss_cooldown("pre-cooled", now_ts + 5000.0)
+
+    # Record a fill today for modern-bag
+    ledger.record_fill(
+        ShadowFill("f-today", "o-today", "modern-bag", "BUY_LONG", Decimal("0.40"), Decimal("50"), Decimal("0"), True, start_of_day_ms + 1000)
+    )
+
+    settings = Settings(venue="global", total_budget=Decimal("100"), max_markets=4)
+    client = MagicMock()
+    auth_client = MagicMock()
+    risk_manager = MagicMock()
+    logger = logging.getLogger("test_bags")
+
+    with patch("time.time", return_value=now_ts):
+        engine = LiveEngine(settings, ledger, client, auth_client, risk_manager, logger)
+    # Check that pre-cooled slug was seeded from ledger
+    assert engine.loss_cooldown_until.get("pre-cooled") == now_ts + 5000.0
+
+    # 1. Historical position from 3 weeks ago (never traded today)
+    hist_bag = Position("albania-draw", Decimal("50"), Decimal("0.04"), cur_price=Decimal("0.00"), redeemable=True)
+    # 2. Today's position that resolved to 0 today
+    today_bag = Position("modern-bag", Decimal("50"), Decimal("0.40"), cur_price=Decimal("0.00"), redeemable=True)
+
+    live_positions = {
+        "albania-draw": hist_bag,
+        "modern-bag": today_bag,
+    }
+
+    # Historical bag is ignored; only today's bag is counted!
+    loss = engine._compute_redeemable_loss(live_positions, now_dt=now_dt)
+    assert loss == Decimal("20.00")  # 50 * 0.40 = 20.00; albania-draw (50 * 0.04 = 2.00) is NOT counted!
+
+    # Test that recording a loss fill persists to ledger
+    stop_fill = ShadowFill("f-loss", "o-loss", "stopped-tok", "SELL_LONG", Decimal("0.10"), Decimal("10"), Decimal("0"), False, int(now_ts * 1000))
+    engine.condition_pairs = (("stopped-tok", "sib-tok"),)
+    engine._record_known_pair("stopped-tok", "sib-tok")
+    # Base position in ledger
+    ledger.update_position(Position("stopped-tok", Decimal("10"), Decimal("0.50")), ts_ms=int(now_ts * 1000))
+
+    engine._ingest_fills([stop_fill], now_ts=now_ts)
+    active_cooldowns = ledger.get_active_loss_cooldowns(now_ts)
+    assert "stopped-tok" in active_cooldowns
+    assert "sib-tok" in active_cooldowns
+
+
+
 
 

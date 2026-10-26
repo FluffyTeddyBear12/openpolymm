@@ -25,9 +25,13 @@ class Ledger:
         if conn is None:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA busy_timeout=5000")
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")
+                conn.execute("PRAGMA busy_timeout=5000")
+            except Exception:
+                conn.close()
+                raise
             self._local.conn = conn
         try:
             yield conn
@@ -46,6 +50,29 @@ class Ledger:
                 pass
 
     def _init_db(self) -> None:
+        try:
+            self._ensure_tables()
+        except sqlite3.DatabaseError as exc:
+            err = str(exc).lower()
+            if "malformed" in err or "not a database" in err or "corrupt" in err:
+                self.close()
+                backup = self.db_path.with_name(f"{self.db_path.name}.corrupt_{int(time.time())}")
+                try:
+                    self.db_path.rename(backup)
+                except Exception:
+                    pass
+                for suffix in ["-wal", "-shm"]:
+                    aux = self.db_path.with_name(f"{self.db_path.name}{suffix}")
+                    if aux.exists():
+                        try:
+                            aux.unlink()
+                        except Exception:
+                            pass
+                self._ensure_tables()
+            else:
+                raise
+
+    def _ensure_tables(self) -> None:
         with self._get_connection() as conn:
             conn.execute(
                 """
@@ -213,6 +240,14 @@ class Ledger:
 
             conn.execute("CREATE INDEX IF NOT EXISTS idx_lip_snapshots_ts ON lip_snapshots(ts_ms)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_lip_snapshots_slug_ts ON lip_snapshots(slug, ts_ms DESC)")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS loss_cooldowns (
+                    slug TEXT PRIMARY KEY,
+                    cooldown_until_ts REAL NOT NULL
+                )
+                """
+            )
 
     def record_quote(self, quote: Quote, ts_ms: int) -> None:
         with self._get_connection() as conn:
@@ -698,3 +733,26 @@ class Ledger:
                 conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 conn.execute("VACUUM")
             return deleted
+
+    def record_loss_cooldown(self, slug: str, cooldown_until_ts: float) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO loss_cooldowns (slug, cooldown_until_ts) VALUES (?, ?)",
+                (slug, float(cooldown_until_ts)),
+            )
+
+    def get_active_loss_cooldowns(self, now_ts: float) -> dict[str, float]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT slug, cooldown_until_ts FROM loss_cooldowns WHERE cooldown_until_ts > ?",
+                (float(now_ts),),
+            ).fetchall()
+            return {row["slug"]: float(row["cooldown_until_ts"]) for row in rows}
+
+    def has_fill_since(self, slug: str, since_ms: int) -> bool:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM fills WHERE slug = ? AND ts_ms >= ? LIMIT 1",
+                (slug, since_ms),
+            ).fetchone()
+            return row is not None
