@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from pmus.config import Settings
 from pmus.ledger import Ledger
+from pmus.merger import PositionMerger
 from pmus.models import Book, IncentiveWindow, LiveOrder, Market, Position, Quote, ShadowFill
 from pmus.notify import Notifier
 from pmus.risk import RiskManager
@@ -578,6 +579,9 @@ class LiveEngine:
         self.baseline_utc_date: str = getattr(settings, "daily_loss_baseline_date", "").strip()
         self.known_sibling_by_slug: dict[str, str] = {}
         self.known_pair_by_slug: dict[str, tuple[str, str]] = {}
+        self.known_cond_by_slug: dict[str, str] = {}
+        self.merger = PositionMerger(settings, self.logger)
+        self.last_auto_merge_ts: float = 0.0
         self._last_tick_ts: float = 0.0
         self.last_prune_ts: float = 0.0
 
@@ -623,7 +627,7 @@ class LiveEngine:
                     redeemable_loss += max(Decimal("0"), leg_loss - sib_gain)
         return redeemable_loss
 
-    def _record_known_pair(self, yes_slug: str, no_slug: str) -> None:
+    def _record_known_pair(self, yes_slug: str, no_slug: str, cond_id: str | None = None) -> None:
         if not yes_slug or not no_slug or yes_slug == no_slug:
             return
         pair = (yes_slug, no_slug)
@@ -631,6 +635,9 @@ class LiveEngine:
         self.known_sibling_by_slug[no_slug] = yes_slug
         self.known_pair_by_slug[yes_slug] = pair
         self.known_pair_by_slug[no_slug] = pair
+        if cond_id:
+            self.known_cond_by_slug[yes_slug] = cond_id
+            self.known_cond_by_slug[no_slug] = cond_id
 
     def _sync_known_siblings(self, alloc_pairs: tuple[tuple[str, str], ...] = ()) -> None:
         for y_s, n_s in self.condition_pairs:
@@ -659,6 +666,11 @@ class LiveEngine:
                             self._record_known_pair(s_b, s_a)
                         else:
                             self._record_known_pair(s_a, s_b)
+        client_conds = getattr(self.public_client, "_cond_by_slug", None)
+        if isinstance(client_conds, dict):
+            for s_key, cid_val in client_conds.items():
+                if isinstance(s_key, str) and isinstance(cid_val, str):
+                    self.known_cond_by_slug[s_key] = cid_val
         prog_groups: dict[str, list[str]] = {}
         for w_slug, win in self.active_windows.items():
             prog_id = getattr(win, "program_id", "")
@@ -757,9 +769,10 @@ class LiveEngine:
                         effective_budget,
                         _effective_max_pairs(self.settings.max_markets),
                     )
+                    cond_cap_limit = max(Decimal("85.00"), self.settings.max_per_market)
                     est_cond_cap = (
                         min(
-                            Decimal("85.00"),
+                            cond_cap_limit,
                             max(Decimal("36.00"), (effective_budget / Decimal(str(est_pairs))) * Decimal("1.15")),
                         )
                         if est_pairs > 0
@@ -1184,6 +1197,7 @@ class LiveEngine:
             else:
                 live_positions[slug] = opt_pos
         self._sync_orders(exchange_open, {f.order_id for f in fills}, now_ts, now_ms, live_positions=live_positions)
+        self._check_auto_merges(live_positions, now_ts, now_ms)
 
         raw_realized_loss_today = self.ledger.get_realized_loss_today(now_dt)
         today_utc_str = now_dt.date().isoformat()
@@ -1356,17 +1370,18 @@ class LiveEngine:
             if (now_ts - self.last_prepare_ts) < YIELD_COLLAPSE_COOLDOWN_SECONDS:
                 self.yield_collapse_streak = 0
             elif active_slugs:
-                if live_portfolio_rate_sec < (self.expected_portfolio_rate_sec * YIELD_COLLAPSE_RATIO):
+                if live_portfolio_rate_sec < (self.expected_portfolio_rate_sec * self.settings.yield_collapse_ratio):
                     self.yield_collapse_streak += 1
                 else:
                     self.yield_collapse_streak = 0
             if (
-                self.yield_collapse_streak >= YIELD_COLLAPSE_TICKS
+                self.yield_collapse_streak >= self.settings.yield_collapse_ticks
                 and (now_ts - self.last_prepare_ts) >= YIELD_COLLAPSE_COOLDOWN_SECONDS
             ):
                 self.logger.info(
-                    "Yield collapse detected: live rate %s/s < 55%% of expected %s/s for %d ticks; triggering early reallocation",
+                    "Yield collapse detected: live rate %s/s < %d%% of expected %s/s for %d ticks; triggering early reallocation",
                     live_portfolio_rate_sec,
+                    int(self.settings.yield_collapse_ratio * Decimal("100")),
                     self.expected_portfolio_rate_sec,
                     self.yield_collapse_streak,
                 )
@@ -1432,6 +1447,131 @@ class LiveEngine:
                     self.prepare(is_realloc=True)
 
         return 1.0
+
+    def run_once(self, now_ts: float | None = None) -> float:
+        return self.tick(now_ts if now_ts is not None else time.time())
+
+    def _check_auto_merges(
+        self,
+        live_positions: dict[str, Position],
+        now_ts: float,
+        now_ms: int,
+    ) -> None:
+        if not self.settings.enable_auto_merge:
+            return
+
+        for yes_slug, no_slug in self.condition_pairs:
+            pos_yes = live_positions.get(yes_slug)
+            pos_no = live_positions.get(no_slug)
+            if (
+                pos_yes is not None
+                and pos_no is not None
+                and pos_yes.net_qty >= self.settings.min_merge_shares
+                and pos_no.net_qty >= self.settings.min_merge_shares
+            ):
+                merge_shares = min(pos_yes.net_qty, pos_no.net_qty)
+                cond_id = None
+                win_yes = self.active_windows.get(yes_slug)
+                if win_yes is not None:
+                    cond_id = getattr(win_yes, "condition_id", None) or getattr(win_yes, "program_id", None)
+                if not cond_id or cond_id in ("none", "unwind"):
+                    cond_id = self.known_cond_by_slug.get(yes_slug)
+                if not cond_id or cond_id in ("none", "unwind"):
+                    win_no = self.active_windows.get(no_slug)
+                    if win_no is not None:
+                        cond_id = getattr(win_no, "condition_id", None) or getattr(win_no, "program_id", None)
+                if not cond_id or cond_id in ("none", "unwind"):
+                    cond_id = self.known_cond_by_slug.get(no_slug)
+
+                if cond_id:
+                    wallet_addr = (
+                        getattr(self.settings, "address", None)
+                        or getattr(self.settings, "proxy_wallet_address", None)
+                        or getattr(self.settings, "polymarket_proxy_address", None)
+                    )
+                    ok, tx_hash = self.merger.merge_positions(
+                        cond_id,
+                        merge_shares,
+                        wallet_address=wallet_addr,
+                    )
+                    if ok:
+                        self.logger.info(
+                            "🎉 [AUTO-MERGE CONFIRMED] Condition %s: merged %s shares -> +$%s USDC cash freed! TX: %s",
+                            cond_id[:10],
+                            merge_shares,
+                            merge_shares,
+                            tx_hash,
+                        )
+                        pos_yes = dataclasses.replace(pos_yes, net_qty=pos_yes.net_qty - merge_shares)
+                        pos_no = dataclasses.replace(pos_no, net_qty=pos_no.net_qty - merge_shares)
+                        live_positions[yes_slug] = pos_yes
+                        live_positions[no_slug] = pos_no
+
+                        if yes_slug in self.local_fill_positions:
+                            self.local_fill_positions[yes_slug] = (pos_yes, now_ts)
+                        if no_slug in self.local_fill_positions:
+                            self.local_fill_positions[no_slug] = (pos_no, now_ts)
+
+                        if hasattr(self.ledger, "update_position"):
+                            try:
+                                self.ledger.update_position(pos_yes, ts_ms=now_ms)
+                                self.ledger.update_position(pos_no, ts_ms=now_ms)
+                            except Exception as lex:
+                                self.logger.warning("Failed to update position in ledger after merge: %s", lex)
+
+                        if hasattr(self.ledger, "record_fill"):
+                            try:
+                                merge_fill_id = f"merge-{cond_id[:8]}-{int(now_ts)}"
+                                fill_yes = ShadowFill(
+                                    fill_id=f"{merge_fill_id}-yes",
+                                    order_id=f"automerge-{tx_hash[:10] if tx_hash else int(now_ts)}",
+                                    slug=yes_slug,
+                                    side="SELL_LONG",
+                                    price=Decimal("0.50"),
+                                    qty=merge_shares,
+                                    fee=Decimal("0"),
+                                    is_maker=False,
+                                    ts_ms=now_ms,
+                                )
+                                fill_no = ShadowFill(
+                                    fill_id=f"{merge_fill_id}-no",
+                                    order_id=f"automerge-{tx_hash[:10] if tx_hash else int(now_ts)}",
+                                    slug=no_slug,
+                                    side="SELL_LONG",
+                                    price=Decimal("0.50"),
+                                    qty=merge_shares,
+                                    fee=Decimal("0"),
+                                    is_maker=False,
+                                    ts_ms=now_ms,
+                                )
+                                self.ledger.record_fill(fill_yes)
+                                self.ledger.record_fill(fill_no)
+                            except Exception as fill_exc:
+                                self.logger.warning("Could not record merge fills in ledger: %s", fill_exc)
+
+                        if hasattr(self, "notifier") and self.notifier is not None:
+                            try:
+                                if hasattr(self.notifier, "notify_auto_merge"):
+                                    self.notifier.notify_auto_merge(cond_id, merge_shares, tx_hash)
+                                elif hasattr(self.notifier, "send"):
+                                    self.notifier.send(
+                                        title="Auto-Merge Confirmed",
+                                        message=f"Condition {cond_id[:10]}: merged {merge_shares} shares -> +${merge_shares} USDC cash freed (TX: {tx_hash})",
+                                        level="info",
+                                        extra={"condition_id": cond_id, "shares": str(merge_shares), "tx_hash": str(tx_hash or "")},
+                                    )
+                            except Exception as notif_exc:
+                                self.logger.warning("Auto-merge notification failed: %s", notif_exc)
+
+                        if hasattr(self.auth_client, "invalidate_buying_power_cache"):
+                            self.auth_client.invalidate_buying_power_cache()
+                        if hasattr(self.auth_client, "_buying_power_cache"):
+                            self.auth_client._buying_power_cache = None
+                        if hasattr(self.auth_client, "_buying_power_cache_ts"):
+                            self.auth_client._buying_power_cache_ts = 0.0
+                        if hasattr(self.auth_client, "invalidate_positions_cache"):
+                            self.auth_client.invalidate_positions_cache()
+                        self.last_auto_merge_ts = now_ts
 
     def _fill_window_start(self, now_ts: float) -> datetime:
         start = max(self.started_at, now_ts - FILL_WINDOW_SECONDS) - FILL_LOOKBACK_SECONDS

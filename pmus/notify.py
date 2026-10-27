@@ -90,6 +90,20 @@ class Notifier:
         }
         return self.send(title=title, message=msg, level="info", extra=extra)
 
+    def notify_auto_merge(
+        self, condition_id: str, shares: Decimal, tx_hash: str | None = None
+    ) -> threading.Thread | None:
+        title = "Auto-Merge Confirmed"
+        tx_str = str(tx_hash) if tx_hash else ""
+        tx_display = f" (TX: {tx_str[:12]}...)" if len(tx_str) > 12 else (f" (TX: {tx_str})" if tx_str else "")
+        msg = f"Condition {condition_id[:10]}: merged {shares} shares -> +${shares} USDC cash freed{tx_display}"
+        extra = {
+            "condition_id": str(condition_id),
+            "shares": str(shares),
+            "tx_hash": tx_str,
+        }
+        return self.send(title=title, message=msg, level="info", extra=extra)
+
     def notify_daily_loss_stop(self, loss: Decimal, stop: Decimal) -> threading.Thread | None:
         title = "Daily Loss Stop Tripped"
         msg = f"Daily realized loss stop reached: ${loss:.2f} >= ${stop:.2f}. Trading halted."

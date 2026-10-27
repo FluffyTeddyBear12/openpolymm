@@ -40,6 +40,27 @@ class Settings:
     dashboard_password: str = ""
     reallocate_seconds: int = 3600
     min_24h_volume: Decimal = Decimal("5000.00")
+    builder_api_key: str | None = None
+    builder_secret: str | None = None
+    builder_passphrase: str | None = None
+    relayer_url: str = "https://relayer-v2.polymarket.com"
+    polygon_rpc_url: str = "https://polygon-bor-rpc.publicnode.com"
+    enable_auto_merge: bool = True
+    min_merge_shares: Decimal = Decimal("5.0")
+    yield_collapse_ratio: Decimal = Decimal("0.40")
+    yield_collapse_ticks: int = 60
+
+    @property
+    def private_key(self) -> str:
+        return self.polygon_private_key
+
+    @property
+    def address(self) -> str:
+        return self.polymarket_proxy_address
+
+    @property
+    def proxy_wallet_address(self) -> str:
+        return self.polymarket_proxy_address
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -104,6 +125,37 @@ class Settings:
             except Exception:
                 total_budget = Decimal("0.00")
 
+        builder_api_key = os.getenv("POLY_BUILDER_API_KEY")
+        if builder_api_key is not None:
+            builder_api_key = builder_api_key.strip() or None
+
+        builder_secret = os.getenv("POLY_BUILDER_SECRET")
+        if builder_secret is not None:
+            builder_secret = builder_secret.strip() or None
+
+        builder_passphrase = os.getenv("POLY_BUILDER_PASSPHRASE")
+        if builder_passphrase is not None:
+            builder_passphrase = builder_passphrase.strip() or None
+
+        relayer_url = os.getenv("PMUS_RELAYER_URL", "https://relayer-v2.polymarket.com").strip()
+        polygon_rpc_url = os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com").strip()
+        enable_auto_merge = os.getenv("PMUS_ENABLE_AUTO_MERGE", "1").strip().lower() in ("1", "true", "yes")
+
+        try:
+            min_merge_shares = Decimal(os.getenv("PMUS_MIN_MERGE_SHARES", "5.0").strip())
+        except Exception:
+            min_merge_shares = Decimal("5.0")
+
+        try:
+            yield_collapse_ratio = Decimal(os.getenv("PMUS_YIELD_COLLAPSE_RATIO", "0.40").strip())
+        except Exception:
+            yield_collapse_ratio = Decimal("0.40")
+
+        try:
+            yield_collapse_ticks = int(os.getenv("PMUS_YIELD_COLLAPSE_TICKS", "60").strip())
+        except Exception:
+            yield_collapse_ticks = 60
+
         return cls(
             key_id=os.getenv("PMUS_KEY_ID", "").strip(),
             secret_key=os.getenv("PMUS_SECRET_KEY", "").strip(),
@@ -139,4 +191,20 @@ class Settings:
             dashboard_password=dashboard_password,
             reallocate_seconds=int(os.getenv("PMUS_REALLOCATE_SECONDS", "3600")),
             min_24h_volume=Decimal(os.getenv("PMUS_MIN_24H_VOLUME", "5000.00")),
+            builder_api_key=builder_api_key,
+            builder_secret=builder_secret,
+            builder_passphrase=builder_passphrase,
+            relayer_url=relayer_url,
+            polygon_rpc_url=polygon_rpc_url,
+            enable_auto_merge=enable_auto_merge,
+            min_merge_shares=min_merge_shares,
+            yield_collapse_ratio=yield_collapse_ratio,
+            yield_collapse_ticks=yield_collapse_ticks,
         )
+
+
+def load_settings() -> Settings:
+    return Settings.from_env()
+
+
+Settings.load_settings = classmethod(lambda cls: cls.from_env())  # type: ignore[attr-defined]

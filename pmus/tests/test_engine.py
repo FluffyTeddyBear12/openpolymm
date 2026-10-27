@@ -1920,7 +1920,13 @@ def test_live_engine_yield_collapse_early_reallocation():
     risk_mgr.is_maintenance_active.return_value = False
     risk_mgr.check_pre_submit.return_value = MagicMock(allowed=True)
 
-    settings = Settings(venue="global", total_budget=Decimal("200.00"), max_per_market=Decimal("100.00"))
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("200.00"),
+        max_per_market=Decimal("100.00"),
+        yield_collapse_ratio=Decimal("0.55"),
+        yield_collapse_ticks=15,
+    )
     engine = LiveEngine(
         settings=settings,
         ledger=ledger,
