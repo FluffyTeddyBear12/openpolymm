@@ -250,6 +250,127 @@ class TestNegRiskBasketScanner(unittest.TestCase):
         self.assertIn("to", tx)
         self.assertEqual(tx["to"], NegRiskAdapter.CTF_EXCHANGE_ADDRESS)
 
+    def test_incomplete_sub_basket_rejection(self):
+        """Test incomplete sub-baskets are rejected when len(outcomes) < expected_count."""
+        basket_markets = [
+            {"condition_id": "0xO1", "neg_risk": True, "neg_risk_market_id": "BASKET_INCOMPLETE", "token_yes": "T1", "token_no": "T1_NO"},
+            {"condition_id": "0xO2", "neg_risk": True, "neg_risk_market_id": "BASKET_INCOMPLETE", "token_yes": "T2", "token_no": "T2_NO"},
+            {"condition_id": "0xO3", "neg_risk": True, "neg_risk_market_id": "BASKET_INCOMPLETE", "token_yes": "T3", "token_no": "T3_NO"},
+        ]
+        self.scanner.index_market_universe(basket_markets)
+        self.scanner.basket_expected_counts["BASKET_INCOMPLETE"] = 4
+
+        books = {"0xO1": {"T1": 0.20, "T1_NO": 0.80}, "0xO2": {"T2": 0.20, "T2_NO": 0.80}, "0xO3": {"T3": 0.20, "T3_NO": 0.80}}
+        depths = {"0xO1": {"T1": 50.0, "T1_NO": 50.0}, "0xO2": {"T2": 50.0, "T2_NO": 50.0}, "0xO3": {"T3": 50.0, "T3_NO": 50.0}}
+
+        self.assertIsNone(self.scanner.check_basket_parity("BASKET_INCOMPLETE", books, depths))
+        self.assertIsNone(self.scanner.check_no_basket_parity("BASKET_INCOMPLETE", books, depths))
+
+    def test_check_no_basket_parity(self):
+        """Test check_no_basket_parity calculates correct NO basket payout and edge."""
+        basket_markets = [
+            {"condition_id": "0xN1", "neg_risk": True, "neg_risk_market_id": "BASKET_NO", "token_yes": "TY1", "token_no": "TN1"},
+            {"condition_id": "0xN2", "neg_risk": True, "neg_risk_market_id": "BASKET_NO", "token_yes": "TY2", "token_no": "TN2"},
+            {"condition_id": "0xN3", "neg_risk": True, "neg_risk_market_id": "BASKET_NO", "token_yes": "TY3", "token_no": "TN3"},
+        ]
+        self.scanner.index_market_universe(basket_markets)
+
+        books = {"0xN1": {"TN1": 0.60}, "0xN2": {"TN2": 0.60}, "0xN3": {"TN3": 0.60}}
+        depths = {"0xN1": {"TN1": 100.0}, "0xN2": {"TN2": 150.0}, "0xN3": {"TN3": 80.0}}
+
+        opp = self.scanner.check_no_basket_parity("BASKET_NO", books, depths, min_edge=0.015)
+        self.assertIsNotNone(opp)
+        self.assertEqual(opp["execution_type"], "negrisk_no_basket")
+        self.assertEqual(opp["payout"], 2.0)
+        self.assertEqual(opp["sum_ask"], 1.80)
+        self.assertEqual(opp["edge"], 0.20)
+        self.assertEqual(opp["max_shares"], 80.0)
+
+    def test_check_over_parity_sell(self):
+        """Test check_over_parity_sell detects when sum of bids > 1.00."""
+        basket_markets = [
+            {"condition_id": "0xS1", "neg_risk": True, "neg_risk_market_id": "BASKET_OVER", "token_yes": "TS1", "token_no": "TS1_NO"},
+            {"condition_id": "0xS2", "neg_risk": True, "neg_risk_market_id": "BASKET_OVER", "token_yes": "TS2", "token_no": "TS2_NO"},
+            {"condition_id": "0xS3", "neg_risk": True, "neg_risk_market_id": "BASKET_OVER", "token_yes": "TS3", "token_no": "TS3_NO"},
+        ]
+        self.scanner.index_market_universe(basket_markets)
+
+        books_over = {"0xS1": {"TS1": 0.36}, "0xS2": {"TS2": 0.36}, "0xS3": {"TS3": 0.36}}
+        depths = {"0xS1": {"TS1": 100.0}, "0xS2": {"TS2": 100.0}, "0xS3": {"TS3": 100.0}}
+
+        opp = self.scanner.check_over_parity_sell("BASKET_OVER", books_over, depths, min_edge=0.015)
+        self.assertIsNotNone(opp)
+        self.assertEqual(opp["execution_type"], "negrisk_over_parity_sell")
+        self.assertEqual(opp["sum_bid"], 1.08)
+        self.assertAlmostEqual(opp["edge"], 0.08, places=4)
+        self.assertEqual(opp["max_shares"], 100.0)
+
+        books_under = {"0xS1": {"TS1": 0.32}, "0xS2": {"TS2": 0.32}, "0xS3": {"TS3": 0.32}}
+        self.assertIsNone(self.scanner.check_over_parity_sell("BASKET_OVER", books_under, depths, min_edge=0.015))
+
+    def test_check_calendar_monotonicity(self):
+        """Test calendar monotonicity arbitrage detection."""
+        books = {
+            "0xMKT_EARLY": {"bid": 0.60, "ask": 0.62},
+            "0xMKT_LATE": {"bid": 0.53, "ask": 0.55},
+        }
+        depths = {
+            "0xMKT_EARLY": {"depth_bid": 100.0, "depth_ask": 100.0},
+            "0xMKT_LATE": {"depth_bid": 100.0, "depth_ask": 80.0},
+        }
+
+        opp = self.scanner.check_calendar_monotonicity(
+            earlier_market="0xMKT_EARLY",
+            later_market="0xMKT_LATE",
+            market_books=books,
+            market_depths=depths,
+            min_edge=0.01,
+        )
+        self.assertIsNotNone(opp)
+        self.assertEqual(opp["execution_type"], "calendar_monotonicity")
+        self.assertEqual(opp["bid_early"], 0.60)
+        self.assertEqual(opp["ask_late"], 0.55)
+        self.assertAlmostEqual(opp["edge"], 0.05, places=4)
+        self.assertEqual(opp["max_shares"], 80.0)
+
+        books_monotonic = {
+            "0xMKT_EARLY": {"bid": 0.50, "ask": 0.52},
+            "0xMKT_LATE": {"bid": 0.53, "ask": 0.55},
+        }
+        self.assertIsNone(
+            self.scanner.check_calendar_monotonicity(
+                earlier_market="0xMKT_EARLY",
+                later_market="0xMKT_LATE",
+                market_books=books_monotonic,
+                market_depths=depths,
+                min_edge=0.01,
+            )
+        )
+
+    def test_adapter_format_convert_no_transaction(self):
+        """Test NegRiskAdapter.format_convert_no_transaction."""
+        mid = "0x" + "a" * 64
+        tx = self.adapter.format_convert_no_transaction(mid, num_outcomes=3, amount_shares=15.0)
+        self.assertIsInstance(tx, dict)
+        self.assertEqual(tx["function"], "convertPositions")
+        self.assertEqual(tx["amount_shares"], 15.0)
+        self.assertEqual(tx["amount_raw"], 15_000_000)
+        self.assertEqual(tx["index_set"], 7)
+        self.assertTrue(tx["calldata"].startswith("0x"))
+        self.assertEqual(tx["to"], NegRiskAdapter.NEG_RISK_ADAPTER_ADDRESS)
+
+    def test_adapter_format_ctf_merge_v2_transaction(self):
+        """Test NegRiskAdapter.format_ctf_merge_v2_transaction with 5-arg CTF structure."""
+        cid = "0x" + "b" * 64
+        tx = self.adapter.format_ctf_merge_v2_transaction(cid, amount_shares=20.0, partition=[1, 2])
+        self.assertIsInstance(tx, dict)
+        self.assertEqual(tx["function"], "mergePositions")
+        self.assertEqual(tx["partition"], [1, 2])
+        self.assertEqual(tx["amount_shares"], 20.0)
+        self.assertEqual(tx["amount_raw"], 20_000_000)
+        self.assertTrue(tx["calldata"].startswith("0x9e7212ad"))
+        self.assertEqual(tx["to"], NegRiskAdapter.CTF_EXCHANGE_ADDRESS)
+
 
 if __name__ == "__main__":
     unittest.main()

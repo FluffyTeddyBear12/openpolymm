@@ -11,6 +11,7 @@ import json
 import math
 import logging
 import threading
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger("RewardHarvester")
@@ -18,6 +19,20 @@ logger = logging.getLogger("RewardHarvester")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(BASE_DIR, "dashboard_state.json")
 MARKETS_FILE = os.path.join(BASE_DIR, "markets.json")
+
+
+@dataclass(frozen=True)
+class PairedRewardQuote:
+    market_id: str
+    bid_yes: float
+    bid_no: float
+    size_shares: float
+    required_capital_usd: float
+    q_one: float
+    q_two: float
+    q_min: float
+    locked_pair_edge: float
+    estimated_daily_usdc: float
 
 
 def _safe_float(val: Any, default: float = 0.0) -> float:
@@ -28,6 +43,60 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
         return f if math.isfinite(f) else default
     except (ValueError, TypeError):
         return default
+
+
+def compute_quadratic_order_score(
+    max_spread_cents: float,
+    distance_cents: float,
+    size: float
+) -> float:
+    """
+    Computes single-order Polymarket quadratic reward score:
+        S(v, s) = ((v - s) / v)^2 * size
+    where:
+        v = max_spread_cents (max incentive spread distance, e.g. 3.5 cents)
+        s = distance_cents from midpoint
+        size = order size in shares
+    Returns 0.0 if distance >= max_spread, max_spread <= 0, or size <= 0.
+    """
+    v = _safe_float(max_spread_cents, 0.0)
+    s = _safe_float(distance_cents, 0.0)
+    sz = _safe_float(size, 0.0)
+
+    if v <= 0.0 or sz <= 0.0:
+        return 0.0
+    if s < 0.0:
+        s = abs(s)
+    if s >= v:
+        return 0.0
+
+    score = (((v - s) / v) ** 2) * sz
+    return float(score)
+
+
+def combine_two_sided_q_score(
+    q_one: float,
+    q_two: float,
+    midpoint: float = 0.50,
+    c: float = 3.0
+) -> float:
+    """
+    Combines two-sided order scores under Polymarket's [0.10, 0.90] midpoint rule.
+    In-band (0.10 <= midpoint <= 0.90):
+        single-sided liquidity receives 1/c (default 1/3) credit:
+        combined = max(min(q_one, q_two), max(q_one, q_two) / c)
+    Outside band (midpoint < 0.10 or midpoint > 0.90):
+        only two-sided liquidity scores:
+        combined = min(q_one, q_two)
+    """
+    q1 = max(0.0, _safe_float(q_one, 0.0))
+    q2 = max(0.0, _safe_float(q_two, 0.0))
+    mid = _safe_float(midpoint, 0.50)
+    divisor = max(_safe_float(c, 3.0), 1e-6)
+
+    if 0.10 <= mid <= 0.90:
+        return float(max(min(q1, q2), max(q1, q2) / divisor))
+    return float(min(q1, q2))
 
 
 def compute_reward_efficiency_index(
@@ -60,6 +129,8 @@ class RewardHarvester:
     """
 
     compute_reward_efficiency_index = staticmethod(compute_reward_efficiency_index)
+    compute_quadratic_order_score = staticmethod(compute_quadratic_order_score)
+    combine_two_sided_q_score = staticmethod(combine_two_sided_q_score)
 
     def __init__(
         self,
@@ -421,3 +492,112 @@ class RewardHarvester:
                 "total_daily_pool": total_pool,
                 "status": "🟢 HARVESTING ACTIVE"
             }
+
+    def build_paired_bid_quote(
+        self,
+        market_id: str,
+        bid_yes: float,
+        bid_no: float,
+        size_shares: Optional[float] = None,
+        midpoint_yes: Optional[float] = None,
+        midpoint_no: Optional[float] = None,
+        max_spread_cents: Optional[float] = None,
+        daily_rate_override: Optional[float] = None,
+    ) -> Optional[PairedRewardQuote]:
+        """
+        Constructs a PairedRewardQuote with quadratic scoring and estimated daily USDC rewards.
+        Enforces binary locked pair pricing (edge = 1.0 - (bid_yes + bid_no)).
+        """
+        with self.lock:
+            market = self.reward_markets.get(str(market_id))
+            if market is None:
+                market = self.market_token_map.get(str(market_id), {})
+
+        b_yes = _safe_float(bid_yes, 0.0)
+        b_no = _safe_float(bid_no, 0.0)
+
+        if size_shares is None:
+            sz = _safe_float(market.get("min_size", 200.0), 200.0)
+        else:
+            sz = _safe_float(size_shares, 200.0)
+
+        if max_spread_cents is None:
+            max_sp = self.extract_max_spread(market, default=3.5)
+            v_cents = max_sp * 100.0 if max_sp <= 0.10 else max_sp
+        else:
+            v_cents = _safe_float(max_spread_cents, 3.5)
+
+        if midpoint_yes is not None:
+            mid_y = _safe_float(midpoint_yes, 0.50)
+        else:
+            mid_y = (b_yes + (1.0 - b_no)) / 2.0 if (b_yes > 0 and b_no > 0) else 0.50
+
+        if midpoint_no is not None:
+            mid_n = _safe_float(midpoint_no, 1.0 - mid_y)
+        else:
+            mid_n = 1.0 - mid_y
+
+        dist_y_cents = abs(mid_y - b_yes) * 100.0 if b_yes <= 1.0 else abs(mid_y - b_yes)
+        dist_n_cents = abs(mid_n - b_no) * 100.0 if b_no <= 1.0 else abs(mid_n - b_no)
+
+        q_one = compute_quadratic_order_score(v_cents, dist_y_cents, sz)
+        q_two = compute_quadratic_order_score(v_cents, dist_n_cents, sz)
+        q_min = min(q_one, q_two)
+
+        required_capital = (b_yes + b_no) * sz
+        locked_edge = 1.0000 - (b_yes + b_no)
+
+        rate = daily_rate_override if daily_rate_override is not None else self.extract_daily_rate(market)
+        combined_q = combine_two_sided_q_score(q_one, q_two, midpoint=mid_y)
+        if rate > 0.0 and combined_q > 0.0:
+            competing = max(5000.0, _safe_float(market.get("liquidity", 10000.0), 10000.0))
+            share = combined_q / (competing + combined_q)
+            est_daily = rate * share
+        else:
+            est_daily = 0.0
+
+        return PairedRewardQuote(
+            market_id=str(market_id),
+            bid_yes=round(b_yes, 4),
+            bid_no=round(b_no, 4),
+            size_shares=round(sz, 4),
+            required_capital_usd=round(required_capital, 4),
+            q_one=round(q_one, 4),
+            q_two=round(q_two, 4),
+            q_min=round(q_min, 4),
+            locked_pair_edge=round(locked_edge, 6),
+            estimated_daily_usdc=round(est_daily, 4),
+        )
+
+    def rank_paired_reward_markets(
+        self,
+        quotes: Optional[List[PairedRewardQuote]] = None,
+        sort_by: str = "daily_usdc",
+        limit: Optional[int] = None,
+    ) -> List[PairedRewardQuote]:
+        """
+        Ranks paired reward quotes by estimated daily USDC, locked edge, or quadratic score.
+        """
+        quote_list = list(quotes) if quotes is not None else []
+        if sort_by in ("edge", "locked_edge", "locked_pair_edge"):
+            sorted_quotes = sorted(
+                quote_list,
+                key=lambda q: (q.locked_pair_edge, q.estimated_daily_usdc, q.q_min),
+                reverse=True,
+            )
+        elif sort_by in ("q_min", "q_score", "score"):
+            sorted_quotes = sorted(
+                quote_list,
+                key=lambda q: (q.q_min, q.estimated_daily_usdc, q.locked_pair_edge),
+                reverse=True,
+            )
+        else:  # default "daily_usdc"
+            sorted_quotes = sorted(
+                quote_list,
+                key=lambda q: (q.estimated_daily_usdc, q.locked_pair_edge, q.q_min),
+                reverse=True,
+            )
+
+        if limit is not None and limit > 0:
+            return sorted_quotes[:limit]
+        return sorted_quotes

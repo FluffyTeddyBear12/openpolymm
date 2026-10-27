@@ -139,6 +139,20 @@ class TestOrderReaper(unittest.TestCase):
         self.assertEqual(len(self.reaper._active_registry), 0)
         self.mock_client.cancel_all.assert_called_once()
 
+    def test_purge_all_orders_preserve_passive_unwinds(self):
+        self.reaper.register_order("order_regular", size=10.0, is_passive_unwind=False)
+        self.reaper.register_order("order_passive", size=5.0, is_passive_unwind=True)
+        self.mock_client.get_open_orders.return_value = [{"id": "order_regular"}, {"id": "order_passive"}]
+
+        res = self.reaper.purge_all_orders(preserve_passive_unwinds=True)
+        self.assertEqual(res["status"], "SUCCESS")
+        self.mock_client.cancel_all.assert_not_called()
+        self.mock_client.cancel_orders.assert_called_once_with(["order_regular"])
+        self.assertNotIn("order_regular", self.reaper._active_registry)
+        self.assertIn("order_passive", self.reaper._active_registry)
+        self.assertEqual(res["cancelled_count"], 1)
+        self.assertEqual(res["cleared_registered"], 1)
+
     def test_zombie_with_partial_fill_triggers_rollback_protector(self):
         self.mock_client.get_open_orders.return_value = [
             {"id": "zombie_filled_1", "asset_id": "tok_unwind", "price": 0.45}

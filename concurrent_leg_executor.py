@@ -446,14 +446,17 @@ class ConcurrentLegExecutor:
 
                     h_status = str((leg_h.get("status") if isinstance(leg_h, dict) else getattr(leg_h, "status", "")) or "").upper()
                     if not h_err and (h_taking > 0 or h_status in ("MATCHED", "FILLED")):
-                        actual_hedge_price = best_ask
-                        total_cost = round(filled_size * (filled_price + actual_hedge_price), 4)
+                        actual_hedge_price = hedge_price
+                        actual_cost_missing = filled_size * actual_hedge_price
+                        total_cost = round(filled_size * filled_price + actual_cost_missing, 4)
                         profit = round(filled_size * 1.0 - total_cost, 4)
                         self._log_activity(f"✅ [HEDGE SECURED] Completed dual pair! Realized edge: +${profit:.4f}.")
                         return True, "HEDGE_RECOVERED", {
                             "shares": filled_size,
                             "total_cost": total_cost,
+                            "actual_cost_missing": round(actual_cost_missing, 4),
                             "profit": profit,
+                            "net_profit_after_fees": round(filled_size * 1.0 - total_cost * (1.0 + self.fee_rate), 4),
                             "hedge_price": actual_hedge_price,
                             "resp": resp_h,
                         }

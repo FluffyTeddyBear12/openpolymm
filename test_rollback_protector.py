@@ -231,6 +231,8 @@ class TestRollbackProtector(unittest.TestCase):
         assert ok is False
         assert action == "MARKET_EXIT_FAILED"
         assert "balance is not enough" in res["error"]
+        assert res["tokens_still_held"] is True
+        assert res["unrealized_exposure"] == 5.0
         assert mock_sleep.call_count == 3
 
     @patch("rollback_protector.time.sleep")
@@ -359,5 +361,32 @@ class TestRollbackProtector(unittest.TestCase):
         order_arg = mock_client.create_order.call_args[0][0]
         actual_price = getattr(order_arg, "price", order_arg.get("price") if isinstance(order_arg, dict) else None)
         assert actual_price == 0.48
+
+    def test_killed_fok_exit_detected_and_falls_back_to_limit_sell(self):
+        """
+        Verify that when FOK market exit order is killed by CLOB (status="killed"),
+        RollbackProtector detects the kill error and automatically falls back to
+        posting a loss-free GTC limit sell order.
+        """
+        mock_client = MagicMock()
+        mock_client.get_order_book.return_value = {"bids": [{"price": 0.50}]}
+        mock_client.post_orders.side_effect = [
+            [{"status": "killed"}],
+            [{"orderID": "0xlimit_fallback_999", "status": "live"}],
+        ]
+
+        ok, action, res = RollbackProtector.safe_unwind_or_limit_exit(
+            client=mock_client,
+            token_id="tok_killed_fok",
+            shares=10.0,
+            buy_price=0.50,
+        )
+
+        assert ok is True
+        assert action == "LIMIT_ORDER_PLACED"
+        assert res["order_id"] == "0xlimit_fallback_999"
+        assert res["price"] == 0.50
+        assert res["fallback_from_market_exit"] is True
+        assert res["realized_loss"] == 0.0
 
 

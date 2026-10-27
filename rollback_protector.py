@@ -249,6 +249,50 @@ class RollbackProtector:
                 return True, "MARKET_EXIT_SAFE", resp_payload
             else:
                 logger.warning(f"Market exit FOK order rejected for {token_id}: {err}")
+                if not force_market_exit and not ('balance' in str(err).lower() or 'allowance' in str(err).lower()):
+                    if limit_price_override is not None:
+                        limit_price = round(float(limit_price_override), 4)
+                    else:
+                        limit_price = round(buy_price, 4)
+                    succ_l, resp_l, err_l = cls_or_self._post_sell_order(
+                        client=client,
+                        token_id=token_id,
+                        price=limit_price,
+                        shares=shares,
+                        order_type="GTC",
+                        tick_size=tick_size,
+                        neg_risk=neg_risk,
+                    )
+                    for retry in range(3):
+                        if succ_l:
+                            break
+                        if err_l and ('balance' in str(err_l).lower() or 'allowance' in str(err_l).lower()):
+                            time.sleep(1.0)
+                            succ_l, resp_l, err_l = cls_or_self._post_sell_order(
+                                client=client,
+                                token_id=token_id,
+                                price=limit_price,
+                                shares=shares,
+                                order_type="GTC",
+                                tick_size=tick_size,
+                                neg_risk=neg_risk,
+                            )
+                    if succ_l:
+                        order_id = cls_or_self.extract_order_id(resp_l) or ""
+                        log_msg = (
+                            f"🛡️ [FALLBACK LIMIT EXIT] Immediate market exit failed ({err}). "
+                            f"Placed fallback limit sell at ${limit_price:.4f} (buy price ${buy_price:.4f})."
+                        )
+                        logger.info(log_msg)
+                        if target_state:
+                            target_state.add_activity_log(log_msg)
+                        return True, "LIMIT_ORDER_PLACED", {
+                            "order_id": order_id,
+                            "price": limit_price,
+                            "realized_loss": 0.0,
+                            "fallback_from_market_exit": True,
+                        }
+
                 return False, "MARKET_EXIT_FAILED", {
                     "error": err,
                     "resp": resp,
@@ -257,6 +301,8 @@ class RollbackProtector:
                     "sell_price": sell_price,
                     "buy_price": buy_price,
                     "shares": shares,
+                    "tokens_still_held": True,
+                    "unrealized_exposure": round(shares * buy_price, 4),
                 }
 
         else:
@@ -302,7 +348,14 @@ class RollbackProtector:
                 logger.error(
                     f"Failed to place passive limit sell order at ${limit_price:.4f} for {token_id}: {err}"
                 )
-                return False, "LIMIT_ORDER_FAILED", {"error": err, "price": limit_price, "resp": resp, "realized_loss": round(shares * buy_price, 4)}
+                return False, "LIMIT_ORDER_FAILED", {
+                    "error": err,
+                    "price": limit_price,
+                    "resp": resp,
+                    "realized_loss": round(shares * buy_price, 4),
+                    "tokens_still_held": True,
+                    "unrealized_exposure": round(shares * buy_price, 4),
+                }
 
     @staticmethod
     def fetch_order_book(client: Any, token_id: str) -> dict:
@@ -411,15 +464,30 @@ class RollbackProtector:
             if not resp:
                 return "Empty response list from CLOB"
             for r in resp:
-                if isinstance(r, dict) and r.get("errorMsg"):
-                    return str(r.get("errorMsg"))
-                if hasattr(r, "errorMsg") and getattr(r, "errorMsg"):
+                if isinstance(r, dict):
+                    if r.get("errorMsg"):
+                        return str(r.get("errorMsg"))
+                    status = str(r.get("status", "") or "").strip().lower()
+                    if status in ("killed", "canceled", "cancelled", "unmatched", "rejected"):
+                        return f"Order {status}"
+                elif hasattr(r, "errorMsg") and getattr(r, "errorMsg"):
                     return str(getattr(r, "errorMsg"))
+                elif hasattr(r, "status") and getattr(r, "status"):
+                    status = str(getattr(r, "status", "") or "").strip().lower()
+                    if status in ("killed", "canceled", "cancelled", "unmatched", "rejected"):
+                        return f"Order {status}"
         elif isinstance(resp, dict):
             if resp.get("errorMsg"):
                 return str(resp.get("errorMsg"))
             if resp.get("error"):
                 return str(resp.get("error"))
+            status = str(resp.get("status", "") or "").strip().lower()
+            if status in ("killed", "canceled", "cancelled", "unmatched", "rejected"):
+                return f"Order {status}"
+        elif hasattr(resp, "status") and getattr(resp, "status"):
+            status = str(getattr(resp, "status", "") or "").strip().lower()
+            if status in ("killed", "canceled", "cancelled", "unmatched", "rejected"):
+                return f"Order {status}"
         return None
 
     @classmethod

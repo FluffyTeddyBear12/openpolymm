@@ -3,6 +3,13 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 def setup_logging(log_level: str = "INFO", logs_dir: Path | None = None) -> logging.Logger:
+    try:
+        import sys
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
     if logs_dir is None:
         logs_dir = Path(__file__).resolve().parent / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)

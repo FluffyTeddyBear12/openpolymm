@@ -425,6 +425,7 @@ class TestMakerTakerEngine(unittest.TestCase):
             taker_price=0.520,
             size=10.0,
             timeout_seconds=2.0,
+            allow_loss_hedge_tolerance=0.0030,
         )
         self.assertTrue(success)
         self.assertEqual(reason, "SUCCESS")
@@ -467,6 +468,91 @@ class TestMakerTakerEngine(unittest.TestCase):
         self.assertEqual(meta["taker_price"], 0.492)
         self.assertEqual(meta["maker_price"], 0.48)
         self.assertEqual(self.mock_client.post_orders.call_count, 3)
+
+    def test_live_ask_spike_above_elastic_ceiling_triggers_compression_abort(self):
+        order_maker_obj = MagicMock()
+        order_rollback_obj = MagicMock()
+        self.mock_client.create_order.side_effect = [order_maker_obj, order_rollback_obj]
+        self.mock_client.post_orders.side_effect = [
+            [{"orderID": "maker_order_001"}],
+            [{"orderID": "rollback_order_001"}],
+        ]
+        self.mock_client.get_order.return_value = {
+            "status": "MATCHED",
+            "size_matched": "10.0",
+        }
+        in_memory_books = {
+            self.token_taker: {
+                "asks": [{"price": "0.550", "size": "50.0"}]
+            }
+        }
+
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=self.maker_price,   # 0.48
+            token_taker=self.token_taker,
+            taker_price=self.taker_price,   # 0.49
+            size=self.size,
+            timeout_seconds=2.0,
+            market_books=in_memory_books,
+            rollback_mode="LIMIT_SELL",
+        )
+
+        self.assertFalse(success)
+        self.assertEqual(reason, "TAKER_FAILED_ROLLBACK_LIMIT_PLACED")
+        self.assertEqual(meta["taker_error"], "EDGE_COMPRESSION_CEILING_EXCEEDED")
+        self.assertEqual(self.mock_client.post_orders.call_count, 2)
+
+    @patch("time.sleep")
+    def test_limit_sell_rollback_retries_balance_delay_and_registers_reaper(self, mock_sleep):
+        mock_reaper = MagicMock()
+        self.executor.reaper = mock_reaper
+
+        order_maker_obj = MagicMock()
+        order_taker_obj = MagicMock()
+        order_rollback_1 = MagicMock()
+        order_rollback_2 = MagicMock()
+        self.mock_client.create_order.side_effect = [
+            order_maker_obj,
+            order_taker_obj,
+            order_rollback_1,
+            order_rollback_2,
+        ]
+        self.mock_client.post_orders.side_effect = [
+            [{"orderID": "maker_001"}],
+            [{"errorMsg": "Order killed by book: Insufficient liquidity", "orderID": "taker_fail"}],
+            [{"errorMsg": "not enough balance: newly matched tokens awaiting CLOB credit"}],
+            [{"orderID": "rollback_retried_888"}],
+        ]
+        self.mock_client.get_order.return_value = {
+            "status": "MATCHED",
+            "size_matched": "10.0",
+        }
+
+        success, reason, meta = self.executor.execute_maker_taker_arbitrage(
+            token_maker=self.token_maker,
+            maker_price=0.48,
+            token_taker=self.token_taker,
+            taker_price=0.49,
+            size=10.0,
+            timeout_seconds=1.0,
+            rollback_mode="LIMIT_SELL",
+            market_id="mkt_poly_123",
+        )
+
+        self.assertFalse(success)
+        self.assertEqual(reason, "TAKER_FAILED_ROLLBACK_LIMIT_PLACED")
+        self.assertEqual(meta["rollback_order_id"], "rollback_retried_888")
+        self.assertEqual(mock_sleep.call_count, 1)
+        mock_reaper.register_order.assert_called_with(
+            "rollback_retried_888",
+            market_id="mkt_poly_123",
+            token_id=self.token_maker,
+            side="SELL",
+            price=0.48,
+            size=10.0,
+            is_passive_unwind=True,
+        )
 
 
 if __name__ == "__main__":

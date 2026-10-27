@@ -139,8 +139,12 @@ def _is_sports_market(market: dict, text: str = "") -> bool:
     if isinstance(tags, list):
         for t in tags:
             tag_str = str(t).lower()
-            if any(kw in tag_str for kw in ("sport", "sports", "nfl", "nba", "mlb", "nhl", "soccer", "football", "basketball", "baseball", "tennis", "mma", "ufc")):
-                return True
+            for kw in ("sport", "sports", "nfl", "nba", "mlb", "nhl", "soccer", "football", "basketball", "baseball", "tennis", "mma", "ufc"):
+                if kw in ("mma",):
+                    if re.search(r"\b" + re.escape(kw) + r"\b", tag_str):
+                        return True
+                elif kw in tag_str:
+                    return True
     elif isinstance(tags, str) and "sport" in tags.lower():
         return True
     if not text:
@@ -150,7 +154,20 @@ def _is_sports_market(market: dict, text: str = "") -> bool:
             str(market.get("slug") or market.get("market_slug") or ""),
             category
         ]).lower()
-    return any(kw in text for kw in SPORTS_KEYWORDS)
+
+    WORD_BOUNDARY_SPORTS = {"mma", "inning", "innings", "quarter", "minute"}
+    for kw in SPORTS_KEYWORDS:
+        if kw == "challenger":
+            if not any(t in text for t in ("tennis", "atp", "wta", "itf", "tour")):
+                continue
+            if re.search(r"\bchallenger\b", text):
+                return True
+        elif kw in WORD_BOUNDARY_SPORTS:
+            if re.search(r"\b" + re.escape(kw) + r"\b", text):
+                return True
+        elif kw in text:
+            return True
+    return False
 
 
 
@@ -423,9 +440,16 @@ def is_market_eligible(
         str(market.get("slug") or market.get("market_slug") or "")
     ]).lower()
 
+    WORD_BOUNDARY_TURBO = {"inning", "innings", "quarter", "minute"}
     for pattern in TURBO_AND_SHORT_DURATION_PATTERNS:
-        if pattern in market_title:
-            return False, f"Turbo/short-duration pattern rejected: '{pattern}'"
+        if pattern == "quarter" and not is_sports:
+            continue
+        if pattern in WORD_BOUNDARY_TURBO:
+            if re.search(r"\b" + re.escape(pattern) + r"\b", market_title):
+                return False, f"Turbo/short-duration pattern rejected: '{pattern}'"
+        else:
+            if pattern in market_title:
+                return False, f"Turbo/short-duration pattern rejected: '{pattern}'"
 
     if TIME_RANGE_REGEX.search(market_title):
         return False, "Turbo/short-duration pattern rejected: time interval format"
@@ -439,13 +463,31 @@ def is_market_eligible(
 
     HEAD_TO_HEAD_PATTERNS = (" vs ", " vs. ", " v ")
     SPORTS_SPECIFIC_PATTERNS = ("ipl", "odi", "t20", "btts", "o/u ", "mlb", "nba", "nfl", "nhl", "uefa", "cs2", "dota")
+
+    is_vetted = bool(market.get("is_vetted") or market.get("vetted"))
+    hours_until_start = None
+    if start_dt is not None:
+        now_utc = datetime.now(timezone.utc)
+        hours_until_start = (start_dt - now_utc).total_seconds() / 3600.0
+    elif market.get("hours_until_start") is not None:
+        try:
+            hours_until_start = float(market.get("hours_until_start"))
+        except (ValueError, TypeError):
+            hours_until_start = None
+
+    allow_vetted_h2h = is_vetted and hours_until_start is not None and hours_until_start >= 1.0
+
+    WORD_BOUNDARY_ILLIQUID = {"mma", "challenger", "inning", "innings", "quarter", "minute"}
     for pattern, label in ILLIQUID_PATTERNS:
+        if pattern == "challenger" and not is_sports:
+            continue
         if not is_sports and pattern in SPORTS_SPECIFIC_PATTERNS:
             continue
-        if pattern in HEAD_TO_HEAD_PATTERNS and not is_sports:
-            continue
+        if pattern in HEAD_TO_HEAD_PATTERNS:
+            if not is_sports or allow_vetted_h2h:
+                continue
         clean_pat = pattern.strip()
-        if len(clean_pat) <= 4 and clean_pat.isalnum():
+        if clean_pat in WORD_BOUNDARY_ILLIQUID or (len(clean_pat) <= 4 and clean_pat.isalnum()):
             if re.search(r"\b" + re.escape(clean_pat) + r"\b", search_text):
                 return False, f"Illiquid prop pattern rejected: {label} ('{pattern}')"
         else:

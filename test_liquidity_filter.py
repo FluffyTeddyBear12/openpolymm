@@ -360,6 +360,81 @@ class TestLiquidityFilter(unittest.TestCase):
         self.assertTrue(passed)
         self.assertEqual(reason, "OK")
 
+    def test_winning_word_does_not_trigger_inning_filter(self):
+        """Word 'winning' must not trigger turbo pattern filter for 'inning'."""
+        now = datetime.now(timezone.utc)
+        market = {
+            "question": "Will Trump be winning the popular vote in 2026?",
+            "volume24hr": 25000.0,
+            "endDateIso": (now + timedelta(days=30)).isoformat(),
+        }
+        passed, reason = is_market_eligible(market)
+        self.assertTrue(passed, f"Failed with reason: {reason}")
+        self.assertEqual(reason, "OK")
+
+    def test_fourth_quarter_gdp_passes(self):
+        """Non-sports '4th quarter GDP' question must pass without trigger on 'quarter'."""
+        now = datetime.now(timezone.utc)
+        market = {
+            "question": "Will US 4th quarter GDP growth exceed 2.5%?",
+            "volume24hr": 20000.0,
+            "endDateIso": (now + timedelta(days=60)).isoformat(),
+        }
+        passed, reason = is_market_eligible(market)
+        self.assertTrue(passed, f"Failed with reason: {reason}")
+        self.assertEqual(reason, "OK")
+
+    def test_fed_minutes_passes(self):
+        """Macro market mentioning 'Fed minutes' must not trigger 'minute' turbo pattern."""
+        now = datetime.now(timezone.utc)
+        market = {
+            "question": "Will Fed minutes mention inflation target adjustments?",
+            "volume24hr": 30000.0,
+            "endDateIso": (now + timedelta(days=14)).isoformat(),
+        }
+        passed, reason = is_market_eligible(market)
+        self.assertTrue(passed, f"Failed with reason: {reason}")
+        self.assertEqual(reason, "OK")
+
+    def test_summary_does_not_trigger_mma_sports(self):
+        """Market question containing 'summary' must not trigger 'mma' in sports keywords."""
+        now = datetime.now(timezone.utc)
+        market = {
+            "question": "Will the economic summary report indicate rate cuts?",
+            "volume24hr": 15000.0,
+            "endDateIso": (now + timedelta(days=20)).isoformat(),
+        }
+        passed, reason = is_market_eligible(market)
+        self.assertTrue(passed, f"Failed with reason: {reason}")
+        self.assertEqual(reason, "OK")
+
+    def test_political_challenger_passes(self):
+        """Political challenger market must not be classified as sports or challenger tennis."""
+        now = datetime.now(timezone.utc)
+        market = {
+            "question": "Will the primary challenger defeat the incumbent senator?",
+            "volume24hr": 40000.0,
+            "endDateIso": (now + timedelta(days=90)).isoformat(),
+        }
+        passed, reason = is_market_eligible(market)
+        self.assertTrue(passed, f"Failed with reason: {reason}")
+        self.assertEqual(reason, "OK")
+
+    def test_vetted_pre_game_vs_passes(self):
+        """Vetted pre-game match with hours_until_start >= 1.0 must pass head-to-head gating."""
+        now = datetime.now(timezone.utc)
+        market = {
+            "question": "Chiefs vs 49ers Super Bowl LVIII",
+            "category": "sports",
+            "volume24hr": 100000.0,
+            "gameStartTime": (now + timedelta(hours=3.0)).isoformat(),
+            "endDateIso": (now + timedelta(days=1)).isoformat(),
+            "is_vetted": True,
+        }
+        passed, reason = is_market_eligible(market)
+        self.assertTrue(passed, f"Failed with reason: {reason}")
+        self.assertEqual(reason, "OK")
+
 
 if __name__ == "__main__":
     unittest.main()

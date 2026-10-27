@@ -270,6 +270,47 @@ class TestConcurrentLegExecutor(unittest.TestCase):
         self.assertEqual(action, "DUAL_MATCH_SECURED")
         self.assertEqual(details["shares"], 10.0)
 
+    def test_stage1_hedge_uses_ceiled_hedge_price_and_reports_net_profit_after_fees(self):
+        order_y = MagicMock()
+        order_n = MagicMock()
+        order_h = MagicMock()
+        self.mock_client.create_order.side_effect = [order_y, order_n, order_h]
+
+        self.mock_client.post_orders.side_effect = [
+            [
+                {"orderID": "y_004", "status": "MATCHED", "takingAmount": "10.0"},
+                {"orderID": "n_004", "errorMsg": "Order killed by book", "takingAmount": "0.0"},
+            ],
+            [
+                {"orderID": "h_002", "status": "MATCHED", "takingAmount": "10.0"},
+            ],
+        ]
+
+        self.mock_rollback.fetch_order_book.return_value = {
+            "asks": [{"price": 0.491, "size": 20.0}]
+        }
+        self.mock_rollback.extract_best_ask.return_value = 0.491
+
+        ok, action, details = self.executor.execute_simultaneous_batch(
+            token_yes=self.token_yes,
+            ask_yes=0.48,
+            token_no=self.token_no,
+            ask_no=0.49,
+            shares=10.0,
+            available_cash=100.0,
+            tick_size=0.01,
+            max_hedge_tolerance=0.030,
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(action, "HEDGE_RECOVERED")
+        self.assertEqual(details["shares"], 10.0)
+        self.assertEqual(details["hedge_price"], 0.50)
+        self.assertEqual(details["actual_cost_missing"], 5.00)
+        self.assertEqual(details["total_cost"], 9.80)
+        self.assertEqual(details["profit"], 0.20)
+        self.assertEqual(details["net_profit_after_fees"], 0.1657)
+
 
 if __name__ == "__main__":
     unittest.main()

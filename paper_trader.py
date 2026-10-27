@@ -243,9 +243,19 @@ class ShadowParityTracker:
         self.by_reason: Dict[str, dict] = {
             r.value: {"count": 0, "pnl": 0.0} for r in MissedReason
         }
+        self._last_missed_by_key: Dict[Tuple[str, str], float] = {}
 
     def record_missed(self, opportunity: dict, reason: MissedReason) -> dict:
         reason_val = reason.value if isinstance(reason, MissedReason) else str(reason)
+        market_id = str(opportunity.get("market_id", ""))
+        now = time.time()
+        if reason_val == "CONCURRENCY_EXHAUSTED":
+            key = (market_id, "CONCURRENCY_EXHAUSTED")
+            with self.lock:
+                last_t = self._last_missed_by_key.get(key, 0.0)
+                if now - last_t < 2.0:
+                    return {}
+                self._last_missed_by_key[key] = now
         edge = float(opportunity.get("edge", 0.0) or 0.0)
         avail_depth = opportunity.get("available_depth_usd")
         if avail_depth is None:
@@ -363,6 +373,7 @@ class ShadowParityTracker:
             self.by_reason = {
                 r.value: {"count": 0, "pnl": 0.0} for r in MissedReason
             }
+            self._last_missed_by_key.clear()
 
 
 def _map_liquidity_gate_reason(gate_reason: str, opp: Optional[dict] = None) -> MissedReason:
@@ -448,7 +459,7 @@ class ActivePolicyRewriter:
                     for k in self.params:
                         if k in saved:
                             self.params[k] = type(self.params[k])(saved[k])
-                    self.params["min_edge_pct"] = max(0.0060, float(self.params.get("min_edge_pct", 0.0060)))
+                    self.params["min_edge_pct"] = max(0.0035, float(self.params.get("min_edge_pct", 0.0035)))
                     self.params["maker_timeout_seconds"] = min(6.0, max(3.0, float(self.params.get("maker_timeout_seconds", 4.0))))
                     self.total_adaptations = int(saved.get("total_adaptations", 0))
                     self.recovered_pnl = float(saved.get("recovered_pnl", 0.0))
@@ -496,6 +507,8 @@ class ActivePolicyRewriter:
                 simulator.risk.reserve_cash_pct = self.params["reserve_cash_pct"]
                 simulator.risk.max_exposure_pct = self.params["max_exposure_pct"]
                 simulator.risk.sizing_multiplier = self.params["sizing_multiplier"]
+                if "max_concurrent_positions" in self.params:
+                    simulator.risk.max_concurrent_positions = self.params["max_concurrent_positions"]
 
     def _build_policy_dict(self, simulator: Optional['PaperSimulator'] = None, missed_pnl: float = 0.0, realized_pnl: float = 0.0, total_missed: int = 0) -> dict:
         leakage = missed_pnl / (realized_pnl + missed_pnl + 1e-9)
@@ -2197,6 +2210,7 @@ class PaperSimulator:
         self.stagnant_purged_total: int = 0
         self.shadow_tracker = ShadowParityTracker(dash_state=dash_state)
         self.policy_rewriter = ActivePolicyRewriter(simulator=self, auto_apply=False)
+        self.optimizer = self.policy_rewriter
         self.shadow_tracker.policy_rewriter = self.policy_rewriter
         self.last_balance_sync_time = 0.0
         self.last_positions_sync_time = 0.0
@@ -2715,6 +2729,8 @@ class PaperSimulator:
                 maker_price_yes = max(bid_yes + tick_size, maker_price_yes)
             maker_price_yes = min(maker_price_yes, max_viable_yes)
             maker_price_yes = max(tick_size, _round_to_tick_size(maker_price_yes, tick_size))
+            if bid_yes is not None and bid_yes > 0:
+                maker_price_yes = max(bid_yes, maker_price_yes)
             cost_a = maker_price_yes + ask_no * (1 + self.fee_rate)
             edge_a = 1.000 - cost_a
             taker_depth_a = depth_no if (depth_no is not None and not math.isinf(depth_no)) else 50.0
@@ -2746,6 +2762,10 @@ class PaperSimulator:
                     reward_bonus_a = (rewards_daily_rate * 0.001) if rewards_daily_rate > 0 else 0.0
                     priority_score_a = edge_a + reward_bonus_a
 
+                eff_depth_yes_a = depth_yes if (depth_yes is not None and not math.isinf(depth_yes)) else 50.0
+                eff_depth_no_a = taker_depth_a
+                avail_depth_a = round(min(eff_depth_yes_a, eff_depth_no_a) * cost_a, 2)
+
                 branch_a = {
                     "execution_type": "maker_taker",
                     "maker_leg": "YES",
@@ -2763,6 +2783,8 @@ class PaperSimulator:
                     "rei": rei_val,
                     "can_harvest_rewards": can_harvest,
                     "depth_taker": taker_depth_a,
+                    "available_depth_usd": avail_depth_a,
+                    "executable_liquidity_usd": avail_depth_a,
                     "market_id": market_id,
                     "short_id": short_id,
                     "question": q_name or short_id,
@@ -2788,6 +2810,8 @@ class PaperSimulator:
                 maker_price_no = max(bid_no + tick_size, maker_price_no)
             maker_price_no = min(maker_price_no, max_viable_no)
             maker_price_no = max(tick_size, _round_to_tick_size(maker_price_no, tick_size))
+            if bid_no is not None and bid_no > 0:
+                maker_price_no = max(bid_no, maker_price_no)
             cost_b = ask_yes * (1 + self.fee_rate) + maker_price_no
             edge_b = 1.000 - cost_b
             taker_depth_b = depth_yes if (depth_yes is not None and not math.isinf(depth_yes)) else 50.0
@@ -2819,6 +2843,10 @@ class PaperSimulator:
                     reward_bonus_b = (rewards_daily_rate * 0.001) if rewards_daily_rate > 0 else 0.0
                     priority_score_b = edge_b + reward_bonus_b
 
+                eff_depth_yes_b = taker_depth_b
+                eff_depth_no_b = depth_no if (depth_no is not None and not math.isinf(depth_no)) else 50.0
+                avail_depth_b = round(min(eff_depth_yes_b, eff_depth_no_b) * cost_b, 2)
+
                 branch_b = {
                     "execution_type": "maker_taker",
                     "maker_leg": "NO",
@@ -2836,6 +2864,8 @@ class PaperSimulator:
                     "rei": rei_val,
                     "can_harvest_rewards": can_harvest,
                     "depth_taker": taker_depth_b,
+                    "available_depth_usd": avail_depth_b,
+                    "executable_liquidity_usd": avail_depth_b,
                     "market_id": market_id,
                     "short_id": short_id,
                     "question": q_name or short_id,
@@ -3026,7 +3056,7 @@ class PaperSimulator:
             
             # If execution_style is simultaneous_dual_taker or capital is low (< $100), do NOT attempt maker-taker
             total_cap = getattr(getattr(self, "risk", None), "capital", 1000.0) or 1000.0
-            if exec_style != "maker_taker" or total_cap < 100.0:
+            if exec_style != "maker_taker" or total_cap < 15.0:
                 return None
 
             # Only reached if explicitly in maker_taker mode with large capital (> $100)
@@ -3144,7 +3174,7 @@ def on_message(ws, message, simulator):
         except (json.JSONDecodeError, ValueError):
             return
 
-        target_state = simulator.dash_state if (simulator and simulator.dash_state) else globals().get("dash_state")
+        target_state = simulator.dash_state if (simulator and simulator.dash_state) else None
         if target_state:
             target_state.record_tick()
         events = data if isinstance(data, list) else [data]
@@ -3211,6 +3241,8 @@ def on_message(ws, message, simulator):
                             if market_id not in simulator.market_bids:
                                 simulator.market_bids[market_id] = {}
                             simulator.market_bids[market_id][asset_id] = float(best_bid)
+                            if hasattr(simulator, "last_market_tick") and simulator.last_market_tick is not None:
+                                simulator.last_market_tick[market_id] = time.time()
                         if market_id not in seen:
                             seen.add(market_id)
                             touched_markets.append(market_id)
@@ -3275,6 +3307,8 @@ def on_message(ws, message, simulator):
                             if market_id not in simulator.market_bids:
                                 simulator.market_bids[market_id] = {}
                             simulator.market_bids[market_id][asset_id] = raw_bid_val
+                            if hasattr(simulator, "last_market_tick") and simulator.last_market_tick is not None:
+                                simulator.last_market_tick[market_id] = time.time()
                         if market_id not in seen:
                             seen.add(market_id)
                             touched_markets.append(market_id)
@@ -3355,9 +3389,30 @@ def on_message(ws, message, simulator):
                             if market_id not in simulator.market_bids:
                                 simulator.market_bids[market_id] = {}
                             simulator.market_bids[market_id][asset_id] = raw_bid_val
+                            if hasattr(simulator, "last_market_tick") and simulator.last_market_tick is not None:
+                                simulator.last_market_tick[market_id] = time.time()
                         if market_id not in seen:
                             seen.add(market_id)
                             touched_markets.append(market_id)
+
+            elif ev_type in ("trade", "last_trade_price"):
+                token_id = event.get("asset_id") or event.get("token_id")
+                try:
+                    price = float(event.get("price", 0.0) or 0.0)
+                    size = float(event.get("size", 0.0) or 0.0)
+                    side = str(event.get("side", "BUY") or "BUY")
+                    ts = event.get("timestamp")
+                    ts_val = float(ts) if ts is not None else None
+                    if hasattr(simulator, "on_trade_tick") and token_id:
+                        simulator.on_trade_tick(
+                            token_id=str(token_id),
+                            price=price,
+                            size=size,
+                            side=side,
+                            timestamp=ts_val
+                        )
+                except (ValueError, TypeError):
+                    pass
 
         # Evaluate parity across all touched markets in this frame
         candidates = []
@@ -3365,13 +3420,30 @@ def on_message(ws, message, simulator):
         total_cap = getattr(getattr(simulator, "risk", None), "capital", 1000.0) or 1000.0
         for m_id in touched_markets:
             opp = None
-            taker_opp = simulator.check_market_parity(m_id)
-            if taker_opp and taker_opp.get("execution_type") == "simultaneous_dual_taker":
-                opp = taker_opp
-            elif exec_style == "maker_taker" and total_cap >= 100.0:
-                opp = simulator.check_maker_taker_parity(m_id) or taker_opp
-            else:
-                opp = taker_opp
+            if (
+                getattr(simulator, "negrisk_scanner", None)
+                and hasattr(simulator.negrisk_scanner, "market_to_basket")
+                and m_id in simulator.negrisk_scanner.market_to_basket
+            ):
+                basket_id = simulator.negrisk_scanner.market_to_basket[m_id]
+                nr_opp = simulator.negrisk_scanner.check_basket_parity(
+                    neg_risk_market_id=basket_id,
+                    market_books=simulator.market_books,
+                    market_depths=simulator.market_depths,
+                    fee_rate=simulator.fee_rate,
+                    min_edge=simulator.min_edge,
+                )
+                if nr_opp:
+                    opp = nr_opp
+
+            if not opp:
+                taker_opp = simulator.check_market_parity(m_id)
+                if taker_opp and taker_opp.get("execution_type") == "simultaneous_dual_taker":
+                    opp = taker_opp
+                elif exec_style == "maker_taker" and total_cap >= 15.0:
+                    opp = simulator.check_maker_taker_parity(m_id) or taker_opp
+                else:
+                    opp = taker_opp
             if opp:
                 candidates.append(opp)
 
@@ -3379,9 +3451,10 @@ def on_message(ws, message, simulator):
         if candidates:
             def _sort_key(x):
                 is_dual = 1 if x.get("execution_type") == "simultaneous_dual_taker" else 0
+                mkt_key = x.get("market_id", x.get("neg_risk_market_id", ""))
                 if hasattr(simulator, "reward_harvester") and simulator.reward_harvester:
                     score = simulator.reward_harvester.calculate_reward_priority(
-                        x["market_id"],
+                        mkt_key,
                         edge=x.get("edge", 0.0),
                         expected_profit=x.get("expected_profit")
                     )
@@ -3391,7 +3464,14 @@ def on_message(ws, message, simulator):
 
             candidates.sort(key=_sort_key, reverse=True)
             for opp in candidates:
-                if hasattr(simulator, "dispatch_arbitrage"):
+                if opp.get("execution_type") == "negrisk_basket" or "neg_risk_market_id" in opp:
+                    if hasattr(simulator, "execute_negrisk_basket"):
+                        simulator.execute_negrisk_basket(opp)
+                    elif hasattr(simulator, "dispatch_arbitrage"):
+                        simulator.dispatch_arbitrage(opp)
+                    else:
+                        simulator.execute_arbitrage(opp)
+                elif hasattr(simulator, "dispatch_arbitrage"):
                     simulator.dispatch_arbitrage(opp)
                 else:
                     simulator.execute_arbitrage(opp)
@@ -3852,7 +3932,7 @@ def refresh_market_universe(
             for k in stale_q_keys:
                 del simulator.last_processed_quotes[k]
 
-        target_dash = simulator.dash_state or globals().get("dash_state")
+        target_dash = simulator.dash_state
         if target_dash and hasattr(target_dash, "state"):
             with target_dash.lock:
                 for cid in dropped_cids:
@@ -3916,7 +3996,7 @@ def refresh_market_universe(
                 pass
 
     # 3. Synchronize with dashboard state
-    target_dash = simulator.dash_state or globals().get("dash_state")
+    target_dash = simulator.dash_state
     if target_dash:
         with simulator.lock:
             active_market_objs = [
@@ -4371,6 +4451,213 @@ class LiveExecutor(PaperSimulator):
                     self.sync_live_positions()
                 except Exception as e:
                     logger.debug(f"Periodic live positions sync error: {e}")
+                try:
+                    self.sweep_mergeable_positions()
+                except Exception as e:
+                    logger.debug(f"Periodic sweep mergeable positions error: {e}")
+
+    def _merge_matched_pair_on_chain(
+        self,
+        market_id: str,
+        token_yes: Any,
+        token_no: Any,
+        target_state: Optional[Any] = None,
+        short_id: str = ""
+    ) -> bool:
+        """
+        Attempts on-chain CTF mergePositions to combine balanced YES/NO shares back into USDC.
+        """
+        if not target_state:
+            target_state = self.dash_state
+        if not short_id:
+            short_id = f"Market {market_id[-6:]}" if market_id else "Market"
+
+        merge_succeeded = False
+        wallet_disp = "Polymarket wallet"
+        try:
+            from web3 import Web3
+            
+            w3 = Web3(Web3.HTTPProvider(os.environ.get('POLYGON_RPC_URL', 'https://polygon-bor-rpc.publicnode.com')))
+            private_key = os.environ.get('POLYMARKET_PRIVATE_KEY')
+            wallet_address = self.address or os.environ.get('POLYMARKET_ADDRESS')
+            
+            if not private_key or not wallet_address:
+                raise ValueError("Missing private key or address for Web3 execution.")
+            
+            wallet_address = Web3.to_checksum_address(wallet_address)
+            wallet_disp = f"{wallet_address[:6]}...{wallet_address[-4:]}"
+            ctf_address = Web3.to_checksum_address('0x4D97DCd97eC945f40cF65F87097ACe5EA0476045')
+            collateral_token = Web3.to_checksum_address('0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174')
+            parent_collection_id = Web3.to_bytes(hexstr="0x0000000000000000000000000000000000000000000000000000000000000000")
+            
+            cond_id_hex = market_id if market_id.startswith('0x') else '0x' + market_id
+            condition_id = Web3.to_bytes(hexstr=cond_id_hex)
+            
+            partition = [1, 2]
+            
+            abi = '[{"inputs":[{"internalType":"address","name":"collateralToken","type":"address"},{"internalType":"bytes32","name":"parentCollectionId","type":"bytes32"},{"internalType":"bytes32","name":"conditionId","type":"bytes32"},{"internalType":"uint256[]","name":"partition","type":"uint256[]"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"mergePositions","outputs":[],"stateMutability":"nonpayable","type":"function"}, {"inputs":[{"internalType":"address","name":"account","type":"address"},{"internalType":"uint256","name":"id","type":"uint256"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}]'
+            
+            ctf_contract = w3.eth.contract(address=ctf_address, abi=abi)
+            
+            try:
+                token_yes_int = int(token_yes, 0) if isinstance(token_yes, str) and token_yes.startswith('0x') else int(token_yes)
+            except (ValueError, TypeError):
+                token_yes_int = 1
+            try:
+                token_no_int = int(token_no, 0) if isinstance(token_no, str) and token_no.startswith('0x') else int(token_no)
+            except (ValueError, TypeError):
+                token_no_int = 2
+            
+            signer_account = w3.eth.account.from_key(private_key)
+            signer_address = signer_account.address
+            
+            logger.info("Waiting for order settlement on-chain...")
+            balance_yes = 0
+            balance_no = 0
+            for _ in range(3):
+                balance_yes = ctf_contract.functions.balanceOf(wallet_address, token_yes_int).call()
+                balance_no = ctf_contract.functions.balanceOf(wallet_address, token_no_int).call()
+                if balance_yes == 0 and balance_no == 0 and signer_address != wallet_address:
+                    balance_yes = ctf_contract.functions.balanceOf(signer_address, token_yes_int).call()
+                    balance_no = ctf_contract.functions.balanceOf(signer_address, token_no_int).call()
+                if balance_yes > 0 and balance_no > 0:
+                    break
+                time.sleep(0.5)
+                
+            merge_amount = min(balance_yes, balance_no)
+            if merge_amount <= 0:
+                logger.info(f"Tokens awaiting asynchronous on-chain batch settlement on Polygon for {short_id} (YES={balance_yes}, NO={balance_no}).")
+            else:
+                logger.info(f"Merging exact on-chain balance: {merge_amount} units")
+
+            # Gasless Relayer v2 submission using self.relayer_client
+            if merge_amount > 0 and getattr(self, "relayer_client", None):
+                try:
+                    from py_builder_relayer_client.models import DepositWalletCall
+                    calldata = ctf_contract.encode_abi('mergePositions', args=[collateral_token, parent_collection_id, condition_id, partition, merge_amount])
+                    call = DepositWalletCall(target=ctf_address, value="0", data=calldata)
+                    
+                    # Query dynamic on-chain nonce for deposit wallet
+                    abi_wallet = [{'inputs': [], 'name': 'nonce', 'outputs': [{'name': '', 'type': 'uint256'}], 'stateMutability': 'view', 'type': 'function'}]
+                    contract_w = w3.eth.contract(address=wallet_address, abi=abi_wallet)
+                    on_chain_nonce = str(contract_w.functions.nonce().call())
+                    deadline = str(int(time.time()) + 3600)
+                    
+                    tx_resp = self.relayer_client.execute_deposit_wallet_batch(calls=[call], wallet_address=self.address, nonce=on_chain_nonce, deadline=deadline)
+                    tx_hash = getattr(tx_resp, "transaction_hash", None)
+                    logger.info(f"Gasless relayer merge submitted! TX Hash: {tx_hash}")
+                    merge_succeeded = True
+                except Exception as relayer_err:
+                    logger.warning(f"Gasless relayer merge attempt encountered: {relayer_err}")
+
+            if merge_amount > 0 and not merge_succeeded:
+                # Direct Web3 transaction from signer_address
+                nonce = w3.eth.get_transaction_count(signer_address)
+                gas_price = int(w3.eth.gas_price * 1.25)
+                
+                tx = ctf_contract.functions.mergePositions(
+                    collateral_token,
+                    parent_collection_id,
+                    condition_id,
+                    partition,
+                    merge_amount
+                ).build_transaction({
+                    'chainId': 137,
+                    'gas': 300000,
+                    'gasPrice': gas_price,
+                    'nonce': nonce,
+                    'from': signer_address
+                })
+                
+                signed_tx = w3.eth.account.sign_transaction(tx, private_key=private_key)
+                raw_tx = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
+                tx_hash = w3.eth.send_raw_transaction(raw_tx)
+                
+                logger.info(f"Token merging transaction sent! TX Hash: {w3.to_hex(tx_hash)}")
+                
+                receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                if getattr(receipt, 'status', None) == 1:
+                    logger.info("Tokens merged successfully on-chain.")
+                    merge_succeeded = True
+                else:
+                    logger.error("Token merging failed or reverted on-chain.")
+                    
+        except Exception as e:
+            logger.info(f"Direct on-chain merge skipped or pending ({e}). Matched pair secured in Polymarket wallet {wallet_disp} ($1.00 payout on market resolution or 1-click portfolio merge).")
+            
+        if not merge_succeeded:
+            logger.info(f"Matched pair secured in Polymarket wallet {wallet_disp} ($1.00 payout on market resolution or 1-click portfolio merge).")
+            if target_state and hasattr(target_state, "add_activity_log"):
+                target_state.add_activity_log("⚠️ Token Merge Failed or pending on-chain: Position held for auto-unwind")
+                target_state.add_activity_log(f"💎 Matched pair secured in Polymarket wallet {wallet_disp} ($1.00 payout on market resolution or 1-click portfolio merge).")
+        return merge_succeeded
+
+    def sweep_mergeable_positions(self) -> int:
+        """
+        Scans held live positions for balanced YES/NO pairs and attempts on-chain token merging
+        to release collateral back to USDC.
+        """
+        try:
+            from unittest.mock import MagicMock, Mock
+            if isinstance(getattr(self, "client", None), (MagicMock, Mock)):
+                return 0
+        except ImportError:
+            pass
+
+        if not self.address:
+            return 0
+
+        merged_count = 0
+        try:
+            active_positions = []
+            if self.dash_state and hasattr(self.dash_state, "state"):
+                active_positions = self.dash_state.state.get("live_positions", [])
+
+            if not active_positions:
+                import urllib.request
+                url = f"https://data-api.polymarket.com/positions?user={self.address}"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PolymarketBot/2.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    raw_positions = json.loads(resp.read().decode('utf-8'))
+                active_positions = [
+                    p for p in raw_positions
+                    if isinstance(p, dict) and float(p.get('size', 0) or 0) > 0 and not p.get('redeemable')
+                ]
+
+            by_market = collections.defaultdict(list)
+            for p in active_positions:
+                m_key = str(p.get("conditionId") or p.get("market") or "")
+                if m_key:
+                    by_market[m_key].append(p)
+
+            for m_key, pos_list in by_market.items():
+                if len(pos_list) >= 2:
+                    yes_pos = None
+                    no_pos = None
+                    for p in pos_list:
+                        outcome_str = str(p.get("outcome", "")).strip().upper()
+                        if outcome_str in ("YES", "Y"):
+                            yes_pos = p
+                        elif outcome_str in ("NO", "N"):
+                            no_pos = p
+
+                    if yes_pos and no_pos:
+                        token_yes = yes_pos.get("asset")
+                        token_no = no_pos.get("asset")
+                        if token_yes and token_no:
+                            ok = self._merge_matched_pair_on_chain(
+                                market_id=m_key,
+                                token_yes=token_yes,
+                                token_no=token_no,
+                                target_state=self.dash_state,
+                                short_id=str(yes_pos.get("title", f"Market {m_key[:8]}"))
+                            )
+                            if ok:
+                                merged_count += 1
+        except Exception as e:
+            logger.warning(f"Error sweeping mergeable positions: {e}")
+
+        return merged_count
 
     def stop(self, timeout: float = 2.0):
         """Gracefully stop background sync and OrderReaper, then purge CLOB orders."""
@@ -4909,12 +5196,54 @@ class LiveExecutor(PaperSimulator):
                 m_key = str(p.get("conditionId") or p.get("market") or p.get("asset") or "")
                 by_market[m_key].append(p)
 
-            positions_theoretical_val = sum(float(p.get('size', 0.0) or 0.0) * 1.0 for p in active_positions)
+            positions_theoretical_val = 0.0
+            for m_key, pos_list in by_market.items():
+                if len(pos_list) >= 2:
+                    yes_pos = None
+                    no_pos = None
+                    for p in pos_list:
+                        outcome_str = str(p.get("outcome", "")).strip().upper()
+                        if outcome_str in ("YES", "Y"):
+                            yes_pos = p
+                        elif outcome_str in ("NO", "N"):
+                            no_pos = p
+                    
+                    if yes_pos is not None and no_pos is not None:
+                        yes_size = float(yes_pos.get("size", 0.0) or 0.0)
+                        no_size = float(no_pos.get("size", 0.0) or 0.0)
+                        matched = min(yes_size, no_size)
+                        excess_yes = max(0.0, yes_size - matched)
+                        excess_no = max(0.0, no_size - matched)
+
+                        yes_p = float(yes_pos.get("curPrice", 0.0) or 0.0)
+                        if yes_p <= 0 and yes_size > 0:
+                            yes_p = float(yes_pos.get("currentValue", 0.0) or 0.0) / yes_size
+
+                        no_p = float(no_pos.get("curPrice", 0.0) or 0.0)
+                        if no_p <= 0 and no_size > 0:
+                            no_p = float(no_pos.get("currentValue", 0.0) or 0.0) / no_size
+
+                        positions_theoretical_val += (matched * 1.0) + (excess_yes * yes_p) + (excess_no * no_p)
+                    else:
+                        sizes = [float(p.get("size", 0.0) or 0.0) for p in pos_list]
+                        matched = min(sizes[0], sizes[1])
+                        market_theo = matched * 1.0
+                        for p in pos_list[:2]:
+                            sz = float(p.get("size", 0.0) or 0.0)
+                            excess = max(0.0, sz - matched)
+                            cur_p = float(p.get("curPrice", 0.0) or 0.0)
+                            if cur_p <= 0 and sz > 0:
+                                cur_p = float(p.get("currentValue", 0.0) or 0.0) / sz
+                            market_theo += excess * cur_p
+                        positions_theoretical_val += market_theo
+                else:
+                    for p in pos_list:
+                        positions_theoretical_val += float(p.get("currentValue", 0.0) or 0.0)
             initial_cost = sum(float(p.get('initialValue', 0.0) or 0.0) for p in active_positions)
             
             avail_cash = getattr(self.risk, 'available_cash', 0.0) if self.risk else 0.0
             if avail_cash <= 0 and hasattr(self, 'sync_live_balance'):
-                avail_cash = float(getattr(self.risk, 'capital', 0.0) or 0.0)
+                avail_cash = float(getattr(self, 'risk', None) and getattr(self.risk, 'capital', 0.0) or 0.0)
                 
             theoretical_equity = round(avail_cash + positions_theoretical_val, 2)
             mark_to_market_equity = round(avail_cash + positions_market_val, 2)
@@ -4974,11 +5303,15 @@ class LiveExecutor(PaperSimulator):
                     if m: live_market_ids.add(m)
                     if asset: live_market_ids.add(asset)
 
+                now = time.time()
                 with self.risk.lock:
                     open_keys = list(self.risk.open_positions.keys())
                     stale_markets = set()
                     for k in open_keys:
                         pos = self.risk.open_positions.get(k, {})
+                        entry_time = float(pos.get("entry_time", 0.0) or 0.0)
+                        if (now - entry_time) < 60.0:
+                            continue
                         m_id = pos.get("market_id", k.split("_")[0] if "_" in k else k)
                         if m_id and m_id not in live_market_ids:
                             stale_markets.add(m_id)
@@ -4991,7 +5324,8 @@ class LiveExecutor(PaperSimulator):
                 "positions_market_val": positions_market_val,
                 "positions_theoretical_val": positions_theoretical_val,
                 "theoretical_equity": theoretical_equity,
-                "projected_profit": projected_profit
+                "projected_profit": projected_profit,
+                "mark_to_market_equity": mark_to_market_equity
             }
         except Exception as e:
             logger.warning(f"Error in sync_live_positions: {e}")
@@ -5300,6 +5634,15 @@ class LiveExecutor(PaperSimulator):
                 if target_state and hasattr(target_state, "add_trade"):
                     target_state.add_trade(market_id, round(total_cost, 2), round(profit, 4), time_str)
                 self.on_trade_executed(market_id, total_cost, profit)
+                self._merge_matched_pair_on_chain(
+                    market_id=market_id,
+                    token_yes=opp.get("token_yes") or opp.get("maker_token"),
+                    token_no=opp.get("token_no") or opp.get("taker_token"),
+                    target_state=target_state,
+                    short_id=short_id
+                )
+                if self.risk and hasattr(self.risk, "close_position"):
+                    self.risk.close_position(market_id, realized_profit=profit)
                 if hasattr(self, "sync_live_balance"):
                     self.sync_live_balance()
                 return True
@@ -5360,8 +5703,8 @@ class LiveExecutor(PaperSimulator):
 
             exec_style = getattr(target_state, "state", {}).get("execution_style", "taker_taker") if target_state else "taker_taker"
             total_cap = getattr(getattr(self, "risk", None), "capital", 1000.0) or 1000.0
-            if exec_style != "maker_taker" or total_cap < 100.0:
-                logger.debug(f"Maker-taker execution blocked by style ({exec_style}) or low capital (${total_cap:.2f} < $100)")
+            if exec_style != "maker_taker" or total_cap < 15.0:
+                logger.debug(f"Maker-taker execution blocked by style ({exec_style}) or low capital (${total_cap:.2f} < $15)")
                 return False
 
             shares = max(5.0, float(max_shares))
@@ -5397,7 +5740,8 @@ class LiveExecutor(PaperSimulator):
                     cooldown_duration = 5.0
                 else:
                     realized_loss = float(details.get("realized_loss", 0.0) or 0.0) if isinstance(details, dict) else 0.0
-                    if realized_loss > 0:
+                    tokens_still_held = bool(details.get("tokens_still_held", False)) if isinstance(details, dict) else False
+                    if realized_loss > 0 and action not in ("TAKER_FAILED_ROLLBACK_FAILED", "LIMIT_ORDER_FAILED", "MARKET_EXIT_FAILED") and not tokens_still_held:
                         logger.warning(f"Maker-taker arbitrage unwound on {short_id} with realized loss: ${realized_loss:.4f}")
                         if self.risk:
                             self.risk.record_pnl(-realized_loss)
@@ -5432,6 +5776,15 @@ class LiveExecutor(PaperSimulator):
             if target_state and hasattr(target_state, "add_trade"):
                 target_state.add_trade(market_id, round(trade_size, 2), round(expected_profit, 4), time_str)
             self.on_trade_executed(market_id, trade_size, expected_profit)
+            self._merge_matched_pair_on_chain(
+                market_id=market_id,
+                token_yes=maker_token if opp.get("maker_leg") == "YES" else taker_token,
+                token_no=taker_token if opp.get("maker_leg") == "YES" else maker_token,
+                target_state=target_state,
+                short_id=short_id
+            )
+            if self.risk and hasattr(self.risk, "close_position"):
+                self.risk.close_position(market_id, realized_profit=expected_profit)
             return True
             
         if time.time() - getattr(self, "last_balance_sync_time", 0.0) > 1.0:
@@ -5740,9 +6093,11 @@ class LiveExecutor(PaperSimulator):
                                 miss_r = MissedReason.MAKER_TIMEOUT
                         else:
                             realized_loss = float(details.get("realized_loss", 0.0) or 0.0) if isinstance(details, dict) else 0.0
-                            if realized_loss > 0:
+                            tokens_still_held = bool(details.get("tokens_still_held", False)) if isinstance(details, dict) else False
+                            if realized_loss > 0 and action not in ("TAKER_FAILED_ROLLBACK_FAILED", "LIMIT_ORDER_FAILED", "MARKET_EXIT_FAILED") and not tokens_still_held:
                                 logger.warning(f"Maker-taker arbitrage unwound on {short_id} with realized loss: ${realized_loss:.4f}")
-                                self.risk.record_pnl(-realized_loss)
+                                if self.risk:
+                                    self.risk.record_pnl(-realized_loss)
                                 if self.dash_state:
                                     self.dash_state.add_activity_log(f"⚠️ Unwind loss on {short_id}: -${realized_loss:.4f}")
                             cooldown_duration = 15.0
@@ -5760,11 +6115,21 @@ class LiveExecutor(PaperSimulator):
                         return False
 
                     # Both legs secured! Record position & sync collateral
-                    opened = self.risk.open_position(market_id, trade_size, expected_profit)
+                    if self.risk:
+                        self.risk.open_position(market_id, trade_size, expected_profit)
                     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                     if target_state and hasattr(target_state, "add_trade"):
                         target_state.add_trade(market_id, round(trade_size, 2), round(expected_profit, 4), time_str)
                     self.on_trade_executed(market_id, trade_size, expected_profit)
+                    self._merge_matched_pair_on_chain(
+                        market_id=market_id,
+                        token_yes=token_maker if opp.get("maker_leg") == "YES" else token_taker,
+                        token_no=token_taker if opp.get("maker_leg") == "YES" else token_maker,
+                        target_state=target_state,
+                        short_id=short_id
+                    )
+                    if self.risk and hasattr(self.risk, "close_position"):
+                        self.risk.close_position(market_id, realized_profit=expected_profit)
                     return True
 
                 tick_size = float(opp.get('tick_size', 0.001))
@@ -6029,128 +6394,19 @@ class LiveExecutor(PaperSimulator):
                 if target_state:
                     target_state.add_trade(market_id, round(trade_size, 2), round(expected_profit, 4), time_str)
 
-                # 2. Attempt on-chain token merging in a try/except block, but if it reverts or fails, log it and do NOT return False or abort the trade!
-                merge_succeeded = False
-                wallet_disp = f"{wallet_address[:6]}...{wallet_address[-4:]}" if 'wallet_address' in locals() and wallet_address and len(wallet_address) > 10 else "Polymarket wallet"
-                try:
-                    from web3 import Web3
-                    
-                    w3 = Web3(Web3.HTTPProvider(os.environ.get('POLYGON_RPC_URL', 'https://polygon-bor-rpc.publicnode.com')))
-                    private_key = os.environ.get('POLYMARKET_PRIVATE_KEY')
-                    wallet_address = self.address or os.environ.get('POLYMARKET_ADDRESS')
-                    
-                    if not private_key or not wallet_address:
-                        raise ValueError("Missing private key or address for Web3 execution.")
-                    
-                    wallet_address = Web3.to_checksum_address(wallet_address)
-                    wallet_disp = f"{wallet_address[:6]}...{wallet_address[-4:]}"
-                    ctf_address = Web3.to_checksum_address('0x4D97DCd97eC945f40cF65F87097ACe5EA0476045')
-                    collateral_token = Web3.to_checksum_address('0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174')
-                    parent_collection_id = Web3.to_bytes(hexstr="0x0000000000000000000000000000000000000000000000000000000000000000")
-                    
-                    cond_id_hex = market_id if market_id.startswith('0x') else '0x' + market_id
-                    condition_id = Web3.to_bytes(hexstr=cond_id_hex)
-                    
-                    partition = [1, 2]
-                    
-                    abi = '[{"inputs":[{"internalType":"address","name":"collateralToken","type":"address"},{"internalType":"bytes32","name":"parentCollectionId","type":"bytes32"},{"internalType":"bytes32","name":"conditionId","type":"bytes32"},{"internalType":"uint256[]","name":"partition","type":"uint256[]"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"mergePositions","outputs":[],"stateMutability":"nonpayable","type":"function"}, {"inputs":[{"internalType":"address","name":"account","type":"address"},{"internalType":"uint256","name":"id","type":"uint256"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}]'
-                    
-                    ctf_contract = w3.eth.contract(address=ctf_address, abi=abi)
-                    
-                    try:
-                        token_yes_int = int(token_yes, 0) if isinstance(token_yes, str) and token_yes.startswith('0x') else int(token_yes)
-                    except (ValueError, TypeError):
-                        token_yes_int = 1
-                    try:
-                        token_no_int = int(token_no, 0) if isinstance(token_no, str) and token_no.startswith('0x') else int(token_no)
-                    except (ValueError, TypeError):
-                        token_no_int = 2
-                    
-                    signer_account = w3.eth.account.from_key(private_key)
-                    signer_address = signer_account.address
-                    
-                    logger.info("Waiting for order settlement on-chain...")
-                    balance_yes = 0
-                    balance_no = 0
-                    for _ in range(3):
-                        balance_yes = ctf_contract.functions.balanceOf(wallet_address, token_yes_int).call()
-                        balance_no = ctf_contract.functions.balanceOf(wallet_address, token_no_int).call()
-                        if balance_yes == 0 and balance_no == 0 and signer_address != wallet_address:
-                            balance_yes = ctf_contract.functions.balanceOf(signer_address, token_yes_int).call()
-                            balance_no = ctf_contract.functions.balanceOf(signer_address, token_no_int).call()
-                        if balance_yes > 0 and balance_no > 0:
-                            break
-                        time.sleep(0.5)
-                        
-                    merge_amount = min(balance_yes, balance_no)
-                    if merge_amount <= 0:
-                        logger.info(f"Tokens awaiting asynchronous on-chain batch settlement on Polygon for {short_id} (YES={balance_yes}, NO={balance_no}).")
-                    else:
-                        logger.info(f"Merging exact on-chain balance: {merge_amount} units")
-
-                    # Gasless Relayer v2 submission using self.relayer_client
-                    if merge_amount > 0 and getattr(self, "relayer_client", None):
-                        try:
-                            from py_builder_relayer_client.models import DepositWalletCall
-                            calldata = ctf_contract.encode_abi('mergePositions', args=[collateral_token, parent_collection_id, condition_id, partition, merge_amount])
-                            call = DepositWalletCall(target=ctf_address, value="0", data=calldata)
-                            
-                            # Query dynamic on-chain nonce for deposit wallet
-                            abi_wallet = [{'inputs': [], 'name': 'nonce', 'outputs': [{'name': '', 'type': 'uint256'}], 'stateMutability': 'view', 'type': 'function'}]
-                            contract_w = w3.eth.contract(address=wallet_address, abi=abi_wallet)
-                            on_chain_nonce = str(contract_w.functions.nonce().call())
-                            deadline = str(int(time.time()) + 3600)
-                            
-                            tx_resp = self.relayer_client.execute_deposit_wallet_batch(calls=[call], wallet_address=self.address, nonce=on_chain_nonce, deadline=deadline)
-                            tx_hash = getattr(tx_resp, "transaction_hash", None)
-                            logger.info(f"Gasless relayer merge submitted! TX Hash: {tx_hash}")
-                            merge_succeeded = True
-                        except Exception as relayer_err:
-                            logger.warning(f"Gasless relayer merge attempt encountered: {relayer_err}")
-
-                    if merge_amount > 0 and not merge_succeeded:
-                        # Direct Web3 transaction from signer_address
-                        nonce = w3.eth.get_transaction_count(signer_address)
-                        gas_price = int(w3.eth.gas_price * 1.25)
-                        
-                        tx = ctf_contract.functions.mergePositions(
-                            collateral_token,
-                            parent_collection_id,
-                            condition_id,
-                            partition,
-                            merge_amount
-                        ).build_transaction({
-                            'chainId': 137,
-                            'gas': 300000,
-                            'gasPrice': gas_price,
-                            'nonce': nonce,
-                            'from': signer_address
-                        })
-                        
-                        signed_tx = w3.eth.account.sign_transaction(tx, private_key=private_key)
-                        raw_tx = getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None))
-                        tx_hash = w3.eth.send_raw_transaction(raw_tx)
-                        
-                        logger.info(f"Token merging transaction sent! TX Hash: {w3.to_hex(tx_hash)}")
-                        
-                        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
-                        if getattr(receipt, 'status', None) == 1:
-                            logger.info("Tokens merged successfully on-chain.")
-                            merge_succeeded = True
-                        else:
-                            logger.error("Token merging failed or reverted on-chain.")
-                            
-                except Exception as e:
-                    logger.info(f"Direct on-chain merge skipped or pending ({e}). Matched pair secured in Polymarket wallet {wallet_disp} ($1.00 payout on market resolution or 1-click portfolio merge).")
-                    
-                if not merge_succeeded:
-                    logger.info(f"Matched pair secured in Polymarket wallet {wallet_disp} ($1.00 payout on market resolution or 1-click portfolio merge).")
-                    if target_state:
-                        target_state.add_activity_log("⚠️ Token Merge Failed or pending on-chain: Position held for auto-unwind")
-                        target_state.add_activity_log(f"💎 Matched pair secured in Polymarket wallet {wallet_disp} ($1.00 payout on market resolution or 1-click portfolio merge).")
+                # 2. On-chain token merging and position closing
+                self._merge_matched_pair_on_chain(
+                    market_id=market_id,
+                    token_yes=token_yes,
+                    token_no=token_no,
+                    target_state=target_state,
+                    short_id=short_id
+                )
 
                 # 3. Call self.on_trade_executed immediately so cash is unwound and balance is synchronized to the pool in real time!
                 self.on_trade_executed(market_id, trade_size, expected_profit)
+                if self.risk and hasattr(self.risk, "close_position"):
+                    self.risk.close_position(market_id, realized_profit=expected_profit)
 
                 # 4. Reset books and depths non-destructively:
                 with self.lock:

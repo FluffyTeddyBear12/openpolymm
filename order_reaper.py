@@ -155,18 +155,21 @@ class OrderReaper:
     def register_order(
         self,
         order_id: str,
+        market_id: str = "",
         token_id: str = "",
         side: str = "BUY",
         size: float = 0.0,
         price: float = 0.0,
         is_passive_unwind: bool = False,
         ttl_sec: Optional[float] = None,
+        **kwargs: Any,
     ):
         if not order_id:
             return
         with self._lock:
             self._active_registry[order_id] = {
                 "order_id": order_id,
+                "market_id": market_id,
                 "token_id": token_id,
                 "side": side,
                 "size": float(size),
@@ -184,6 +187,56 @@ class OrderReaper:
         with self._lock:
             self._active_registry.pop(order_id, None)
         logger.debug(f"Deregistered order {order_id} from OrderReaper.")
+
+    def cancel_order_verified(self, order_id: str) -> bool:
+        """
+        Attempts to cancel an order and verifies it was cancelled or dead on CLOB.
+        Returns True if confirmed canceled/dead/filled, False on unconfirmed hazard.
+        """
+        if not self.client or not order_id:
+            return False
+
+        for attempt in range(3):
+            cancel_sent = False
+            try:
+                cancel_sent = self._cancel_single_order(order_id)
+            except Exception as e:
+                err_str = str(e).lower()
+                if "404" in err_str or "not found" in err_str or "order does not exist" in err_str:
+                    self.deregister_order(order_id)
+                    return True
+
+            if not hasattr(self.client, "get_order"):
+                if cancel_sent:
+                    self.deregister_order(order_id)
+                    return True
+                return False
+
+            try:
+                order_info = self.client.get_order(order_id)
+                if not order_info:
+                    self.deregister_order(order_id)
+                    return True
+
+                if isinstance(order_info, dict) and (
+                    "not found" in str(order_info).lower() or order_info.get("error") == 404
+                ):
+                    self.deregister_order(order_id)
+                    return True
+
+                status, _ = self._extract_status_and_matched(order_info)
+                if status in ("CANCELED", "KILLED", "EXPIRED", "MATCHED", "FILLED", "UNKNOWN"):
+                    self.deregister_order(order_id)
+                    return True
+            except Exception as e:
+                err_str = str(e).lower()
+                if "404" in err_str or "not found" in err_str or "order does not exist" in err_str:
+                    self.deregister_order(order_id)
+                    return True
+
+            time.sleep(0.05)
+
+        return False
 
     def _cancel_single_order(self, order_id: str) -> bool:
         if not self.client or not order_id:
@@ -339,17 +392,31 @@ class OrderReaper:
 
         return reaped_ids
 
-    def purge_all_orders(self) -> dict:
+    def purge_all_orders(self, preserve_passive_unwinds: bool = False) -> dict:
         cancelled_count = 0
         errors: List[str] = []
 
         if not self.client:
             with self._lock:
-                self._active_registry.clear()
+                if preserve_passive_unwinds:
+                    self._active_registry = {
+                        k: v for k, v in self._active_registry.items()
+                        if v.get("is_passive_unwind", False)
+                    }
+                else:
+                    self._active_registry.clear()
             return {"cancelled_count": 0, "status": "NO_CLIENT"}
 
+        with self._lock:
+            passive_unwind_ids = {
+                oid for oid, reg in self._active_registry.items()
+                if reg.get("is_passive_unwind", False)
+            }
+
+        should_preserve = preserve_passive_unwinds and bool(passive_unwind_ids)
+
         purged_via_cancel_all = False
-        if hasattr(self.client, "cancel_all"):
+        if not should_preserve and hasattr(self.client, "cancel_all"):
             try:
                 self.client.cancel_all()
                 purged_via_cancel_all = True
@@ -364,6 +431,8 @@ class OrderReaper:
                 for item in open_orders:
                     oid = self._extract_id(item)
                     if oid:
+                        if should_preserve and oid in passive_unwind_ids:
+                            continue
                         if self._cancel_single_order(oid):
                             cancelled_count += 1
                         else:
@@ -373,8 +442,14 @@ class OrderReaper:
             errors.append(str(e))
 
         with self._lock:
-            cleared_registered = len(self._active_registry)
-            self._active_registry.clear()
+            if should_preserve:
+                to_remove = [k for k in self._active_registry if k not in passive_unwind_ids]
+                cleared_registered = len(to_remove)
+                for k in to_remove:
+                    self._active_registry.pop(k, None)
+            else:
+                cleared_registered = len(self._active_registry)
+                self._active_registry.clear()
 
         total = cancelled_count if cancelled_count > 0 else (cleared_registered if purged_via_cancel_all else 0)
         status = "SUCCESS" if not errors else ("PARTIAL_SUCCESS" if total > 0 or purged_via_cancel_all else "FAILED")

@@ -1,6 +1,12 @@
 import unittest
 import time
-from reward_harvester import RewardHarvester, compute_reward_efficiency_index
+from reward_harvester import (
+    RewardHarvester,
+    compute_reward_efficiency_index,
+    compute_quadratic_order_score,
+    combine_two_sided_q_score,
+    PairedRewardQuote,
+)
 from maker_taker_engine import check_maker_taker_parity
 
 
@@ -238,6 +244,124 @@ class TestMakerTakerAndRewards(unittest.TestCase):
         top_by_rate = harvester.get_top_reward_markets(limit=2, sort_by="rate")
         self.assertEqual(top_by_rate[0]["market_id"], "mkt_bloated")
         self.assertEqual(top_by_rate[1]["market_id"], "mkt_efficient")
+
+    def test_compute_quadratic_order_score(self):
+        """Test quadratic order scoring S(v, s) = ((v - s) / v)^2 * size."""
+        # v = 3.5, s = 1.0, size = 100.0 -> ((2.5 / 3.5) ^ 2) * 100 = 51.020408...
+        score = compute_quadratic_order_score(max_spread_cents=3.5, distance_cents=1.0, size=100.0)
+        expected = ((2.5 / 3.5) ** 2) * 100.0
+        self.assertAlmostEqual(score, expected, places=5)
+
+        # Distance at max spread -> 0.0
+        self.assertEqual(compute_quadratic_order_score(3.5, 3.5, 100.0), 0.0)
+        # Distance outside max spread -> 0.0
+        self.assertEqual(compute_quadratic_order_score(3.5, 4.0, 100.0), 0.0)
+        # At midpoint (s = 0) -> full size
+        self.assertAlmostEqual(compute_quadratic_order_score(3.5, 0.0, 100.0), 100.0)
+        # Invalid parameters
+        self.assertEqual(compute_quadratic_order_score(0.0, 1.0, 100.0), 0.0)
+        self.assertEqual(compute_quadratic_order_score(3.5, 1.0, 0.0), 0.0)
+        self.assertEqual(compute_quadratic_order_score(-1.0, 1.0, 100.0), 0.0)
+
+    def test_combine_two_sided_q_score(self):
+        """Test Polymarket two-sided combination and [0.10, 0.90] midpoint rule."""
+        # In-band (midpoint = 0.50):
+        # Two-sided orders
+        q_both = combine_two_sided_q_score(q_one=60.0, q_two=40.0, midpoint=0.50)
+        self.assertEqual(q_both, 40.0)
+
+        # Single-sided order in-band -> receives 1/c (1/3) credit
+        q_single = combine_two_sided_q_score(q_one=60.0, q_two=0.0, midpoint=0.50, c=3.0)
+        self.assertEqual(q_single, 20.0)
+
+        # Outside band (midpoint = 0.05 or 0.95):
+        # Single-sided receives 0 credit
+        q_out_single = combine_two_sided_q_score(q_one=60.0, q_two=0.0, midpoint=0.05)
+        self.assertEqual(q_out_single, 0.0)
+
+        # Two-sided still scores min(q1, q2)
+        q_out_both = combine_two_sided_q_score(q_one=60.0, q_two=40.0, midpoint=0.95)
+        self.assertEqual(q_out_both, 40.0)
+
+    def test_build_paired_bid_quote(self):
+        """Test build_paired_bid_quote constructs valid PairedRewardQuote."""
+        quote = self.harvester.build_paired_bid_quote(
+            market_id="mkt_high_pool",
+            bid_yes=0.48,
+            bid_no=0.48,
+            size_shares=200.0,
+            midpoint_yes=0.50,
+            max_spread_cents=3.5,
+        )
+        self.assertIsInstance(quote, PairedRewardQuote)
+        self.assertEqual(quote.market_id, "mkt_high_pool")
+        self.assertEqual(quote.bid_yes, 0.48)
+        self.assertEqual(quote.bid_no, 0.48)
+        self.assertEqual(quote.size_shares, 200.0)
+        self.assertEqual(quote.required_capital_usd, 192.0)
+        self.assertAlmostEqual(quote.locked_pair_edge, 0.04, places=4)
+        self.assertGreater(quote.q_one, 0.0)
+        self.assertGreater(quote.q_two, 0.0)
+        self.assertGreater(quote.q_min, 0.0)
+        self.assertGreater(quote.estimated_daily_usdc, 0.0)
+
+    def test_rank_paired_reward_markets(self):
+        """Test rank_paired_reward_markets sorts by daily USDC, edge, or score."""
+        q1 = PairedRewardQuote(
+            market_id="m1",
+            bid_yes=0.48,
+            bid_no=0.48,
+            size_shares=100.0,
+            required_capital_usd=96.0,
+            q_one=50.0,
+            q_two=50.0,
+            q_min=50.0,
+            locked_pair_edge=0.04,
+            estimated_daily_usdc=5.0,
+        )
+        q2 = PairedRewardQuote(
+            market_id="m2",
+            bid_yes=0.45,
+            bid_no=0.45,
+            size_shares=100.0,
+            required_capital_usd=90.0,
+            q_one=30.0,
+            q_two=30.0,
+            q_min=30.0,
+            locked_pair_edge=0.10,
+            estimated_daily_usdc=2.0,
+        )
+        q3 = PairedRewardQuote(
+            market_id="m3",
+            bid_yes=0.49,
+            bid_no=0.49,
+            size_shares=100.0,
+            required_capital_usd=98.0,
+            q_one=80.0,
+            q_two=80.0,
+            q_min=80.0,
+            locked_pair_edge=0.02,
+            estimated_daily_usdc=10.0,
+        )
+
+        quotes = [q1, q2, q3]
+
+        # Rank by daily USDC (default)
+        ranked_usdc = self.harvester.rank_paired_reward_markets(quotes, sort_by="daily_usdc")
+        self.assertEqual([q.market_id for q in ranked_usdc], ["m3", "m1", "m2"])
+
+        # Rank by locked edge
+        ranked_edge = self.harvester.rank_paired_reward_markets(quotes, sort_by="edge")
+        self.assertEqual([q.market_id for q in ranked_edge], ["m2", "m1", "m3"])
+
+        # Rank by q_min score
+        ranked_score = self.harvester.rank_paired_reward_markets(quotes, sort_by="score")
+        self.assertEqual([q.market_id for q in ranked_score], ["m3", "m1", "m2"])
+
+        # Test limit
+        ranked_limit = self.harvester.rank_paired_reward_markets(quotes, limit=2)
+        self.assertEqual(len(ranked_limit), 2)
+        self.assertEqual(ranked_limit[0].market_id, "m3")
 
 
 if __name__ == "__main__":

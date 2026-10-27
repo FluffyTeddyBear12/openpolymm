@@ -310,6 +310,8 @@ class MakerTakerExecutor:
         market_books: Optional[Dict[str, Any]] = None,
         taker_fee_rate: float = 0.0035,
         initial_taker_depth: Optional[float] = None,
+        allow_loss_hedge_tolerance: float = 0.0,
+        market_id: str = "",
     ) -> Tuple[bool, str, dict]:
         if dash_state is not None:
             self.dash_state = dash_state
@@ -378,16 +380,27 @@ class MakerTakerExecutor:
             return False, "MAKER_POST_FAILED", {"response": resp_maker}
 
         if self.reaper:
-            self.reaper.register_order(
-                order_id_maker,
-                token_id=token_maker,
-                side="BUY",
-                size=size,
-                price=maker_price,
-                ttl_sec=max(6.0, float(timeout_seconds) + 2.0),
-            )
+            reaper_kwargs = {
+                "token_id": token_maker,
+                "side": "BUY",
+                "size": size,
+                "price": maker_price,
+                "ttl_sec": max(6.0, float(timeout_seconds) + 2.0),
+            }
+            if market_id:
+                reaper_kwargs["market_id"] = market_id
+            self.reaper.register_order(order_id_maker, **reaper_kwargs)
 
         self._log_activity(f"⏳ [MAKER PENDING] Order {order_id_maker} active. Awaiting fill (timeout={timeout_seconds}s)...")
+
+        actual_taker_tick, actual_taker_neg = _resolve_token_metadata(self.client, token_taker, default_tick=tick_size)
+        baseline_taker_price = _ceil_to_tick_size(taker_price, actual_taker_tick)
+        prebuilt_taker_args = None
+        if OrderArgsV2 is not None:
+            try:
+                prebuilt_taker_args = OrderArgsV2(price=baseline_taker_price, size=size, side="BUY", token_id=token_taker)
+            except Exception:
+                prebuilt_taker_args = None
 
         # -------------------------------------------------------------
         # STEP 2: Wait for Fill or Timeout
@@ -514,8 +527,19 @@ class MakerTakerExecutor:
         # -------------------------------------------------------------
         actual_taker_tick, actual_taker_neg = _resolve_token_metadata(self.client, token_taker, default_tick=tick_size)
 
-        max_hedge_tolerance = max(0.0030, 2.0 * float(actual_taker_tick))
-        elastic_taker_ceiling = round((1.0000 + max_hedge_tolerance - maker_price) / (1.0 + taker_fee_rate), 4)
+        if allow_loss_hedge_tolerance > 0.0:
+            elastic_taker_ceiling = round((1.0000 + float(allow_loss_hedge_tolerance) - maker_price) / (1.0 + taker_fee_rate), 4)
+        else:
+            if DynamicHedgeRouter is not None:
+                elastic_taker_ceiling = DynamicHedgeRouter.calculate_elastic_taker_price(
+                    maker_price=maker_price,
+                    fee_rate=taker_fee_rate,
+                    breakeven_buffer=0.0,
+                    tick_size=actual_taker_tick,
+                )
+            else:
+                elastic_taker_ceiling = round((1.0000 - maker_price) / (1.0 + taker_fee_rate), 4)
+
         fresh_taker_price = taker_price
 
         books_source = market_books
@@ -535,13 +559,12 @@ class MakerTakerExecutor:
                 asks_t = mkt_book.get("asks", [])
                 if asks_t:
                     live_ask = float(asks_t[0].get("price") if isinstance(asks_t[0], dict) else asks_t[0][0])
-                    if live_ask <= elastic_taker_ceiling:
+                    if live_ask > 0:
                         fresh_taker_price = live_ask
                         logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (elastic ceiling: ${elastic_taker_ceiling:.4f})")
             elif isinstance(mkt_book, (int, float)) and mkt_book > 0:
-                if mkt_book <= elastic_taker_ceiling:
-                    fresh_taker_price = float(mkt_book)
-                    logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (elastic ceiling: ${elastic_taker_ceiling:.4f})")
+                fresh_taker_price = float(mkt_book)
+                logger.info(f"Updated taker leg from in-memory book: ${fresh_taker_price:.4f} (elastic ceiling: ${elastic_taker_ceiling:.4f})")
 
         # For BUY orders, ceil to tick size so bid meets or crosses the seller ask.
         target_taker_price = _ceil_to_tick_size(fresh_taker_price, actual_taker_tick)
@@ -561,24 +584,27 @@ class MakerTakerExecutor:
             )
             try:
                 order_opts = PartialCreateOrderOptions(tick_size=str(actual_taker_tick), neg_risk=actual_taker_neg)
+                if (
+                    target_taker_price == baseline_taker_price
+                    and abs(matched_size - size) < 1e-6
+                    and prebuilt_taker_args is not None
+                ):
+                    order_args_taker = prebuilt_taker_args
+                else:
+                    order_args_taker = OrderArgsV2(
+                        price=target_taker_price,
+                        size=matched_size,
+                        side="BUY",
+                        token_id=token_taker,
+                    )
                 try:
                     order_taker = self.client.create_order(
-                        OrderArgsV2(
-                            price=target_taker_price,
-                            size=matched_size,
-                            side="BUY",
-                            token_id=token_taker,
-                        ),
+                        order_args_taker,
                         options=order_opts,
                     )
                 except TypeError:
                     order_taker = self.client.create_order(
-                        OrderArgsV2(
-                            price=target_taker_price,
-                            size=matched_size,
-                            side="BUY",
-                            token_id=token_taker,
-                        )
+                        order_args_taker
                     )
                 resp_taker = self.client.post_orders(
                     [PostOrdersV2Args(order=order_taker, orderType=OrderType.FOK)]
@@ -651,6 +677,7 @@ class MakerTakerExecutor:
                 "taker_price": target_taker_price,
                 "total_cost": round(maker_price + target_taker_price, 4),
                 "profit_per_share": round(1.0 - (maker_price + target_taker_price), 4),
+                "net_profit_per_share": round(1.0 - (maker_price + target_taker_price * (1.0 + taker_fee_rate)), 4),
             }
 
         # -------------------------------------------------------------
@@ -667,36 +694,65 @@ class MakerTakerExecutor:
             self._log_activity(
                 f"🛡️ [SAFE ROLLBACK] Leg 2 missed. Deploying break-even limit sell for {matched_size:.2f} shares at ${maker_price:.4f}."
             )
-            try:
-                order_opts = PartialCreateOrderOptions(tick_size=str(actual_maker_tick), neg_risk=actual_maker_neg)
+            from rollback_protector import RollbackProtector
+            rollback_id = None
+            rollback_err = None
+            for attempt in range(4):
                 try:
-                    order_rollback = self.client.create_order(
-                        OrderArgsV2(
-                            price=maker_price,
-                            size=matched_size,
-                            side="SELL",
-                            token_id=token_maker,
-                        ),
-                        options=order_opts,
-                    )
-                except TypeError:
-                    order_rollback = self.client.create_order(
-                        OrderArgsV2(
-                            price=maker_price,
-                            size=matched_size,
-                            side="SELL",
-                            token_id=token_maker,
+                    order_opts = PartialCreateOrderOptions(tick_size=str(actual_maker_tick), neg_risk=actual_maker_neg)
+                    try:
+                        order_rollback = self.client.create_order(
+                            OrderArgsV2(
+                                price=maker_price,
+                                size=matched_size,
+                                side="SELL",
+                                token_id=token_maker,
+                            ),
+                            options=order_opts,
                         )
+                    except TypeError:
+                        order_rollback = self.client.create_order(
+                            OrderArgsV2(
+                                price=maker_price,
+                                size=matched_size,
+                                side="SELL",
+                                token_id=token_maker,
+                            )
+                        )
+                    resp_rollback = self.client.post_orders(
+                        [PostOrdersV2Args(order=order_rollback, orderType=OrderType.GTC)]
                     )
-                resp_rollback = self.client.post_orders(
-                    [PostOrdersV2Args(order=order_rollback, orderType=OrderType.GTC)]
-                )
-                rollback_id = self._extract_order_id(resp_rollback)
-                rollback_meta["rollback_order_id"] = rollback_id
-                self._log_activity(f"🛡️ [ROLLBACK POSTED] Resting GTC limit sell placed @ ${maker_price:.4f} (Order ID: {rollback_id}).")
-            except Exception as e:
-                logger.warning(f"Failed to post safe rollback limit sell: {e}. Holding asset at full value.")
-                rollback_meta["rollback_error"] = str(e)
+                    rollback_err = RollbackProtector._check_order_error(resp_rollback)
+                    if rollback_err and ("balance" in str(rollback_err).lower() or "allowance" in str(rollback_err).lower()):
+                        if attempt < 3:
+                            time.sleep(1.0)
+                            continue
+                    if not rollback_err:
+                        rollback_id = self._extract_order_id(resp_rollback)
+                        rollback_meta["rollback_order_id"] = rollback_id
+                        self._log_activity(f"🛡️ [ROLLBACK POSTED] Resting GTC limit sell placed @ ${maker_price:.4f} (Order ID: {rollback_id}).")
+                        if self.reaper and rollback_id:
+                            self.reaper.register_order(
+                                rollback_id,
+                                market_id=market_id,
+                                token_id=token_maker,
+                                side="SELL",
+                                price=maker_price,
+                                size=matched_size,
+                                is_passive_unwind=True,
+                            )
+                        break
+                    else:
+                        rollback_meta["rollback_error"] = rollback_err
+                        break
+                except Exception as e:
+                    rollback_err = str(e)
+                    if ("balance" in rollback_err.lower() or "allowance" in rollback_err.lower()) and attempt < 3:
+                        time.sleep(1.0)
+                        continue
+                    logger.warning(f"Failed to post safe rollback limit sell: {e}. Holding asset at full value.")
+                    rollback_meta["rollback_error"] = str(e)
+                    break
             return False, "TAKER_FAILED_ROLLBACK_LIMIT_PLACED", rollback_meta
         else:
             from rollback_protector import RollbackProtector

@@ -61,6 +61,8 @@ class Test95PctWinRateArbitrage(unittest.TestCase):
                     price=0.563,
                     shares=5.0,
                     order_type="GTC",
+                    tick_size=0.001,
+                    neg_risk=None,
                 )
 
     def test_execute_arbitrage_blocks_wide_spread_markets(self):

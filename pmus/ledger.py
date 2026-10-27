@@ -137,6 +137,7 @@ class Ledger:
                 )
                 """
             )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_lip_snapshots_ts ON lip_snapshots (ts_ms)")
             cursor = conn.execute("PRAGMA table_info(lip_snapshots)")
             cols = {row["name"] for row in cursor.fetchall()}
             if cols and "bid_qualifies" not in cols:

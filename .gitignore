@@ -34,3 +34,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Node / TypeScript & Backtest Cache
+node_modules/
+data/amd-5m-cache.json
+data/*.tmp

@@ -3,6 +3,7 @@ Unit and Integration Test Suite for Microstructure Guard & Dynamic Hedge Router.
 Verifies Phase 1 Adverse Selection Shield & Elastic Edge Compression.
 """
 
+import threading
 import time
 import unittest
 from unittest.mock import MagicMock, patch
@@ -174,6 +175,81 @@ class TestMicrostructureGuard(unittest.TestCase):
         self.assertEqual(details["reason"], "LEG2_DEPTH_COLLAPSE")
         mock_client.cancel_orders.assert_called_with(["maker_order_toxic_001"])
 
+    def test_concurrent_multithreaded_stress(self):
+        """
+        Verify thread safety under heavy concurrent write and read operations.
+        Ensures internal RLock prevents deque mutation errors and race conditions.
+        """
+        guard = MicrostructureGuard(max_window_seconds=10.0)
+        errors = []
+
+        def quote_writer(token_id: str, count: int):
+            try:
+                for i in range(count):
+                    t = time.time()
+                    guard.record_quote(
+                        token_id=token_id,
+                        best_bid=0.48 + (i % 5) * 0.001,
+                        bid_size=100.0 + i,
+                        best_ask=0.50 + (i % 5) * 0.001,
+                        ask_size=100.0 + i,
+                        timestamp=t,
+                    )
+                    time.sleep(0.0005)
+            except Exception as e:
+                errors.append(e)
+
+        def trade_writer(token_id: str, count: int):
+            try:
+                for i in range(count):
+                    t = time.time()
+                    guard.record_trade(
+                        token_id=token_id,
+                        price=0.49 + (i % 5) * 0.001,
+                        size=10.0 + (i % 10),
+                        timestamp=t,
+                    )
+                    time.sleep(0.0005)
+            except Exception as e:
+                errors.append(e)
+
+        def reader(count: int):
+            try:
+                for _ in range(count):
+                    guard.compute_obi(self.token_yes)
+                    guard.compute_dual_obi(self.token_yes, self.token_no)
+                    guard.compute_micro_price(self.token_yes)
+                    guard.compute_micro_drift(self.token_yes, window_ms=100.0)
+                    guard.compute_trade_velocity_surge(self.token_yes, short_ms=100.0, baseline_sec=2.0)
+                    guard.check_toxicity_evasion(
+                        token_maker=self.token_yes,
+                        token_taker=self.token_no,
+                        maker_price=0.49,
+                        initial_taker_depth=100.0,
+                        initial_taker_price=0.50,
+                    )
+                    time.sleep(0.0005)
+            except Exception as e:
+                errors.append(e)
+
+        threads = []
+        threads.append(threading.Thread(target=quote_writer, args=(self.token_yes, 80)))
+        threads.append(threading.Thread(target=quote_writer, args=(self.token_no, 80)))
+        threads.append(threading.Thread(target=trade_writer, args=(self.token_yes, 80)))
+        threads.append(threading.Thread(target=trade_writer, args=(self.token_no, 80)))
+        for _ in range(4):
+            threads.append(threading.Thread(target=reader, args=(80,)))
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join(timeout=10.0)
+            self.assertFalse(t.is_alive(), "Worker thread timed out, potential deadlock!")
+
+        self.assertEqual(len(errors), 0, f"Encountered thread errors during stress test: {errors}")
+
 
 if __name__ == "__main__":
     unittest.main()
+

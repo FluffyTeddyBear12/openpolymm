@@ -3458,14 +3458,14 @@ def test_live_executor_sync_live_positions():
 
                 assert stats["active_count"] == 2
                 assert stats["positions_market_val"] == 70.0
-                assert stats["positions_theoretical_val"] == 150.0
-                assert stats["theoretical_equity"] == 191.82
-                assert stats["projected_profit"] == 95.50
+                assert stats["positions_theoretical_val"] == 70.0
+                assert stats["theoretical_equity"] == 111.82
+                assert stats["projected_profit"] == 15.50
 
                 assert dash_state.state["positions_market_val"] == 70.0
-                assert dash_state.state["positions_theoretical_val"] == 150.0
-                assert dash_state.state["theoretical_equity"] == 191.82
-                assert dash_state.state["projected_profit"] == 95.50
+                assert dash_state.state["positions_theoretical_val"] == 70.0
+                assert dash_state.state["theoretical_equity"] == 111.82
+                assert dash_state.state["projected_profit"] == 15.50
                 assert dash_state.state["mark_to_market_equity"] == 111.82
                 assert len(dash_state.state["live_positions"]) == 2
 
@@ -4144,6 +4144,76 @@ class TestMakerTakerParityScanner(unittest.TestCase):
             available_cash=100.0,
         )
         risk.open_position.assert_called_once_with("0xMKT_BATCH_001", 9.70, 0.30)
+
+    def test_maker_taker_sub_bid_clamping_rejects_negative_edge(self):
+        """Verify that when max_viable < bid_yes, maker price is clamped to bid_yes and edge drops below min_edge, rejecting trade."""
+        market_id = "0xMKT_SUB_BID_REJECT"
+        self.sim.market_token_map[market_id] = {
+            "token_yes": "tok_yes",
+            "token_no": "tok_no",
+            "tick_size": 0.001
+        }
+        self.sim.market_books[market_id] = {
+            "tok_yes": 0.50,
+            "tok_no": 0.52,
+            "tok_yes_bid": 0.48,
+            "tok_no_bid": 0.45
+        }
+        self.sim.market_depths[market_id] = {"tok_yes": 100.0, "tok_no": 100.0}
+
+        opp = self.sim.check_maker_taker_parity(market_id)
+        self.assertIsNone(opp)
+
+
+def test_live_executor_sync_live_positions_matched_pair_valuation():
+    """Verify that a balanced YES + NO position pair is valued at $1.00 face value per pair."""
+    with patch.dict('os.environ', {'POLYMARKET_ADDRESS': '0xwallet'}):
+        with patch('urllib.request.urlopen') as mock_urlopen:
+            sample_positions = [
+                {
+                    "title": "Matched Binary Market",
+                    "conditionId": "0xcond_matched",
+                    "outcome": "Yes",
+                    "size": 50.0,
+                    "curPrice": 0.48,
+                    "currentValue": 24.0,
+                    "initialValue": 24.0,
+                    "redeemable": False
+                },
+                {
+                    "title": "Matched Binary Market",
+                    "conditionId": "0xcond_matched",
+                    "outcome": "No",
+                    "size": 50.0,
+                    "curPrice": 0.51,
+                    "currentValue": 25.5,
+                    "initialValue": 24.5,
+                    "redeemable": False
+                }
+            ]
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps(sample_positions).encode("utf-8")
+            mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+            risk_engine = MagicMock(spec=RiskSizingEngine)
+            risk_engine.available_cash = 100.0
+            risk_engine.capital = 100.0
+            risk_engine.lock = MagicMock()
+
+            dash_state = MagicMock(spec=DashboardState)
+            dash_state.state = {"trades": []}
+            dash_state.lock = MagicMock()
+
+            executor = LiveExecutor(risk_engine=risk_engine, dash_state=dash_state)
+            stats = executor.sync_live_positions()
+
+            assert stats["active_count"] == 2
+            assert stats["positions_market_val"] == 49.5
+            assert stats["positions_theoretical_val"] == 50.0
+            assert stats["theoretical_equity"] == 150.0
+            assert stats["projected_profit"] == 1.5
+            assert stats["mark_to_market_equity"] == 149.5
+            assert dash_state.state["mark_to_market_equity"] == 149.5
 
 
 
