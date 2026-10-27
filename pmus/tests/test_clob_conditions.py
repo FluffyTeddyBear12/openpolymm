@@ -315,3 +315,46 @@ def test_fetch_sampling_markets_paginates_next_cursor_and_deduplicates(monkeypat
     assert [c.condition_id for c in conditions] == ["0xp1", "0xp2"]
     assert [c.window.pool_usd for c in conditions] == [Decimal("100"), Decimal("250")]
 
+
+def test_fetch_reward_conditions_cache_and_force_refresh(monkeypatch):
+    mock_clob = MagicMock()
+    mock_clob.get_sampling_markets.return_value = {
+        "data": [
+            _make_sampling_market(condition_id="0xinit"),
+        ]
+    }
+    client = ClobVenueClient(Settings(venue="global"), client=mock_clob)
+    first = client.fetch_reward_conditions()
+    assert len(first) == 1
+    assert first[0].condition_id == "0xinit"
+    assert mock_clob.get_sampling_markets.call_count == 1
+
+    # Second call should hit cache without calling get_sampling_markets
+    second = client.fetch_reward_conditions()
+    assert len(second) == 1
+    assert second[0].condition_id == "0xinit"
+    assert mock_clob.get_sampling_markets.call_count == 1
+
+    # force_refresh=True should bypass cache and refresh
+    mock_clob.get_sampling_markets.return_value = {
+        "data": [
+            _make_sampling_market(condition_id="0xrefreshed"),
+        ]
+    }
+    refreshed = client.fetch_reward_conditions(force_refresh=True)
+    assert len(refreshed) == 1
+    assert refreshed[0].condition_id == "0xrefreshed"
+    assert mock_clob.get_sampling_markets.call_count == 2
+
+    # invalidate_sampling_cache() should clear the reward conditions cache
+    mock_clob.get_sampling_markets.return_value = {
+        "data": [
+            _make_sampling_market(condition_id="0xinvalidated"),
+        ]
+    }
+    client.invalidate_sampling_cache()
+    invalidated = client.fetch_reward_conditions()
+    assert len(invalidated) == 1
+    assert invalidated[0].condition_id == "0xinvalidated"
+    assert mock_clob.get_sampling_markets.call_count == 3
+

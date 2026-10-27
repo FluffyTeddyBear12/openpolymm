@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from decimal import Decimal
+from dataclasses import dataclass
 from typing import Any
 
 from web3 import Web3
@@ -16,9 +17,14 @@ try:
     from py_builder_signing_sdk.sdk_types import BuilderApiKeyCreds
 except ImportError:
     RelayClient = None  # type: ignore[assignment, misc]
-    DepositWalletCall = None  # type: ignore[assignment, misc]
     BuilderConfig = None  # type: ignore[assignment, misc]
     BuilderApiKeyCreds = None  # type: ignore[assignment, misc]
+
+    @dataclass
+    class DepositWalletCall:  # type: ignore[no-redef]
+        target: str
+        value: str
+        data: str
 
 
 CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"

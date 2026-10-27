@@ -209,6 +209,9 @@ class ClobVenueClient:
         self._sibling_map: dict[str, str] = {}
         self._yes_slugs: set[str] = set()
         self._pair_by_slug: dict[str, tuple[str, str]] = {}
+        self._reward_conditions_cache: list[ConditionMarket] | None = None
+        self._reward_conditions_cache_ts: float = 0.0
+        self._reward_conditions_ttl_seconds: float = 900.0
 
         if client is not None:
             self.client = client
@@ -315,6 +318,8 @@ class ClobVenueClient:
     def invalidate_sampling_cache(self) -> None:
         self._sampling_markets_cache = None
         self._sampling_markets_cache_ts = 0.0
+        self._reward_conditions_cache = None
+        self._reward_conditions_cache_ts = 0.0
 
     def invalidate_sampling_markets_cache(self) -> None:
         self.invalidate_sampling_cache()
@@ -709,11 +714,21 @@ class ClobVenueClient:
 
         return results
 
-    def fetch_reward_conditions(self, limit: int = 0) -> list[ConditionMarket]:
+    def fetch_reward_conditions(self, limit: int = 0, force_refresh: bool = False) -> list[ConditionMarket]:
+        now_mono = time.monotonic()
+        if (
+            not force_refresh
+            and self._reward_conditions_cache is not None
+            and (now_mono - self._reward_conditions_cache_ts) < self._reward_conditions_ttl_seconds
+        ):
+            if limit > 0:
+                return list(self._reward_conditions_cache[:limit])
+            return list(self._reward_conditions_cache)
+
         now_utc = datetime.now(timezone.utc)
         results: list[ConditionMarket] = []
 
-        for pm in self._fetch_sampling_markets():
+        for pm in self._fetch_sampling_markets(force_refresh=force_refresh):
             pair = self._record_token_pair(pm.tokens)
             if pair is None:
                 continue
@@ -777,9 +792,12 @@ class ClobVenueClient:
                     volume_24h=pm.volume_24h,
                 )
             )
-            if limit > 0 and len(results) >= limit:
-                return results
 
+        self._reward_conditions_cache = list(results)
+        self._reward_conditions_cache_ts = now_mono
+
+        if limit > 0:
+            return results[:limit]
         return results
 
 

@@ -820,6 +820,26 @@ def test_evaluate_condition_rejects_excessive_spread_and_waterfill_sweeps_remain
     assert total_deployed >= Decimal("225.00")
 
 
+def test_waterfill_single_selected_condition_tops_up_to_total_budget():
+    cond = make_condition(cond_id="c1", pool="300", target="20", max_spread="0.04")
+    books = {
+        cond.yes.slug: make_book([("0.47", "500")], [("0.50", "500")], slug=cond.yes.slug),
+        cond.no.slug: make_book([("0.47", "500")], [("0.50", "500")], slug=cond.no.slug),
+    }
+    targets = allocate_conditions(
+        conditions=[cond],
+        books=books,
+        total_budget=Decimal("234.40"),
+        max_cost_per_condition=Decimal("150.00"),
+        max_markets=1,
+        max_contracts=Decimal("1000"),
+        pair_preference=Decimal("0.0"),
+    )
+    assert len(targets) == 1
+    total_deployed = sum((t.cost for t in targets), Decimal("0"))
+    assert total_deployed >= Decimal("225.00")
+
+
 def test_correlation_deduplication_blocks_negrisk_and_question_stem_siblings():
     import dataclasses
     from pmus.strategy.condition_selector import correlation_keys, risk_adjustment_multiplier

@@ -127,6 +127,10 @@ def resolve_market(client: Any, slug: str) -> Market:
         res = client.fetch_market(slug)
         if isinstance(res, Market):
             market = res
+    if market is None and hasattr(client, "_market_cache") and isinstance(getattr(client, "_market_cache", None), dict):
+        res = client._market_cache.get(slug)
+        if isinstance(res, Market):
+            market = res
     if market is not None:
         return market
     return Market(
@@ -177,11 +181,15 @@ def allocate_markets(
     open_orders: list[LiveOrder] | None = None,
     excluded_slugs: set[str] | frozenset[str] | None = None,
     max_leg_collateral: Decimal | None = None,
+    force_refresh: bool = False,
 ) -> tuple[dict[str, IncentiveWindow], AllocationResult]:
     budget = available_budget if available_budget is not None else settings.total_budget
     is_global = settings.venue == "global"
     if is_global and hasattr(client, "fetch_reward_conditions"):
-        conditions = client.fetch_reward_conditions()
+        try:
+            conditions = client.fetch_reward_conditions(force_refresh=force_refresh)
+        except TypeError:
+            conditions = client.fetch_reward_conditions()
         base_cond_cap = min(settings.max_per_market, settings.max_collateral_per_market)
         if is_global and settings.pair_preference <= Decimal("0"):
             max_pairs = _effective_max_pairs(settings.max_markets)
@@ -191,13 +199,10 @@ def allocate_markets(
                 else max_pairs
             )
             effective_max_conditions = num_pairs
-            per_pair = budget / Decimal(str(num_pairs)) if num_pairs > 0 else Decimal("0")
-            cond_ceiling = max(base_cond_cap, Decimal("85.00"))
-            max_cost_per_condition = (
-                min(cond_ceiling, max(base_cond_cap, per_pair))
-                if (available_budget is not None or settings.max_markets <= 4)
-                else base_cond_cap
-            )
+            if num_pairs <= 1:
+                max_cost_per_condition = budget
+            else:
+                max_cost_per_condition = max(settings.max_per_market, budget / Decimal(str(num_pairs)))
         else:
             num_pairs = _effective_max_pairs(settings.max_markets)
             max_cost_per_condition = (
@@ -738,7 +743,7 @@ class LiveEngine:
         finally:
             self.shutdown()
 
-    def prepare(self, is_realloc: bool = False) -> None:
+    def prepare(self, is_realloc: bool = False, force_refresh: bool = False) -> None:
         old_targets = list(self.target_slugs)
         effective_budget = self.settings.total_budget
         dynamic_leg_col: Decimal = self.settings.max_collateral_per_market
@@ -769,19 +774,22 @@ class LiveEngine:
                         effective_budget,
                         _effective_max_pairs(self.settings.max_markets),
                     )
-                    cond_cap_limit = max(Decimal("85.00"), self.settings.max_per_market)
-                    est_cond_cap = (
-                        min(
-                            cond_cap_limit,
-                            max(Decimal("36.00"), (effective_budget / Decimal(str(est_pairs))) * Decimal("1.15")),
+                    if est_pairs <= 1:
+                        cond_cap_limit = effective_budget
+                        dynamic_leg_col = max(
+                            self.settings.max_collateral_per_market,
+                            (effective_budget * Decimal("0.80")).quantize(Decimal("1.00")),
                         )
-                        if est_pairs > 0
-                        else self.settings.max_per_market
-                    )
-                    dynamic_leg_col = max(
-                        self.settings.max_collateral_per_market,
-                        (est_cond_cap * Decimal("0.80")).quantize(Decimal("1.00")),
-                    )
+                    else:
+                        cond_cap_limit = max(
+                            Decimal("85.00"),
+                            self.settings.max_per_market,
+                            (effective_budget / Decimal(str(est_pairs))) * Decimal("1.15"),
+                        )
+                        dynamic_leg_col = max(
+                            self.settings.max_collateral_per_market,
+                            (cond_cap_limit * Decimal("0.80")).quantize(Decimal("1.00")),
+                        )
                     if hasattr(self.risk_manager, "update_dynamic_limits"):
                         self.risk_manager.update_dynamic_limits(
                             total_budget=effective_budget,
@@ -862,6 +870,8 @@ class LiveEngine:
                 alloc_kwargs["max_leg_collateral"] = dynamic_leg_col
             if excl_slugs:
                 alloc_kwargs["excluded_slugs"] = excl_slugs
+            if force_refresh:
+                alloc_kwargs["force_refresh"] = True
             self.active_windows, alloc_res = allocate_markets(
                 self.settings,
                 self.public_client,
@@ -961,6 +971,51 @@ class LiveEngine:
                     self.target_slugs.append(p.slug)
                     self.side_budgets.setdefault((p.slug, "bid"), Decimal("0"))
                     self.side_budgets.setdefault((p.slug, "ask"), Decimal("0"))
+        unhedged_partner_slugs: set[str] = set()
+        if effective_pos_map is not None:
+            now_utc = datetime.now(timezone.utc)
+            for p_slug, p in effective_pos_map.items():
+                if p.net_qty >= Decimal("5"):
+                    partner_slug = self.known_sibling_by_slug.get(p_slug)
+                    if not partner_slug and p_slug in self.known_pair_by_slug:
+                        y_k, n_k = self.known_pair_by_slug[p_slug]
+                        partner_slug = n_k if y_k == p_slug else y_k
+                    if partner_slug:
+                        partner_pos = effective_pos_map.get(partner_slug)
+                        partner_qty = partner_pos.net_qty if partner_pos is not None else Decimal("0")
+                        if partner_qty < Decimal("5"):
+                            unhedged_partner_slugs.add(partner_slug)
+                            if partner_slug not in self.target_slugs:
+                                self.target_slugs.append(partner_slug)
+                            if partner_slug not in self.active_windows:
+                                if p_slug in self.active_windows:
+                                    w_ref = self.active_windows[p_slug]
+                                    self.active_windows[partner_slug] = dataclasses.replace(w_ref, slug=partner_slug)
+                                else:
+                                    self.active_windows[partner_slug] = IncentiveWindow(
+                                        slug=partner_slug,
+                                        program_id="hedge",
+                                        pool_usd=Decimal("0"),
+                                        discount=Decimal("0"),
+                                        target_size=Decimal("5"),
+                                        max_spread=Decimal("0.04"),
+                                        start=now_utc - timedelta(hours=1),
+                                        end=now_utc + timedelta(hours=23),
+                                        status="active",
+                                    )
+                            partner_buys = [
+                                o for o in (open_orders or self.ledger.get_open_orders(partner_slug))
+                                if o.slug == partner_slug and o.side.startswith("BUY")
+                            ]
+                            resting_buy_qty = sum((o.qty_open for o in partner_buys), Decimal("0"))
+                            needed_hedge_qty = max(p.net_qty - partner_qty, resting_buy_qty)
+                            if (partner_slug, "bid") not in self.side_qtys or self.side_qtys[(partner_slug, "bid")] < needed_hedge_qty:
+                                self.side_qtys[(partner_slug, "bid")] = needed_hedge_qty
+                            if partner_buys and (partner_slug, "bid") not in self.side_prices:
+                                self.side_prices[(partner_slug, "bid")] = partner_buys[0].price
+                            if (partner_slug, "bid") not in self.side_budgets or self.side_budgets[(partner_slug, "bid")] <= Decimal("0"):
+                                p_price = self.side_prices.get((partner_slug, "bid"), Decimal("0.50"))
+                                self.side_budgets[(partner_slug, "bid")] = self.side_qtys[(partner_slug, "bid")] * p_price
         for slug in self.target_slugs:
             if slug not in self.market_states:
                 self.market_states[slug] = "IDLE"
@@ -1004,10 +1059,11 @@ class LiveEngine:
                     self.recent_cancels[o.order_id] = self.started_at
                     self.recent_cancel_orders[o.order_id] = (o, self.started_at)
         else:
-            dropped_slugs = [s for s in old_targets if s not in self.target_slugs]
+            dropped_slugs = [s for s in old_targets if s not in self.target_slugs and s not in unhedged_partner_slugs]
             downsized_slugs = [
                 s for s in self.target_slugs
                 if s in old_targets
+                and s not in unhedged_partner_slugs
                 and any(
                     o.slug == s
                     and o.side.startswith("BUY")
@@ -1015,12 +1071,72 @@ class LiveEngine:
                     for o in (open_orders or self.ledger.get_open_orders(s))
                 )
             ]
-            cancel_slugs = dropped_slugs + [s for s in downsized_slugs if s not in dropped_slugs]
+            repriced_slugs = []
+            for s in self.target_slugs:
+                if s in old_targets and s not in unhedged_partner_slugs and (s, "bid") in self.side_prices:
+                    mkt = self.markets.get(s)
+                    if mkt is None and hasattr(self.public_client, "_market_cache") and isinstance(getattr(self.public_client, "_market_cache", None), dict):
+                        mkt = self.public_client._market_cache.get(s)
+                    mkt_tick = mkt.tick if mkt is not None else (Decimal("0.01") if self.settings.venue == "global" else Decimal("0.001"))
+                    target_px = self.side_prices[(s, "bid")]
+                    other_slug = self.known_sibling_by_slug.get(s)
+                    if not other_slug and s in self.known_pair_by_slug:
+                        y_k, n_k = self.known_pair_by_slug[s]
+                        other_slug = n_k if y_k == s else y_k
+                    other_px = self.side_prices.get((other_slug, "bid")) if other_slug else None
+                    max_allowed_sum = (
+                        global_rewards.pair_max_sum(self.active_windows.get(s))
+                        if self.settings.venue == "global"
+                        else Decimal("0.98")
+                    )
+                    for o in (open_orders or self.ledger.get_open_orders(s)):
+                        if o.slug == s and o.side.startswith("BUY"):
+                            price_moved = abs(o.price - target_px) > mkt_tick
+                            violates_pair_sum = (
+                                other_px is not None
+                                and (o.price + other_px) > max_allowed_sum
+                            )
+                            if price_moved or violates_pair_sum:
+                                repriced_slugs.append(s)
+                                break
+
+            cancel_slugs = [
+                s for s in (
+                    dropped_slugs
+                    + [s for s in downsized_slugs if s not in dropped_slugs]
+                    + [s for s in repriced_slugs if s not in dropped_slugs and s not in downsized_slugs]
+                )
+                if s not in unhedged_partner_slugs
+            ]
             if cancel_slugs:
-                self.logger.info("Scoped reallocation cancel for dropped/downsized slugs: %s", cancel_slugs)
+                self.logger.info("Scoped reallocation cancel for dropped/downsized/repriced slugs: %s", cancel_slugs)
                 self._cancel_targets(time.time(), slugs=cancel_slugs)
                 for s in dropped_slugs:
                     self.market_states.pop(s, None)
+
+            for s in self.target_slugs:
+                if s in old_targets and (s, "bid") in self.side_prices and s not in cancel_slugs:
+                    mkt = self.markets.get(s)
+                    if mkt is None and hasattr(self.public_client, "_market_cache") and isinstance(getattr(self.public_client, "_market_cache", None), dict):
+                        mkt = self.public_client._market_cache.get(s)
+                    mkt_tick = mkt.tick if mkt is not None else (Decimal("0.01") if self.settings.venue == "global" else Decimal("0.001"))
+                    target_px = self.side_prices[(s, "bid")]
+                    other_slug = self.known_sibling_by_slug.get(s)
+                    if not other_slug and s in self.known_pair_by_slug:
+                        y_k, n_k = self.known_pair_by_slug[s]
+                        other_slug = n_k if y_k == s else y_k
+                    other_px = self.side_prices.get((other_slug, "bid")) if other_slug else None
+                    max_allowed_sum = (
+                        global_rewards.pair_max_sum(self.active_windows.get(s))
+                        if self.settings.venue == "global"
+                        else Decimal("0.98")
+                    )
+                    for o in (open_orders or self.ledger.get_open_orders(s)):
+                        if o.slug == s and o.side.startswith("BUY") and abs(o.price - target_px) <= mkt_tick:
+                            if other_px is not None and (o.price + other_px) > max_allowed_sum:
+                                continue
+                            self.side_prices[(s, "bid")] = o.price
+                            break
 
     def shutdown(self) -> None:
         try:
@@ -1387,7 +1503,7 @@ class LiveEngine:
                 )
                 self.yield_collapse_streak = 0
                 self.last_prepare_ts = now_ts
-                self.prepare(is_realloc=True)
+                self.prepare(is_realloc=True, force_refresh=True)
                 return 1.0
 
         allocated_bid_budget = sum(
@@ -1444,7 +1560,7 @@ class LiveEngine:
                     )
                     self.underdeployed_streak = 0
                     self.last_prepare_ts = now_ts
-                    self.prepare(is_realloc=True)
+                    self.prepare(is_realloc=True, force_refresh=True)
 
         return 1.0
 

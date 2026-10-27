@@ -65,6 +65,7 @@ def test_close_position():
     })
 
 def test_contract_create_orders_batch_payload_types():
+    pytest.importorskip("polymarket_us")
     import typing
     from polymarket_us.types.common import Amount
     from polymarket_us.types.orders import CreateOrderParams
@@ -115,6 +116,7 @@ def test_contract_create_orders_batch_payload_types():
         assert isinstance(price_dict["value"], str)
 
 def test_contract_cancel_and_close_payload_types():
+    pytest.importorskip("polymarket_us")
     import typing
     from polymarket_us.types.orders import CancelAllOrdersParams, CancelOrderListItem, ClosePositionParams
 

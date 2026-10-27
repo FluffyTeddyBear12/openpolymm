@@ -711,7 +711,10 @@ def _waterfill_conditions(
                 break
             cond = cur_target.condition
             held_cost = _condition_held_cost(cond, positions)
-            cond_max_cost = max(Decimal("0"), max_cost - held_cost)
+            if len(selected) == 1:
+                cond_max_cost = max(Decimal("0"), total_budget - held_cost)
+            else:
+                cond_max_cost = max(Decimal("0"), max_cost - held_cost)
             topup_cap = min(cond_max_cost, cur_target.cost + remaining_budget)
             if topup_cap <= cur_target.cost:
                 continue
@@ -734,7 +737,7 @@ def _waterfill_conditions(
                 remaining_budget -= topped.cost - cur_target.cost
                 selected[idx_sel] = topped
 
-    if remaining_budget >= Decimal("3.00") and len(selected) >= 2 and max_contracts >= Decimal("200"):
+    if remaining_budget >= Decimal("3.00") and len(selected) >= 1 and max_contracts >= Decimal("200"):
         for idx_sel, cur_target in enumerate(selected):
             if remaining_budget < Decimal("3.00"):
                 break
@@ -742,7 +745,7 @@ def _waterfill_conditions(
             held_cost = _condition_held_cost(cond, positions)
             if held_cost > Decimal("0"):
                 continue
-            upper_sweep = diversified_cap if diversified_cap is not None else (max_cost + Decimal("15.00"))
+            upper_sweep = total_budget if len(selected) == 1 else (diversified_cap if diversified_cap is not None else (max_cost + Decimal("15.00")))
             sweep_cap = min(
                 upper_sweep,
                 cur_target.cost + remaining_budget,
@@ -783,7 +786,7 @@ def allocate_conditions(
     positions: dict[str, Position] | None = None,
     max_leg_collateral: Decimal | None = None,
 ) -> list[ConditionTarget]:
-    if total_budget >= WATERFILL_MIN_BUDGET and max_markets > 1:
+    if total_budget >= WATERFILL_MIN_BUDGET and max_markets >= 1:
         return _waterfill_conditions(
             conditions=conditions,
             books=books,

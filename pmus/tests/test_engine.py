@@ -1297,13 +1297,13 @@ def test_allocate_markets_scales_max_cost_per_condition_with_available_budget():
     assert len(alloc.condition_pairs) == 3
     total_deployed_cost = sum(alloc.side_budgets.values())
     assert total_deployed_cost > Decimal("165.00")
-    assert total_deployed_cost == Decimal("244.80")
+    assert total_deployed_cost == Decimal("288.00")
     for (slug, side), qty in alloc.side_qtys.items():
-        assert qty == Decimal("85")
+        assert qty == Decimal("100")
 
     _, alloc_static = allocate_markets(settings, client, logger)
     for (slug, side), qty in alloc_static.side_qtys.items():
-        assert qty == Decimal("55")
+        assert qty == Decimal("100")
 
 
 def test_live_engine_uses_5s_cooldown_on_post_fill_balance_error(tmp_path):
@@ -1555,6 +1555,215 @@ def test_live_engine_prepare_realloc_cancels_downsized_kept_slugs():
         engine.prepare(is_realloc=True)
 
     auth_client.cancel_all_scoped.assert_called_once_with([cond.yes.slug])
+
+
+def test_live_engine_prepare_realloc_avoids_cancelling_resting_orders_within_one_tick():
+    logger = logging.getLogger("test_prepare_realloc_resting")
+    cond = make_condition(cond_id="c1", pool="200", target="50")
+    books = {
+        cond.yes.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond.yes.slug),
+        cond.no.slug: make_book([("0.48", "250")], [("0.52", "250")], slug=cond.no.slug),
+    }
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond]
+    client.fetch_books_batch.return_value = books
+
+    resting_order = LiveOrder("o-50", cond.yes.slug, "BUY_LONG", Decimal("0.48"), Decimal("50"))
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("200.00")
+    auth_client.get_positions.return_value = []
+    auth_client.get_open_orders.return_value = [resting_order]
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("50.00"),
+        max_collateral_per_market=Decimal("50.00"),
+        max_markets=2,
+        max_contracts_per_market=1000,
+        reallocate_seconds=60,
+    )
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = [resting_order]
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    engine.target_slugs = [cond.yes.slug, cond.no.slug]
+    engine.side_qtys = {(cond.yes.slug, "bid"): Decimal("50"), (cond.no.slug, "bid"): Decimal("50")}
+    engine.side_prices = {(cond.yes.slug, "bid"): Decimal("0.48"), (cond.no.slug, "bid"): Decimal("0.48")}
+    engine.market_states = {cond.yes.slug: "QUOTING", cond.no.slug: "QUOTING"}
+
+    kept_alloc = AllocationResult(
+        candidates=[],
+        selected_candidates=[],
+        selected_slugs=[cond.yes.slug, cond.no.slug],
+        side_budgets={(cond.yes.slug, "bid"): Decimal("24.50"), (cond.no.slug, "bid"): Decimal("24.50")},
+        side_qtys={(cond.yes.slug, "bid"): Decimal("50"), (cond.no.slug, "bid"): Decimal("50")},
+        side_prices={(cond.yes.slug, "bid"): Decimal("0.49"), (cond.no.slug, "bid"): Decimal("0.49")},
+        unfunded_reason=None,
+        paired_slugs=frozenset({cond.yes.slug, cond.no.slug}),
+        condition_pairs=((cond.yes.slug, cond.no.slug),),
+    )
+
+    with patch("pmus.engine.allocate_markets", return_value=({cond.yes.slug: cond.window, cond.no.slug: cond.window}, kept_alloc)):
+        engine.prepare(is_realloc=True)
+
+    auth_client.cancel_all_scoped.assert_not_called()
+    assert engine.side_prices[(cond.yes.slug, "bid")] == Decimal("0.48")
+
+
+def test_live_engine_prepare_realloc_preserves_unhedged_partner_legs():
+    logger = logging.getLogger("test_prepare_realloc_unhedged")
+    cond = make_condition(cond_id="c1", pool="200", target="50")
+    yes_slug = cond.yes.slug
+    no_slug = cond.no.slug
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond]
+    client.fetch_book.return_value = make_book([("0.48", "100")], [("0.52", "100")])
+    client._pair_by_slug = {yes_slug: (yes_slug, no_slug), no_slug: (yes_slug, no_slug)}
+
+    # We hold 10 YES shares, but 0 NO shares (unhedged)
+    yes_pos = Position(slug=yes_slug, net_qty=Decimal("10"), avg_price=Decimal("0.48"))
+    resting_no_order = LiveOrder("o-no", no_slug, "BUY_LONG", Decimal("0.49"), Decimal("10"))
+
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("200.00")
+    auth_client.get_positions.return_value = [yes_pos]
+    auth_client.get_open_orders.return_value = [resting_no_order]
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("50.00"),
+        max_collateral_per_market=Decimal("50.00"),
+        max_markets=2,
+        max_contracts_per_market=1000,
+        reallocate_seconds=60,
+    )
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = [resting_no_order]
+    ledger.get_all_positions.return_value = [yes_pos]
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    engine._record_known_pair(yes_slug, no_slug)
+    engine.target_slugs = [yes_slug, no_slug]
+    engine.side_qtys = {(yes_slug, "bid"): Decimal("50"), (no_slug, "bid"): Decimal("50")}
+    engine.side_prices = {(yes_slug, "bid"): Decimal("0.48"), (no_slug, "bid"): Decimal("0.49")}
+    engine.market_states = {yes_slug: "QUOTING", no_slug: "QUOTING"}
+
+    # Reallocation selects NOTHING (drops all markets)
+    empty_alloc = AllocationResult(
+        candidates=[],
+        selected_candidates=[],
+        selected_slugs=[],
+        side_budgets={},
+        side_qtys={},
+        side_prices={},
+        unfunded_reason=None,
+        paired_slugs=frozenset(),
+        condition_pairs=(),
+    )
+
+    with patch("pmus.engine.allocate_markets", return_value=({}, empty_alloc)):
+        engine.prepare(is_realloc=True)
+
+    # Missing partner leg no_slug must NOT be dropped or cancelled
+    assert no_slug in engine.target_slugs
+    assert yes_slug in engine.target_slugs
+    if auth_client.cancel_all_scoped.call_args:
+        cancelled = auth_client.cancel_all_scoped.call_args[0][0]
+        assert no_slug not in cancelled
+    assert engine.side_prices[(no_slug, "bid")] == Decimal("0.49")
+
+
+def test_live_engine_prepare_realloc_resting_snap_respects_pair_max_sum():
+    logger = logging.getLogger("test_resting_snap_pair_max_sum")
+    cond = make_condition(cond_id="c1", pool="200", target="50")
+    yes_slug = cond.yes.slug
+    no_slug = cond.no.slug
+
+    client = MagicMock()
+    client.fetch_reward_conditions.return_value = [cond]
+    client._pair_by_slug = {yes_slug: (yes_slug, no_slug), no_slug: (yes_slug, no_slug)}
+
+    # Resting YES order at 0.50 (within 1 tick of target 0.49)
+    # BUT target NO is 0.49, so 0.50 + 0.49 = 0.99 > 0.98 (violates pair_max_sum!)
+    resting_order = LiveOrder("o-yes", yes_slug, "BUY_LONG", Decimal("0.50"), Decimal("50"))
+    auth_client = MagicMock()
+    auth_client.is_available = True
+    auth_client.cancel_all_scoped.return_value = []
+    auth_client.get_buying_power.return_value = Decimal("200.00")
+    auth_client.get_positions.return_value = []
+    auth_client.get_open_orders.return_value = [resting_order]
+
+    settings = Settings(
+        venue="global",
+        total_budget=Decimal("100.00"),
+        max_per_market=Decimal("50.00"),
+        max_collateral_per_market=Decimal("50.00"),
+        max_markets=2,
+        max_contracts_per_market=1000,
+        reallocate_seconds=60,
+    )
+
+    ledger = MagicMock()
+    ledger.get_open_orders.return_value = [resting_order]
+
+    engine = LiveEngine(
+        settings=settings,
+        ledger=ledger,
+        public_client=client,
+        auth_client=auth_client,
+        risk_manager=MagicMock(),
+        logger=logger,
+    )
+    engine._record_known_pair(yes_slug, no_slug)
+    engine.target_slugs = [yes_slug, no_slug]
+    engine.side_qtys = {(yes_slug, "bid"): Decimal("50"), (no_slug, "bid"): Decimal("50")}
+    engine.side_prices = {(yes_slug, "bid"): Decimal("0.49"), (no_slug, "bid"): Decimal("0.49")}
+    engine.market_states = {yes_slug: "QUOTING", no_slug: "QUOTING"}
+
+    # Reallocation keeps the pair with target prices 0.49 / 0.49
+    kept_alloc = AllocationResult(
+        candidates=[],
+        selected_candidates=[],
+        selected_slugs=[yes_slug, no_slug],
+        side_budgets={(yes_slug, "bid"): Decimal("24.50"), (no_slug, "bid"): Decimal("24.50")},
+        side_qtys={(yes_slug, "bid"): Decimal("50"), (no_slug, "bid"): Decimal("50")},
+        side_prices={(yes_slug, "bid"): Decimal("0.49"), (no_slug, "bid"): Decimal("0.49")},
+        unfunded_reason=None,
+        paired_slugs=frozenset({yes_slug, no_slug}),
+        condition_pairs=((yes_slug, no_slug),),
+    )
+
+    with patch("pmus.engine.allocate_markets", return_value=({yes_slug: cond.window, no_slug: cond.window}, kept_alloc)):
+        engine.prepare(is_realloc=True)
+
+    # Because 0.50 + 0.49 = 0.99 > 0.98, yes_slug must be cancelled/repriced and NOT snapped to 0.50!
+    auth_client.cancel_all_scoped.assert_called_once_with([yes_slug])
+    assert engine.side_prices[(yes_slug, "bid")] == Decimal("0.49")
+
 
 
 def test_prepare_skips_dead_penny_and_empty_positions():
@@ -2029,7 +2238,7 @@ def test_live_engine_yield_collapse_early_reallocation():
         assert engine.yield_collapse_streak == 14
 
         engine.tick(t0 + 206.0)
-        mock_prep.assert_called_once_with(is_realloc=True)
+        mock_prep.assert_called_once_with(is_realloc=True, force_refresh=True)
         assert engine.yield_collapse_streak == 0
 
 
@@ -2679,7 +2888,7 @@ def test_live_engine_underdeployed_capital_triggers_reallocation_and_excludes_de
 
     with patch.object(engine, "prepare") as mock_prepare:
         engine.tick(1200.0)
-        mock_prepare.assert_called_once_with(is_realloc=True)
+        mock_prepare.assert_called_once_with(is_realloc=True, force_refresh=True)
         assert "y1" in engine.degraded_slugs_until
         assert "n1" in engine.degraded_slugs_until
 
@@ -3640,7 +3849,7 @@ def test_effective_max_pairs_converts_legs_to_pairs_and_forwards_max_leg_collate
     engine = LiveEngine(settings, MagicMock(), client, auth_client, risk_manager, logger)
     with patch("pmus.engine.allocate_markets", wraps=allocate_markets) as spy_alloc:
         engine.prepare()
-        assert spy_alloc.call_args.kwargs["max_leg_collateral"] == Decimal("44.62")
+        assert spy_alloc.call_args.kwargs["max_leg_collateral"] == Decimal("68.00")
         assert len(engine.condition_pairs) == 2
 
     captured_kwargs = {}

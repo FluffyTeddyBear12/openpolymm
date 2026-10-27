@@ -191,11 +191,11 @@ def test_selector_honors_configured_global_floor(monkeypatch):
     w = window(pool="5")
 
     default = greedy_allocate([w], {"tok": b}, total_budget=Decimal("60"), now=NOW, is_global=True)
-    monkeypatch.setattr(global_rewards, "MIN_DAILY_PAYOUT_USD", Decimal("0.50"))
-    lowered = greedy_allocate([w], {"tok": b}, total_budget=Decimal("60"), now=NOW, is_global=True)
+    monkeypatch.setattr(global_rewards, "MIN_DAILY_PAYOUT_USD", Decimal("1.00"))
+    raised = greedy_allocate([w], {"tok": b}, total_budget=Decimal("60"), now=NOW, is_global=True)
 
-    assert default.selected_slugs == []
-    assert lowered.selected_slugs == ["tok"]
+    assert default.selected_slugs == ["tok"]
+    assert raised.selected_slugs == []
 
 
 def test_strip_orders_from_book_removes_own_resting_bid_and_preserves_other_levels():
