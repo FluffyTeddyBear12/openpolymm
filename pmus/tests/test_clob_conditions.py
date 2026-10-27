@@ -15,6 +15,7 @@ def _make_sampling_market(
     min_size: int | str = 200,
     max_spread: float | str = 3.5,
     tokens: list[dict] | None = None,
+    volume24hr: float | int | str = 10000,
 ) -> dict:
     if tokens is None:
         tokens = [
@@ -27,6 +28,7 @@ def _make_sampling_market(
         "question": question,
         "minimum_tick_size": "0.001",
         "minimum_order_size": "5",
+        "volume24hr": volume24hr,
         "rewards": {
             "rates": [{"rewards_daily_rate": daily_rate}],
             "min_size": min_size,

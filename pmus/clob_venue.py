@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import logging
@@ -190,6 +190,7 @@ class _SamplingMarket:
     seconds_delay: int = 0
     accepting_orders: bool = True
     archived: bool = False
+    volume_24h: Decimal = Decimal("0")
 
 
 class ClobVenueClient:
@@ -501,6 +502,11 @@ class ClobVenueClient:
                     seen_conds.add(cond_id)
 
                 neg_risk_market_id = str(m.get("neg_risk_market_id") or m.get("negRiskMarketID") or "").strip()
+                raw_vol = m.get("volume24hr") or m.get("volume_24hr")
+                try:
+                    init_vol = Decimal(str(raw_vol)) if raw_vol is not None else Decimal("0")
+                except Exception:
+                    init_vol = Decimal("0")
 
                 token_copies = tuple(dict(t) for t in tokens if isinstance(t, dict))
                 parsed.append(
@@ -522,6 +528,7 @@ class ClobVenueClient:
                         seconds_delay=seconds_delay,
                         accepting_orders=accepting_orders,
                         archived=archived,
+                        volume_24h=init_vol,
                     )
                 )
 
@@ -592,6 +599,46 @@ class ClobVenueClient:
         self._last_fill_risk_skipped = dict(skipped_by_risk)
         logger.info("Fill-risk skipped markets: %s", skipped_by_risk)
 
+        if parsed:
+            cond_ids = list(dict.fromkeys(pm.cond_id for pm in parsed if pm.cond_id and pm.volume_24h <= Decimal("0")))
+            gamma_vols: dict[str, Decimal] = {}
+            if cond_ids:
+                for i in range(0, len(cond_ids), 50):
+                    chunk = cond_ids[i : i + 50]
+                    try:
+                        resp = requests.get(
+                            "https://gamma-api.polymarket.com/markets",
+                            params={"condition_ids": chunk},
+                            timeout=5.0,
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
+                        items = data if isinstance(data, list) else (data.get("data") if isinstance(data, dict) else [])
+                        if isinstance(items, list):
+                            for it in items:
+                                if not isinstance(it, dict):
+                                    continue
+                                cid = str(it.get("conditionId") or it.get("condition_id") or "").strip()
+                                raw_v = it.get("volume24hr")
+                                if raw_v is None:
+                                    raw_v = it.get("volume_24hr")
+                                if cid and raw_v is not None:
+                                    try:
+                                        v = Decimal(str(raw_v))
+                                    except Exception:
+                                        v = Decimal("0")
+                                    gamma_vols[cid] = max(gamma_vols.get(cid, Decimal("0")), v)
+                    except Exception as exc:
+                        logger.warning("Gamma API volume enrichment failed: %s", exc)
+
+            enriched: list[_SamplingMarket] = []
+            for pm in parsed:
+                vol = gamma_vols.get(pm.cond_id, pm.volume_24h)
+                if self.settings.min_24h_volume > Decimal("0") and vol < self.settings.min_24h_volume:
+                    continue
+                enriched.append(replace(pm, volume_24h=vol))
+            parsed = enriched
+
         if crawl_completed:
             if max_pages >= MAX_SAMPLING_PAGES:
                 self._sampling_markets_cache = list(parsed)
@@ -654,6 +701,7 @@ class ClobVenueClient:
                     seconds_delay=pm.seconds_delay,
                     accepting_orders=pm.accepting_orders,
                     archived=pm.archived,
+                    volume_24h=pm.volume_24h,
                 )
                 results.append((market, window))
                 if limit > 0 and len(results) >= limit:
@@ -709,6 +757,7 @@ class ClobVenueClient:
                 seconds_delay=pm.seconds_delay,
                 accepting_orders=pm.accepting_orders,
                 archived=pm.archived,
+                volume_24h=pm.volume_24h,
             )
 
             results.append(
@@ -725,6 +774,7 @@ class ClobVenueClient:
                     seconds_delay=pm.seconds_delay,
                     accepting_orders=pm.accepting_orders,
                     archived=pm.archived,
+                    volume_24h=pm.volume_24h,
                 )
             )
             if limit > 0 and len(results) >= limit:

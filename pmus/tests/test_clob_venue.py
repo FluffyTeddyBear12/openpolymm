@@ -23,6 +23,7 @@ def test_clob_venue_fetches_and_parses_sampling_markets():
                 "question": "Will X happen in 2026?",
                 "minimum_tick_size": "0.001",
                 "minimum_order_size": "5",
+                "volume24hr": 10000,
                 "rewards": {
                     "rates": [{"rewards_daily_rate": 100}],
                     "min_size": 200,

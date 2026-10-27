@@ -285,6 +285,7 @@ def test_fetch_sampling_markets_filters_status_patterns_and_expiry():
             "rewards": {"rates": [{"rewards_daily_rate": "100"}], "min_size": 100, "max_spread": 2.5},
             "minimum_tick_size": "0.01",
             "minimum_order_size": "5",
+            "volume24hr": 10000,
             "tokens": [{"token_id": "tok-y", "outcome": "Yes"}, {"token_id": "tok-n", "outcome": "No"}],
             "end_date_iso": future_valid,
             "game_start_time": future_valid,
@@ -396,6 +397,7 @@ def test_sampling_metadata_surfacing_and_lifecycle_gates():
             "neg_risk_market_id": "0xnr1",
             "tags": ["Politics", "Senate"],
             "end_date_iso": end_iso,
+            "volume24hr": 10000,
             "rewards": {"rates": [{"rewards_daily_rate": 120}], "min_size": 20, "max_spread": 4},
             "tokens": [
                 {"token_id": f"{cid}-y", "outcome": "Yes"},

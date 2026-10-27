@@ -277,6 +277,7 @@ def test_sampling_markets_filters_sports_tags_and_word_bounded_fill_risk():
             "tags": tags,
             "minimum_tick_size": "0.01",
             "minimum_order_size": "5",
+            "volume24hr": 10000,
             "rewards": {"rates": [{"rewards_daily_rate": 100}], "min_size": 50, "max_spread": 3.5},
             "tokens": [
                 {"token_id": f"{cid}-yes", "outcome": "Yes"},

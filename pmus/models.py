@@ -48,6 +48,7 @@ class IncentiveWindow:
     seconds_delay: int = 0
     accepting_orders: bool = True
     archived: bool = False
+    volume_24h: Decimal = Decimal("0")
 
 @dataclass(frozen=True)
 class ConditionMarket:
@@ -63,6 +64,7 @@ class ConditionMarket:
     seconds_delay: int = 0
     accepting_orders: bool = True
     archived: bool = False
+    volume_24h: Decimal = Decimal("0")
 
 @dataclass(frozen=True)
 class Quote:

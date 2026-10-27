@@ -39,6 +39,7 @@ class Settings:
     pair_preference: Decimal = Decimal("0.0")
     dashboard_password: str = ""
     reallocate_seconds: int = 3600
+    min_24h_volume: Decimal = Decimal("5000.00")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -137,4 +138,5 @@ class Settings:
             pair_preference=Decimal(os.getenv("PMUS_PAIR_PREFERENCE", "0.0")),
             dashboard_password=dashboard_password,
             reallocate_seconds=int(os.getenv("PMUS_REALLOCATE_SECONDS", "3600")),
+            min_24h_volume=Decimal(os.getenv("PMUS_MIN_24H_VOLUME", "5000.00")),
         )

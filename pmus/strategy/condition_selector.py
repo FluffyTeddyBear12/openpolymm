@@ -132,6 +132,12 @@ def risk_adjustment_multiplier(
         tte_days = max(Decimal("0"), tte_sec / Decimal("86400"))
         f_tte = Decimal("0.80") + Decimal("0.20") * min(Decimal("1"), tte_days / Decimal("90"))
 
+    vol = getattr(target.condition.window, "volume_24h", Decimal("0"))
+    if vol >= Decimal("5000"):
+        f_vol = min(Decimal("1.25"), Decimal("1.0") + (vol / Decimal("200000")))
+    else:
+        f_vol = Decimal("1.0")
+
     if target.mode == "two_sided" and target.yes_price is not None and target.no_price is not None:
         skew = abs(target.yes_price - Decimal("0.50"))
         f_sym = max(Decimal("0.75"), Decimal("1.0") - Decimal("0.55") * skew)
@@ -147,7 +153,7 @@ def risk_adjustment_multiplier(
         f_margin = Decimal("1.0")
         leg_pairs = [(no_book, target.no_price)]
     else:
-        return f_comp * f_tte
+        return f_comp * f_tte * f_vol
 
     ratios: list[Decimal] = []
     for b_leg, px in leg_pairs:
@@ -157,7 +163,7 @@ def risk_adjustment_multiplier(
         ratios.append(min(Decimal("1"), near_bid / max(Decimal("1"), near_ask)))
     avg_ratio = sum(ratios, Decimal("0")) / Decimal(len(ratios))
     f_bal = Decimal("0.85") + Decimal("0.15") * avg_ratio
-    return f_comp * f_tte * f_sym * f_margin * f_bal
+    return f_comp * f_tte * f_sym * f_margin * f_bal * f_vol
 
 
 def _single_size(
